@@ -161,18 +161,18 @@ def wood_fisher(ori_model, train_forget_loader, train_remain_loader, train_remai
         unlearn_model.load_state_dict(best_state)
         unlearn_model.to("cuda").eval()
 
-    gather_and_write_metrics_csv(
-        csv_path=str(results_csv),
-        model=unlearn_model,
-        method="boundary_shrink",
-        forget_class=forget_class,                   
-        train_retain_loader=loader_dict["train_remain"],
-        train_forget_loader=loader_dict["train_forget"],
-        test_retain_loader=loader_dict["test_remain"],
-        test_forget_loader=loader_dict["test_forget"],
-        train_full_loader=loader_dict.get("train"),   
-        test_full_loader=loader_dict.get("test"),    
-        mia_result=None,
-    )        
+    # gather_and_write_metrics_csv(
+    #     csv_path=str(results_csv),
+    #     model=unlearn_model,
+    #     method="boundary_shrink",
+    #     forget_class=forget_class,                   
+    #     train_retain_loader=loader_dict["train_remain"],
+    #     train_forget_loader=loader_dict["train_forget"],
+    #     test_retain_loader=loader_dict["test_remain"],
+    #     test_forget_loader=loader_dict["test_forget"],
+    #     train_full_loader=loader_dict.get("train"),   
+    #     test_full_loader=loader_dict.get("test"),    
+    #     mia_result=None,
+    # )        
 
     return unlearn_model

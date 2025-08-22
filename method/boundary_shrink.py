@@ -117,19 +117,19 @@ def boundary_shrink(ori_model, train_forget_loader,
         unlearn_model.load_state_dict(best_state)
         unlearn_model.to("cuda").eval()
 
-    gather_and_write_metrics_csv(
-        csv_path=str(results_csv),
-        model=unlearn_model,
-        method="boundary_shrink",
-        forget_class=forget_class,                   
-        train_retain_loader=loader_dict["train_remain"],
-        train_forget_loader=loader_dict["train_forget"],
-        test_retain_loader=loader_dict["test_remain"],
-        test_forget_loader=loader_dict["test_forget"],
-        train_full_loader=loader_dict.get("train"),   
-        test_full_loader=loader_dict.get("test"),    
-        mia_result=None,
-    )        
+    # gather_and_write_metrics_csv(
+    #     csv_path=str(results_csv),
+    #     model=unlearn_model,
+    #     method="boundary_shrink",
+    #     forget_class=forget_class,                   
+    #     train_retain_loader=loader_dict["train_remain"],
+    #     train_forget_loader=loader_dict["train_forget"],
+    #     test_retain_loader=loader_dict["test_remain"],
+    #     test_forget_loader=loader_dict["test_forget"],
+    #     train_full_loader=loader_dict.get("train"),   
+    #     test_full_loader=loader_dict.get("test"),    
+    #     mia_result=None,
+    # )        
 
     log_utils.enable_console_logging(logger, console_handler, True)
     logger.info(f'attack success ratio:  {(num_hits / num_sum).item():.4f}' ) 

@@ -154,8 +154,8 @@ def SVC_MIA(shadow_train, target_train, target_test, shadow_test, model):
     )
     print(f"acc_prob time: {time.time()-now}")
     m = {
-        "correctness": acc_corr,    # 正确性（corr）：表示模型预测正确率
-        "confidence": acc_conf,     # 置信度（conf）：表示模型预测的正确标签的置信度，也是要比较mia acc
+        "correctness": acc_corr,    
+        "confidence": acc_conf,     
         "entropy": acc_entr,
         "m_entropy": acc_m_entr,
         "prob": acc_prob,

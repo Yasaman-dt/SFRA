@@ -894,8 +894,11 @@ if __name__ == '__main__':
 
     results_csv_retrain_scratch = ckpt_path / f"{args.dataset_name}_{model_name}_retrain_forget{forget_class}_model_metrics.csv"
 
-    results_csv_unlearn = experiment_path / f"{args.dataset_name}_{model_name}_unlearned_{args.method}_forget{forget_class}_model_metrics.csv"
-
+    base = Path("classification/exps")  # or Path(args.exps_dir).expanduser()
+    results_csv_unlearn = base / args.method / (
+        f"{args.dataset_name}_{model_name}_unlearned_{args.method}_forget{forget_class}_model_metrics.csv"
+    )
+    
     if 'ori_model' in locals() and ori_model is not None:
         gather_and_write_metrics_csv(
             csv_path=str(results_csv_original),
