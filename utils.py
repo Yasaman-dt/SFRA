@@ -149,9 +149,19 @@ def gather_and_write_metrics_csv(
 
 def note_print(*args, **kwargs):
 
-    
     print("\033[0;32m", *args, "\033[0m", **kwargs) 
     # print("\033[0;40m", *args, "\033[0m", **kwargs) 
+
+def calculate_AUS(A_test_forget, A_test_retain, Aor):
+    """
+    Args:
+        A_test_forget (float): Accuracy on the forget test set.
+        A_test_retain (float): Accuracy on the retain test set.
+        Aor (float): Accuracy of the original model on the test retain set.
+    """
+    delta = abs(0 - A_test_forget)
+    AUS = (1 - (Aor - A_test_retain)) / (1 + delta)
+    return AUS
 
 
 def timer(func):

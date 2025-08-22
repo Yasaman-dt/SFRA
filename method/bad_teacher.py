@@ -38,13 +38,17 @@ def bad_teacher(ori_model, bad_teacher_model, good_teacher_model, unlearn_loader
     logger.info(f"bad teacher acc {test_forget_acc:.2%}, {test_remain_acc:.2%}")
 
     tmp_forget_loader = copy.deepcopy(loader_dict["train_forget"])
-    logger.info("坏老师关于遗忘类别的输出是")
+    logger.info("")
     for x, y in tmp_forget_loader:
         x, y = x.to("cuda"), y.to("cuda")
         logger.info(f"ground truth是{y}")
-        logger.info(f"坏老师关于遗忘类别的输出是{bad_teacher_model(x).max(1)[1]}")
-        # logger.info(f"好老师关于遗忘类别的输出是{good_teacher_model(x).max(1)[1]}")
+        logger.info(f"{bad_teacher_model(x).max(1)[1]}")
+        # logger.info(f"{good_teacher_model(x).max(1)[1]}")
         break
+
+    _, Aor = test(ori_model, loader_dict["test_remain"])
+    best_aus = float("-inf")
+    best_path = experiment_path / "ckpt_best_by_aus.pth"    
 
     unlearn_model = copy.deepcopy(ori_model).to("cuda")
 
@@ -116,7 +120,18 @@ def bad_teacher(ori_model, bad_teacher_model, good_teacher_model, unlearn_loader
             accs_dict[key].append(cur_accs_dict[key])
 
         plot_unlearn_remain_acc_figure(epoch+1, accs_dict, experiment_path)
+
+        _, a_forget = test(unlearn_model, loader_dict["test_forget"])
+        _, a_retain = test(unlearn_model, loader_dict["test_remain"])
+        aus = calculate_AUS(a_forget, a_retain, Aor)
+        if aus > best_aus:
+            best_aus = aus
+            torch.save(unlearn_model, best_path)
+            logger.info(f"[epoch {epoch+1}] ★ New best AUS={aus:.4f} (forget={a_forget:.4f}, retain={a_retain:.4f}) -> {best_path}")
+        else:
+            logger.info(f"[epoch {epoch+1}] AUS={aus:.4f} (forget={a_forget:.4f}, retain={a_retain:.4f})")
     
+        
     log_utils.enable_console_logging(logger, console_handler, True)
 
     return unlearn_model

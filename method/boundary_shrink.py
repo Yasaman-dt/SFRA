@@ -28,6 +28,11 @@ def boundary_shrink(ori_model, train_forget_loader,
 
     unlearn_model = copy.deepcopy(ori_model).to("cuda")
     test_model = copy.deepcopy(ori_model).to("cuda")
+    
+    _, Aor = test(ori_model, loader_dict["test_remain"])
+    best_aus = float("-inf")
+    best_path = experiment_path / "ckpt_best_by_aus.pth"
+
 
     # adv = LinfPGD(test_model, bound, step, iter, norm, random_start, "cuda")
     adv = FGSM(test_model, bound, norm, random_start, "cuda")
@@ -94,6 +99,19 @@ def boundary_shrink(ori_model, train_forget_loader,
             accs_dict[key].append(cur_accs_dict[key])
 
         plot_unlearn_remain_acc_figure(epoch+1, accs_dict, experiment_path)
+    
+        _, a_forget = test(unlearn_model, loader_dict["test_forget"])
+        _, a_retain = test(unlearn_model, loader_dict["test_remain"])
+        aus = calculate_AUS(a_forget, a_retain, Aor)
+        if aus > best_aus:
+            best_aus = aus
+            torch.save(unlearn_model, best_path)
+            logger.info(f"[epoch {epoch+1}] ★ New best AUS={aus:.4f} (forget={a_forget:.4f}, retain={a_retain:.4f}) -> {best_path}")
+        else:
+            logger.info(f"[epoch {epoch+1}] AUS={aus:.4f} (forget={a_forget:.4f}, retain={a_retain:.4f})")
+
+     
+    
     
     log_utils.enable_console_logging(logger, console_handler, True)
     logger.info(f'attack success ratio:  {(num_hits / num_sum).item():.4f}' ) 

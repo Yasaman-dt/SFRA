@@ -23,6 +23,12 @@ def delete(   ori_model, train_forget_loader,
                     ):
     logger.info(f"unlearn_epoch {unlearn_epoch}, unlearn_rate {unlearn_rate}")
     logger.info(f"eval option {eval_opt}")
+    
+    _, Aor = test(ori_model, loader_dict["test_remain"])
+    best_aus = float("-inf")
+    best_path = experiment_path / "ckpt_best_by_aus.pth"
+    
+   
     unlearn_model = copy.deepcopy(ori_model).to("cuda")
     test_model = copy.deepcopy(ori_model).to("cuda")
 
@@ -77,6 +83,18 @@ def delete(   ori_model, train_forget_loader,
             accs_dict[key].append(cur_accs_dict[key])
 
         plot_unlearn_remain_acc_figure(epoch+1, accs_dict, experiment_path) 
+
+        _, a_forget = test(unlearn_model, loader_dict["test_forget"])
+        _, a_retain = test(unlearn_model, loader_dict["test_remain"])
+        aus = calculate_AUS(a_forget, a_retain, Aor)
+        if aus > best_aus:
+            best_aus = aus
+            torch.save(unlearn_model, best_path)
+            logger.info(f"[epoch {epoch+1}] ★ New best AUS={aus:.4f} (forget={a_forget:.4f}, retain={a_retain:.4f}) -> {best_path}")
+        else:
+            logger.info(f"[epoch {epoch+1}] AUS={aus:.4f} (forget={a_forget:.4f}, retain={a_retain:.4f})")
+    
+       
     
     log_utils.enable_console_logging(logger, console_handler, True)
 

@@ -141,6 +141,7 @@ if __name__ == '__main__':
                 subprocess.run(cmd, check=True)
             except subprocess.CalledProcessError as e:
                 print(f"[warn] class {c} failed with returncode={e.returncode}; continuing")
+        sys.exit(0)
 
 
 
@@ -589,6 +590,9 @@ if __name__ == '__main__':
 
     ori_model = load_model(original_model_path, model_name, num_classes)
 
+    _, Aor = test(ori_model, test_remain_loader)   # (loss, acc)
+
+
     if not args.debug:
         # _, acc = test(ori_model, train_loader)
         # note_print(f"original model")
@@ -607,7 +611,6 @@ if __name__ == '__main__':
         _, acc = test(ori_model, test_remain_loader)
         print(f"remain test acc:{acc:.2%}")
         # print('\noriginal model acc:\n', test_each_classes(ori_model, test_loader, num_classes))
-
 
     # retrain model
     if args.load_retrain_model_path:
@@ -641,11 +644,13 @@ if __name__ == '__main__':
 
     create_dir(path / description)
     create_dir(path / description / method_description)
-    create_dir(path / description / method_description / vice_description)
+    #create_dir(path / description / method_description / vice_description)
     args_dict = vars(args)
     config = OmegaConf.create(args_dict)
-    OmegaConf.save(config, path / description / method_description / vice_description / "config.yaml")
-    logger, console_handler = log_utils.setup_logger(path / description / method_description / vice_description, logger_name="train_log")
+    #OmegaConf.save(config, path / description / method_description / vice_description / "config.yaml")
+    OmegaConf.save(config, path / description / method_description /"config.yaml")
+    #logger, console_handler = log_utils.setup_logger(path / description / method_description / vice_description, logger_name="train_log")
+    logger, console_handler = log_utils.setup_logger(path / description / method_description , logger_name="train_log")
     log_utils.enable_console_logging(logger, console_handler, True)
     
     unlearn_model = None
@@ -670,7 +675,9 @@ if __name__ == '__main__':
         disable_bn = True
         note_print("disable bn for tiny imagenet for single class forget")
 
-    experiment_path = path / description / method_description / vice_description
+    experiment_path = path / description / method_description 
+    #experiment_path = path / description / method_description / vice_description
+
     if args.method == "random_label":
         unlearn_model = method.random_label(ori_model, train_forget_loader, num_classes,
                                                     args.unlearn_epoch, args.unlearn_rate,

@@ -31,6 +31,11 @@ def boundary_expand(ori_model, train_forget_loader,
     logger.info(f"eval option {eval_opt}")
 
     featuer_dim, num_classes = ori_model.fc.in_features, num_classes
+    _, Aor = test(ori_model, loader_dict["test_remain"])
+    
+    best_aus = float("-inf")
+    best_path = experiment_path / "ckpt_best_by_aus.pth"    
+    
     # assert featuer_dim==512, "feature dim should be 512"
     logger.info(f"feature dim {featuer_dim}, num_classes {num_classes}")
 
@@ -96,6 +101,19 @@ def boundary_expand(ori_model, train_forget_loader,
             accs_dict[key].append(cur_accs_dict[key])
 
         plot_unlearn_remain_acc_figure(epoch+1, accs_dict, experiment_path)
+
+
+        _, a_forget = test(unlearn_model, loader_dict["test_forget"], extra_class=1)
+        _, a_retain = test(unlearn_model, loader_dict["test_remain"],  extra_class=1)
+        aus = calculate_AUS(a_forget, a_retain, Aor)
+        if aus > best_aus:
+            best_aus = aus
+            torch.save(unlearn_model, best_path)
+            logger.info(f"[epoch {epoch+1}] ★ New best AUS={aus:.4f} (forget={a_forget:.4f}, retain={a_retain:.4f}) -> {best_path}")
+        else:
+            logger.info(f"[epoch {epoch+1}] AUS={aus:.4f} (forget={a_forget:.4f}, retain={a_retain:.4f})")
+
+
 
     pruned_fc = nn.Linear(featuer_dim, num_classes)
     for name, params in unlearn_model.fc.named_parameters():
