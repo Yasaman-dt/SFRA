@@ -4,6 +4,7 @@ import argparse
 import torch
 import torch.nn as nn
 import pandas as pd
+import copy
 
 from utils import (
     get_transforms, get_dataset, get_dataloader, get_unlearn_loader, _top1_and_per_class
