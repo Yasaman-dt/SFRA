@@ -899,35 +899,35 @@ if __name__ == '__main__':
         f"{args.dataset_name}_{model_name}_unlearned_{args.method}_forget{forget_class}_model_metrics.csv"
     )
     
-    if 'ori_model' in locals() and ori_model is not None:
-        gather_and_write_metrics_csv(
-            csv_path=str(results_csv_original),
-            model=ori_model,
-            method="original",
-            forget_class=None,
-            train_retain_loader=None,
-            train_forget_loader=None,
-            test_retain_loader=None,
-            test_forget_loader=None,
-            train_full_loader=train_loader,
-            test_full_loader=test_loader,
-            mia_result=mia_ori,
-        )
+    # if 'ori_model' in locals() and ori_model is not None:
+    #     gather_and_write_metrics_csv(
+    #         csv_path=str(results_csv_original),
+    #         model=ori_model,
+    #         method="original",
+    #         forget_class=None,
+    #         train_retain_loader=None,
+    #         train_forget_loader=None,
+    #         test_retain_loader=None,
+    #         test_forget_loader=None,
+    #         train_full_loader=train_loader,
+    #         test_full_loader=test_loader,
+    #         mia_result=mia_ori,
+    #     )
 
-    if 'retrain_model' in locals() and retrain_model is not None:
-        gather_and_write_metrics_csv(
-            csv_path=str(results_csv_retrain_scratch),
-            model=retrain_model,
-            method="retrain",
-            forget_class=csv_forget,
-            train_retain_loader=train_remain_loader,
-            train_forget_loader=train_forget_loader,
-            test_retain_loader=test_remain_loader,
-            test_forget_loader=test_forget_loader,
-            train_full_loader=train_loader,
-            test_full_loader=test_loader,
-            mia_result=mia_retrain,
-        )
+    # if 'retrain_model' in locals() and retrain_model is not None:
+    #     gather_and_write_metrics_csv(
+    #         csv_path=str(results_csv_retrain_scratch),
+    #         model=retrain_model,
+    #         method="retrain",
+    #         forget_class=csv_forget,
+    #         train_retain_loader=train_remain_loader,
+    #         train_forget_loader=train_forget_loader,
+    #         test_retain_loader=test_remain_loader,
+    #         test_forget_loader=test_forget_loader,
+    #         train_full_loader=train_loader,
+    #         test_full_loader=test_loader,
+    #         mia_result=mia_retrain,
+    #     )
 
     if unlearn_model:
         gather_and_write_metrics_csv(
@@ -945,5 +945,5 @@ if __name__ == '__main__':
         )
          
         
-    logger.info("运行结束")
+    logger.info("")
     exit()
