@@ -17,6 +17,7 @@ def l1_regularization(model):
 @timer
 def gradient_ascent(ori_model, train_forget_loader, 
                     unlearn_epoch, unlearn_rate,
+                    results_csv, forget_class,
                     logger, console_handler,
                     loader_dict, experiment_path,
                     eval_opt = eval_opt, disable_bn = False,
@@ -28,7 +29,8 @@ def gradient_ascent(ori_model, train_forget_loader,
     _, Aor = test(ori_model, loader_dict["test_remain"])
     best_aus = float("-inf")
     best_path = experiment_path / "ckpt_best_by_aus.pth"        
-    
+    best_state = None
+
     
     unlearn_model = copy.deepcopy(ori_model).to("cuda")
     # forget_data_gen = inf_generator(train_forget_loader)
@@ -86,12 +88,30 @@ def gradient_ascent(ori_model, train_forget_loader,
         aus = calculate_AUS(a_forget, a_retain, Aor)
         if aus > best_aus:
             best_aus = aus
+            best_state = {k: v.detach().cpu().clone() for k, v in unlearn_model.state_dict().items()}
             torch.save(unlearn_model, best_path)
             logger.info(f"[epoch {epoch+1}] ★ New best AUS={aus:.4f} (forget={a_forget:.4f}, retain={a_retain:.4f}) -> {best_path}")
         else:
             logger.info(f"[epoch {epoch+1}] AUS={aus:.4f} (forget={a_forget:.4f}, retain={a_retain:.4f})")
-    
-    
+
+    if best_state is not None:
+        unlearn_model.load_state_dict(best_state)
+        unlearn_model.to("cuda").eval()
+
+    gather_and_write_metrics_csv(
+        csv_path=str(results_csv),
+        model=unlearn_model,
+        method="boundary_shrink",
+        forget_class=forget_class,                   
+        train_retain_loader=loader_dict["train_remain"],
+        train_forget_loader=loader_dict["train_forget"],
+        test_retain_loader=loader_dict["test_remain"],
+        test_forget_loader=loader_dict["test_forget"],
+        train_full_loader=loader_dict.get("train"),   
+        test_full_loader=loader_dict.get("test"),    
+        mia_result=None,
+    )        
+
     log_utils.enable_console_logging(logger, console_handler, True)
 
     return unlearn_model

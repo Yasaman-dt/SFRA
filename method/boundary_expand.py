@@ -23,6 +23,7 @@ def init_params(m):
 @timer
 def boundary_expand(ori_model, train_forget_loader, 
                     unlearn_epoch, unlearn_rate, num_classes,
+                    results_csv, forget_class,
                     logger, console_handler,
                     loader_dict, experiment_path,
                     freeze_linear=False, eval_opt = eval_opt, disable_bn=False
@@ -35,7 +36,8 @@ def boundary_expand(ori_model, train_forget_loader,
     
     best_aus = float("-inf")
     best_path = experiment_path / "ckpt_best_by_aus.pth"    
-    
+    best_state = None
+
     # assert featuer_dim==512, "feature dim should be 512"
     logger.info(f"feature dim {featuer_dim}, num_classes {num_classes}")
 
@@ -103,16 +105,20 @@ def boundary_expand(ori_model, train_forget_loader,
         plot_unlearn_remain_acc_figure(epoch+1, accs_dict, experiment_path)
 
 
-        _, a_forget = test(unlearn_model, loader_dict["test_forget"], extra_class=1)
-        _, a_retain = test(unlearn_model, loader_dict["test_remain"],  extra_class=1)
+        _, a_forget = test(unlearn_model, loader_dict["test_forget"])
+        _, a_retain = test(unlearn_model, loader_dict["test_remain"])
         aus = calculate_AUS(a_forget, a_retain, Aor)
         if aus > best_aus:
             best_aus = aus
+            best_state = {k: v.detach().cpu().clone() for k, v in unlearn_model.state_dict().items()}
             torch.save(unlearn_model, best_path)
             logger.info(f"[epoch {epoch+1}] ★ New best AUS={aus:.4f} (forget={a_forget:.4f}, retain={a_retain:.4f}) -> {best_path}")
         else:
             logger.info(f"[epoch {epoch+1}] AUS={aus:.4f} (forget={a_forget:.4f}, retain={a_retain:.4f})")
 
+    if best_state is not None:
+        unlearn_model.load_state_dict(best_state)
+        unlearn_model.to("cuda").eval()
 
 
     pruned_fc = nn.Linear(featuer_dim, num_classes)
@@ -124,6 +130,21 @@ def boundary_expand(ori_model, train_forget_loader,
             pruned_fc.state_dict()['bias'][:, ] = unlearn_model.fc.state_dict()[name][0:num_classes, ]
     unlearn_model.fc = pruned_fc
     unlearn_model = unlearn_model.to("cuda")
+    
+    gather_and_write_metrics_csv(
+        csv_path=str(results_csv),
+        model=unlearn_model,
+        method="boundary_shrink",
+        forget_class=forget_class,                   
+        train_retain_loader=loader_dict["train_remain"],
+        train_forget_loader=loader_dict["train_forget"],
+        test_retain_loader=loader_dict["test_remain"],
+        test_forget_loader=loader_dict["test_forget"],
+        train_full_loader=loader_dict.get("train"),   
+        test_full_loader=loader_dict.get("test"),    
+        mia_result=None,
+    )        
+               
     log_utils.enable_console_logging(logger, console_handler, True)
 
     return unlearn_model

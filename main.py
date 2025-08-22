@@ -382,10 +382,6 @@ if __name__ == '__main__':
             )
 
 
-
-
-
-
             
         import argparse
         import gymnasium as gym
@@ -678,9 +674,15 @@ if __name__ == '__main__':
     experiment_path = path / description / method_description 
     #experiment_path = path / description / method_description / vice_description
 
+    results_csv = experiment_path / f"{args.dataset_name}_{model_name}_unlearned_model_{args.method}_metrics.csv"
+
+    csv_forget = args.forget_id if args.forget_id is not None else forget_class
+
+
     if args.method == "random_label":
         unlearn_model = method.random_label(ori_model, train_forget_loader, num_classes,
                                                     args.unlearn_epoch, args.unlearn_rate,
+                                                    results_csv=results_csv, forget_class= csv_forget,
                                                     fixed_noise_label = args.fixed_noise_label,
                                                     logger = logger, console_handler = console_handler, 
                                                     loader_dict=loader_dict, experiment_path = experiment_path, 
@@ -688,28 +690,34 @@ if __name__ == '__main__':
     elif args.method == "finetune":
         unlearn_model = method.finetune(ori_model, train_remain_loader, 
                                                 unlearn_epoch= args.unlearn_epoch, unlearn_rate= args.unlearn_rate,
+                                                results_csv=results_csv, forget_class= csv_forget,
                                                 logger = logger, console_handler = console_handler, 
                                                 loader_dict=loader_dict, experiment_path = experiment_path)  
     elif args.method == "gradient_ascent":
         unlearn_model = method.gradient_ascent(ori_model, train_forget_loader,
-                                                        unlearn_epoch=args.unlearn_epoch, unlearn_rate=args.unlearn_rate,
-                                                        logger=logger, console_handler=console_handler,
-                                                        loader_dict=loader_dict, experiment_path= experiment_path, disable_bn = disable_bn)
+                                                unlearn_epoch=args.unlearn_epoch, unlearn_rate=args.unlearn_rate,
+                                                results_csv=results_csv, forget_class= csv_forget,
+                                                logger=logger, console_handler=console_handler,
+                                                loader_dict=loader_dict, experiment_path= experiment_path, disable_bn = disable_bn)  
     elif args.method == 'boundary_shrink':
-        unlearn_model = method.boundary_shrink(ori_model, train_forget_loader, args.unlearn_epoch, args.unlearn_rate, 
-                                                        logger = logger, console_handler = console_handler,
-                                                        loader_dict = loader_dict, experiment_path = experiment_path, disable_bn = disable_bn,
-                                                        extra_exp=args.extra_exp,
-                                                        )
+        unlearn_model = method.boundary_shrink(ori_model, train_forget_loader,
+                                               args.unlearn_epoch, args.unlearn_rate,
+                                               results_csv=results_csv, forget_class= csv_forget,
+                                               logger = logger, console_handler = console_handler,
+                                               loader_dict = loader_dict, experiment_path = experiment_path, disable_bn = disable_bn,
+                                               extra_exp=args.extra_exp)
     elif args.method == 'boundary_expand':   
-        unlearn_model = method.boundary_expand(ori_model, train_forget_loader, args.unlearn_epoch, args.unlearn_rate, num_classes,
-                                                        logger = logger, console_handler = console_handler,
-                                                        loader_dict = loader_dict, experiment_path = experiment_path, disable_bn = disable_bn, 
-                                                        freeze_linear = args.freeze_linear  
-                                                       ) 
+        unlearn_model = method.boundary_expand(ori_model, train_forget_loader,
+                                               args.unlearn_epoch, args.unlearn_rate,
+                                               num_classes,
+                                               results_csv=results_csv, forget_class= csv_forget,
+                                               logger = logger, console_handler = console_handler,
+                                               loader_dict = loader_dict, experiment_path = experiment_path, disable_bn = disable_bn, 
+                                               freeze_linear = args.freeze_linear) 
     elif args.method == "salun":
         unlearn_model = method.salun(ori_model, train_forget_loader, num_classes,
                                             unlearn_epoch=args.unlearn_epoch, unlearn_rate=args.unlearn_rate,
+                                            results_csv=results_csv, forget_class= csv_forget,
                                             fixed_noise_label=args.fixed_noise_label, 
                                             logger=logger, console_handler=console_handler,
                                             loader_dict=loader_dict, experiment_path= experiment_path,
@@ -717,6 +725,7 @@ if __name__ == '__main__':
                                             approx_different=args.approx_different,
                                             retain_data=args.retain_data,  disable_bn = disable_bn, 
                                             mask=args.salun_mask)
+
     elif args.method == "bad_teacher":
         good_teacher_model = copy.deepcopy(ori_model).to("cuda")
         bad_teacher_model = get_model(model_name, num_classes).to("cuda")
@@ -746,28 +755,37 @@ if __name__ == '__main__':
         unlearn_loader = torch.utils.data.DataLoader(unlearn_dataset, batch_size=args.batch_size, shuffle=True, num_workers=num_workers) 
         unlearn_model = method.bad_teacher(ori_model, bad_teacher_model, good_teacher_model, unlearn_loader,
                                             args.unlearn_epoch, args.unlearn_rate,
+                                            results_csv=results_csv, forget_class= csv_forget,
                                             logger = logger, console_handler = console_handler, 
                                             loader_dict=loader_dict, experiment_path = experiment_path, disable_bn = disable_bn)
+
     elif args.method == "l2ul_adv":
         unlearn_model = method.l2ul_adv(ori_model, train_forget_loader, num_classes,
                                             args.unlearn_epoch, args.unlearn_rate,
+                                            results_csv=results_csv, forget_class= csv_forget,
                                             logger = logger, console_handler = console_handler, 
                                             loader_dict=loader_dict, experiment_path = experiment_path, disable_bn = disable_bn,
                                             adv_eps = args.adv_eps,
                                             adv_lambda=args.adv_lambda)
+
     elif args.method == "l2ul_imp":
         unlearn_model = method.l2ul_adv(ori_model, train_forget_loader, num_classes,
                                             args.unlearn_epoch, args.unlearn_rate,
+                                            results_csv=results_csv, forget_class= csv_forget,
                                             logger = logger, console_handler = console_handler, 
                                             loader_dict=loader_dict, experiment_path = experiment_path, disable_bn = disable_bn,
                                             adv_eps = args.adv_eps, adv_lambda=args.adv_lambda, 
-                                            reg_lambda=args.reg_lambda) 
+                                            reg_lambda=args.reg_lambda)
+        
     elif args.method == "fisher":
         unlearn_model = method.fisher(ori_model, train_forget_loader, train_remain_loader,
+                                                    results_csv=results_csv, forget_class= csv_forget,
                                                     alpha=args.alpha, num_classes=num_classes,
                                                     logger=logger, console_handler=console_handler,
                                                     loader_dict=loader_dict, experiment_path = experiment_path,
                                                     freeze_linear = args.freeze_linear)
+
+        
     elif args.method == "wood_fisher":
         train_remain_sampler = SubsetRandomSampler(train_remain_index)  # 45000
         train_remain_loader_sole = torch.utils.data.DataLoader(dataset=trainset, batch_size=1,    
@@ -775,17 +793,20 @@ if __name__ == '__main__':
                                                             num_workers=num_workers)
 
         unlearn_model = method.wood_fisher(ori_model, train_forget_loader, train_remain_loader, train_remain_loader_sole, 
+                                                    results_csv=results_csv, forget_class= csv_forget,
                                                     alpha=args.alpha,
                                                     retain_data=args.retain_data,
                                                     logger=logger, console_handler=console_handler,
                                                     loader_dict=loader_dict, experiment_path= experiment_path)
+
     elif args.method == 'delete':
         unlearn_model = method.delete(ori_model, train_forget_loader,
                                                     args.unlearn_epoch, args.unlearn_rate,
+                                                    results_csv=results_csv, forget_class= csv_forget,
                                                     logger=logger, console_handler=console_handler,
                                                     loader_dict=loader_dict, experiment_path= experiment_path, disable_bn = disable_bn,
-                                                    soft_label=args.soft_label
-        )
+                                                    soft_label=args.soft_label)
+
     elif args.method == 'ablation': 
         unlearn_model = method.my_method_ablation(ori_model, train_forget_loader,
                                                     args.unlearn_epoch, args.unlearn_rate,
@@ -793,8 +814,7 @@ if __name__ == '__main__':
                                                     loader_dict=loader_dict, experiment_path= experiment_path, 
                                                     soft_label=args.soft_label,
                                                     alpha = args.ablation_a,
-                                                    temperature = args.ablation_t
-        )
+                                                    temperature = args.ablation_t)
     elif args.method == 'pass':
         pass
     else:
@@ -802,7 +822,7 @@ if __name__ == '__main__':
 
     if unlearn_model:
         # torch.save(unlearn_model.state_dict(), path / description / vice_description / f"ckpt.pth")
-        torch.save(unlearn_model, path / description / method_description / vice_description / f"ckpt.pth")
+        #torch.save(unlearn_model, path / description / method_description / f"ckpt.pth")
 
 
         # unlearn method
