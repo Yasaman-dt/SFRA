@@ -243,7 +243,7 @@ if __name__ == '__main__':
         ckpt_path = path / "test_pretrained_model"   
         create_dir(ckpt_path)
     else:
-        ckpt_path = path / "pretrained_model"
+        ckpt_path = path / "test_pretrained_model"
 
     ori_model, retrain_model = None, None
     if args.train_from_scratch:  
@@ -616,9 +616,9 @@ if __name__ == '__main__':
         forget_label = (args.forget_id if args.forget_id is not None else forget_class)
         forget_tag   = f"cls{forget_label}"
         if args.forget_id is not None:
-            retrain_model_path =  ckpt_path / f"{args.dataset_name}_{model_name}_retrain_forgetcls{args.forget_id}_model"
+            retrain_model_path =  ckpt_path / f"{args.dataset_name}_{model_name}_retrain_forgetcls{args.forget_id}_model.pth"
         else:
-            retrain_model_path =  ckpt_path / f"{args.dataset_name}_{model_name}_retrain_forget{forget_class}_model"
+            retrain_model_path =  ckpt_path / f"{args.dataset_name}_{model_name}_retrain_forget{forget_class}_model.pth"
 
     note_print(f"load retrain model from {retrain_model_path}")
 
