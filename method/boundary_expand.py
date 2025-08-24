@@ -26,7 +26,8 @@ def boundary_expand(ori_model, train_forget_loader,
                     results_csv, forget_class,
                     logger, console_handler,
                     loader_dict, experiment_path,
-                    freeze_linear=False, eval_opt = eval_opt, disable_bn=False
+                    freeze_linear=False, eval_opt = eval_opt, disable_bn=False,
+                    early_stop_patience=30,
                     ):
     logger.info(f"unlearn_epoch {unlearn_epoch}, unlearn_rate {unlearn_rate}")
     logger.info(f"eval option {eval_opt}")
@@ -37,6 +38,7 @@ def boundary_expand(ori_model, train_forget_loader,
     best_aus = float("-inf")
     best_path = experiment_path / "ckpt_best_by_aus.pth"    
     best_state = None
+    epochs_since_improve = 0
 
     # assert featuer_dim==512, "feature dim should be 512"
     logger.info(f"feature dim {featuer_dim}, num_classes {num_classes}")
@@ -109,12 +111,18 @@ def boundary_expand(ori_model, train_forget_loader,
         _, a_retain = test(unlearn_model, loader_dict["test_remain"])
         aus = calculate_AUS(a_forget, a_retain, Aor)
         if aus > best_aus:
-            best_aus = aus
-            best_state = {k: v.detach().cpu().clone() for k, v in unlearn_model.state_dict().items()}
-            torch.save(unlearn_model, best_path)
-            logger.info(f"[epoch {epoch+1}] ★ New best AUS={aus:.4f} (forget={a_forget:.4f}, retain={a_retain:.4f}) -> {best_path}")
+             best_aus = aus
+             best_state = {k: v.detach().cpu().clone() for k, v in unlearn_model.state_dict().items()}
+             torch.save(unlearn_model, best_path)
+             logger.info(f"[epoch {epoch+1}] ★ New best AUS={aus:.4f} (forget={a_forget:.4f}, retain={a_retain:.4f}) -> {best_path}")
+             epochs_since_improve = 0
         else:
             logger.info(f"[epoch {epoch+1}] AUS={aus:.4f} (forget={a_forget:.4f}, retain={a_retain:.4f})")
+            epochs_since_improve += 1
+            logger.info(f"[epoch {epoch+1}] early-stop patience {epochs_since_improve}/{early_stop_patience}")
+            if epochs_since_improve >= early_stop_patience:
+                logger.info(f"Early stopping at epoch {epoch+1}: AUS hasn't improved for {early_stop_patience} epochs.")
+                break
 
     if best_state is not None:
         unlearn_model.load_state_dict(best_state)

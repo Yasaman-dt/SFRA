@@ -72,14 +72,17 @@ def wood_fisher(ori_model, train_forget_loader, train_remain_loader, train_remai
                 retain_data, 
                 logger, console_handler,
                 loader_dict, experiment_path,
-                eval_opt = eval_opt,):
+                eval_opt = eval_opt,
+                early_stop_patience=30,
+                ):
     logger.info(f"eval option {eval_opt}")
     
     _, Aor = test(ori_model, loader_dict["test_remain"])
     best_aus = float("-inf")
     best_path = experiment_path / "ckpt_best_by_aus.pth"        
     best_state = None
-        
+    epochs_since_improve = 0
+
     unlearn_model = copy.deepcopy(ori_model).to("cuda")
     criterion = nn.CrossEntropyLoss()
 

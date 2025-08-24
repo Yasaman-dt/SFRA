@@ -84,7 +84,8 @@ def fisher( ori_model, train_forget_loader, train_remain_loader,
             alpha, num_classes,
             results_csv, forget_class,
             logger, console_handler,
-            loader_dict, experiment_path, eval_opt = eval_opt, freeze_linear = False
+            loader_dict, experiment_path, eval_opt = eval_opt, freeze_linear = False,
+            early_stop_patience=30,
             ):
     logger.info(f"unlearn alpha {alpha}")
     logger.info(f"eval option {eval_opt}")
@@ -93,6 +94,8 @@ def fisher( ori_model, train_forget_loader, train_remain_loader,
     best_aus = float("-inf")
     best_path = experiment_path / "ckpt_best_by_aus.pth"        
     best_state = None
+    epochs_since_improve = 0
+
 
     unlearn_model = copy.deepcopy(ori_model).to("cuda")
 
@@ -129,6 +132,7 @@ def fisher( ori_model, train_forget_loader, train_remain_loader,
         logger.info(f"★ New best AUS={aus:.4f} (forget={a_forget:.4f}, retain={a_retain:.4f}) -> {best_path}")
     else:
         logger.info(f"AUS={aus:.4f} (forget={a_forget:.4f}, retain={a_retain:.4f})")
+
 
     if best_state is not None:
         unlearn_model.load_state_dict(best_state)

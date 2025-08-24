@@ -63,7 +63,8 @@ def l2ul_adv(ori_model, train_forget_loader, num_classes,
                     logger, console_handler,
                     loader_dict, experiment_path,
                     eval_opt = eval_opt,
-                    adv_eps=0.4, adv_lambda=0.1, reg_lambda=0, disable_bn=False
+                    adv_eps=0.4, adv_lambda=0.1, reg_lambda=0, disable_bn=False,
+                    early_stop_patience=30,
                     ):
     logger.info(f"unlearn_epoch {unlearn_epoch}, unlearn_rate {unlearn_rate}")
     logger.info(f"eval option {eval_opt}")
@@ -72,6 +73,7 @@ def l2ul_adv(ori_model, train_forget_loader, num_classes,
     best_aus = float("-inf")
     best_path = experiment_path / "ckpt_best_by_aus.pth"        
     best_state = None
+    epochs_since_improve = 0
 
     test_model = copy.deepcopy(ori_model).to("cuda")
     unlearn_model = copy.deepcopy(ori_model).to("cuda")
