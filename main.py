@@ -678,6 +678,7 @@ if __name__ == '__main__':
 
     csv_forget = args.forget_id if args.forget_id is not None else forget_class
 
+    patience = 30
 
     if args.method == "random_label":
         unlearn_model = method.random_label(ori_model, train_forget_loader, num_classes,
@@ -686,26 +687,33 @@ if __name__ == '__main__':
                                                     fixed_noise_label = args.fixed_noise_label,
                                                     logger = logger, console_handler = console_handler, 
                                                     loader_dict=loader_dict, experiment_path = experiment_path, 
-                                                    approx_different = args.approx_different, disable_bn = disable_bn)
+                                                    approx_different = args.approx_different, disable_bn = disable_bn,
+                                                    early_stop_patience=patience)
     elif args.method == "finetune":
         unlearn_model = method.finetune(ori_model, train_remain_loader, 
                                                 unlearn_epoch= args.unlearn_epoch, unlearn_rate= args.unlearn_rate,
                                                 results_csv=results_csv, forget_class= csv_forget,
                                                 logger = logger, console_handler = console_handler, 
-                                                loader_dict=loader_dict, experiment_path = experiment_path)  
+                                                loader_dict=loader_dict, experiment_path = experiment_path,
+                                                early_stop_patience=patience)
+  
     elif args.method == "gradient_ascent":
         unlearn_model = method.gradient_ascent(ori_model, train_forget_loader,
                                                 unlearn_epoch=args.unlearn_epoch, unlearn_rate=args.unlearn_rate,
                                                 results_csv=results_csv, forget_class= csv_forget,
                                                 logger=logger, console_handler=console_handler,
-                                                loader_dict=loader_dict, experiment_path= experiment_path, disable_bn = disable_bn)  
+                                                loader_dict=loader_dict, experiment_path= experiment_path, disable_bn = disable_bn,
+                                                early_stop_patience=patience)
+  
     elif args.method == 'boundary_shrink':
         unlearn_model = method.boundary_shrink(ori_model, train_forget_loader,
                                                args.unlearn_epoch, args.unlearn_rate,
                                                results_csv=results_csv, forget_class= csv_forget,
                                                logger = logger, console_handler = console_handler,
                                                loader_dict = loader_dict, experiment_path = experiment_path, disable_bn = disable_bn,
-                                               extra_exp=args.extra_exp)
+                                               extra_exp=args.extra_exp,
+                                               early_stop_patience=patience)
+
     elif args.method == 'boundary_expand':   
         unlearn_model = method.boundary_expand(ori_model, train_forget_loader,
                                                args.unlearn_epoch, args.unlearn_rate,
@@ -713,7 +721,8 @@ if __name__ == '__main__':
                                                results_csv=results_csv, forget_class= csv_forget,
                                                logger = logger, console_handler = console_handler,
                                                loader_dict = loader_dict, experiment_path = experiment_path, disable_bn = disable_bn, 
-                                               freeze_linear = args.freeze_linear) 
+                                               freeze_linear = args.freeze_linear,
+                                               early_stop_patience=patience) 
     elif args.method == "salun":
         unlearn_model = method.salun(ori_model, train_forget_loader, num_classes,
                                             unlearn_epoch=args.unlearn_epoch, unlearn_rate=args.unlearn_rate,
@@ -724,7 +733,8 @@ if __name__ == '__main__':
                                             threshold_ratio=args.threshold_ratio,
                                             approx_different=args.approx_different,
                                             retain_data=args.retain_data,  disable_bn = disable_bn, 
-                                            mask=args.salun_mask)
+                                            mask=args.salun_mask, early_stop_patience=patience)
+
 
     elif args.method == "bad_teacher":
         good_teacher_model = copy.deepcopy(ori_model).to("cuda")
@@ -757,7 +767,9 @@ if __name__ == '__main__':
                                             args.unlearn_epoch, args.unlearn_rate,
                                             results_csv=results_csv, forget_class= csv_forget,
                                             logger = logger, console_handler = console_handler, 
-                                            loader_dict=loader_dict, experiment_path = experiment_path, disable_bn = disable_bn)
+                                            loader_dict=loader_dict, experiment_path = experiment_path, disable_bn = disable_bn,
+                                            early_stop_patience=patience)
+
 
     elif args.method == "l2ul_adv":
         unlearn_model = method.l2ul_adv(ori_model, train_forget_loader, num_classes,
@@ -766,7 +778,9 @@ if __name__ == '__main__':
                                             logger = logger, console_handler = console_handler, 
                                             loader_dict=loader_dict, experiment_path = experiment_path, disable_bn = disable_bn,
                                             adv_eps = args.adv_eps,
-                                            adv_lambda=args.adv_lambda)
+                                            adv_lambda=args.adv_lambda,
+                                            early_stop_patience=patience)
+
 
     elif args.method == "l2ul_imp":
         unlearn_model = method.l2ul_adv(ori_model, train_forget_loader, num_classes,
@@ -775,7 +789,8 @@ if __name__ == '__main__':
                                             logger = logger, console_handler = console_handler, 
                                             loader_dict=loader_dict, experiment_path = experiment_path, disable_bn = disable_bn,
                                             adv_eps = args.adv_eps, adv_lambda=args.adv_lambda, 
-                                            reg_lambda=args.reg_lambda)
+                                            reg_lambda=args.reg_lambda, early_stop_patience=patience)
+
         
     elif args.method == "fisher":
         unlearn_model = method.fisher(ori_model, train_forget_loader, train_remain_loader,
@@ -783,9 +798,10 @@ if __name__ == '__main__':
                                                     alpha=args.alpha, num_classes=num_classes,
                                                     logger=logger, console_handler=console_handler,
                                                     loader_dict=loader_dict, experiment_path = experiment_path,
-                                                    freeze_linear = args.freeze_linear)
+                                                    freeze_linear = args.freeze_linear,
+                                                    early_stop_patience=patience)
 
-        
+
     elif args.method == "wood_fisher":
         train_remain_sampler = SubsetRandomSampler(train_remain_index)  # 45000
         train_remain_loader_sole = torch.utils.data.DataLoader(dataset=trainset, batch_size=1,    
@@ -797,7 +813,8 @@ if __name__ == '__main__':
                                                     alpha=args.alpha,
                                                     retain_data=args.retain_data,
                                                     logger=logger, console_handler=console_handler,
-                                                    loader_dict=loader_dict, experiment_path= experiment_path)
+                                                    loader_dict=loader_dict, experiment_path= experiment_path,
+                                                    early_stop_patience=patience)
 
     elif args.method == 'delete':
         unlearn_model = method.delete(ori_model, train_forget_loader,
@@ -805,7 +822,9 @@ if __name__ == '__main__':
                                                     results_csv=results_csv, forget_class= csv_forget,
                                                     logger=logger, console_handler=console_handler,
                                                     loader_dict=loader_dict, experiment_path= experiment_path, disable_bn = disable_bn,
-                                                    soft_label=args.soft_label)
+                                                    soft_label=args.soft_label,
+                                                    early_stop_patience=patience)
+
 
     elif args.method == 'ablation': 
         unlearn_model = method.my_method_ablation(ori_model, train_forget_loader,
