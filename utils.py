@@ -161,9 +161,9 @@ def note_print(*args, **kwargs):
     # print("\033[0;40m", *args, "\033[0m", **kwargs) 
 
 def calculate_AUS(A_test_forget, A_test_retain, Aor):
-    A_test_forget = A_test_forget/100
-    A_test_retain = A_test_retain/100
-    Aor = Aor/100
+    A_test_forget = A_test_forget
+    A_test_retain = A_test_retain
+    Aor = Aor
     """
     Args:
         A_test_forget (float): Accuracy on the forget test set.
