@@ -644,9 +644,9 @@ if __name__ == '__main__':
     args_dict = vars(args)
     config = OmegaConf.create(args_dict)
     #OmegaConf.save(config, path / description / method_description / vice_description / "config.yaml")
-    OmegaConf.save(config, path / description / method_description /"config.yaml")
+    OmegaConf.save(config, f"{path} / {description} / {method_description} / lr{args.unlearn_rate} / config.yaml")
     #logger, console_handler = log_utils.setup_logger(path / description / method_description / vice_description, logger_name="train_log")
-    logger, console_handler = log_utils.setup_logger(path / description / method_description , logger_name="train_log")
+    logger, console_handler = log_utils.setup_logger(f"{path} / {description} / {method_description} / lr{args.unlearn_rate} /", logger_name="train_log")
     log_utils.enable_console_logging(logger, console_handler, True)
     
     unlearn_model = None
@@ -674,7 +674,7 @@ if __name__ == '__main__':
     experiment_path = path / description / method_description 
     #experiment_path = path / description / method_description / vice_description
 
-    results_csv = experiment_path / f"{args.dataset_name}_{model_name}_unlearned_model_{args.method}_metrics.csv"
+    results_csv = experiment_path / f"lr{args.unlearn_rate}/{args.dataset_name}_{model_name}_unlearned_model_{args.method}_metrics_lr{args.unlearn_rate}.csv"
 
     csv_forget = args.forget_id if args.forget_id is not None else forget_class
 
@@ -915,7 +915,7 @@ if __name__ == '__main__':
 
     base = Path("results")  # or Path(args.exps_dir).expanduser()
     results_csv_unlearn = base / args.method / (
-        f"{args.dataset_name}_{model_name}_unlearned_{args.method}_forget{forget_class}_model_metrics.csv"
+        f"{args.dataset_name}_{model_name}_unlearned_{args.method}_forget{forget_class}_model_metrics__lr{args.unlearn_rate}.csv"
     )
     
     # if 'ori_model' in locals() and ori_model is not None:
