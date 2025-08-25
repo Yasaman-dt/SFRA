@@ -118,21 +118,29 @@ def gather_and_write_metrics_csv(
 
     # MIA (whatever your evaluator returns)
     if mia_result is None:
-        row["mia"] = None
-    elif isinstance(mia_result, (int, float)):
-        row["mia"] = float(mia_result)
+        row["mia_correctness"] = None
+        row["mia_confidence"]  = None
+        row["mia_entropy"]     = None
+        row["mia_m_entropy"]   = None
+        row["mia_prob"]        = None
+    elif isinstance(mia_result, dict):
+        row["mia_correctness"] = mia_result.get("correctness")
+        row["mia_confidence"]  = mia_result.get("confidence")
+        row["mia_entropy"]     = mia_result.get("entropy")
+        row["mia_m_entropy"]   = mia_result.get("m_entropy")
+        row["mia_prob"]        = mia_result.get("prob")
     else:
-        # keep structure safely
-        try:
-            row["mia"] = json.dumps(mia_result, ensure_ascii=False)
-        except Exception:
-            row["mia"] = str(mia_result)
+        row["mia_correctness"] = mia_result
+        row["mia_confidence"]  = None
+        row["mia_entropy"]     = None
+        row["mia_m_entropy"]   = None
+        row["mia_prob"]        = None
 
     # Stable column order
     base_cols   = ["method", "forget_class", "train_retain_acc", "train_forget_acc", "test_retain_acc", "test_forget_acc"]
     class_cols  = [f"train_class{i}_acc" for i in range(10)] + [f"test_class{i}_acc" for i in range(10)]
-    tail_cols   = ["mia"]
-    field_order = base_cols + class_cols + tail_cols
+    mia_cols    = ["mia_correctness", "mia_confidence", "mia_entropy", "mia_m_entropy", "mia_prob"]
+    field_order = base_cols + class_cols + mia_cols
 
     os.makedirs(os.path.dirname(str(csv_path)), exist_ok=True)
     write_header = not os.path.exists(csv_path)
