@@ -123,7 +123,7 @@ def bad_teacher(ori_model, bad_teacher_model, good_teacher_model, unlearn_loader
         for key in keys:
             accs_dict[key].append(cur_accs_dict[key])
 
-        plot_unlearn_remain_acc_figure(epoch+1, accs_dict, experiment_path)
+        plot_unlearn_remain_acc_figure(epoch+1, accs_dict, experiment_path/f"lr{unlearn_rate}")
 
         _, a_forget = test(unlearn_model, loader_dict["test_forget"])
         _, a_retain = test(unlearn_model, loader_dict["test_remain"])

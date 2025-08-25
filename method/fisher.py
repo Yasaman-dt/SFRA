@@ -120,7 +120,7 @@ def fisher( ori_model, train_forget_loader, train_remain_loader,
     cur_accs_dict = evaluate_model_on_all_loaders(unlearn_model, loader_dict, eval_opt, logger)
     for key in keys:
         accs_dict[key].append(cur_accs_dict[key])
-    plot_unlearn_remain_acc_figure(1, accs_dict, experiment_path, plot_type="scatter")
+    plot_unlearn_remain_acc_figure(1, accs_dict, experiment_path/f"lr{alpha}", plot_type="scatter")
     
     _, a_forget = test(unlearn_model, loader_dict["test_forget"])
     _, a_retain = test(unlearn_model, loader_dict["test_remain"])
