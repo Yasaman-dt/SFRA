@@ -76,6 +76,15 @@ def wood_fisher(ori_model, train_forget_loader, train_remain_loader, train_remai
                 early_stop_patience=30,
                 ):
     logger.info(f"eval option {eval_opt}")
+
+    out_dir = Path(experiment_path) / f"lr{alpha:g}"   # :g avoids '1.0' vs '1'
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        Path(results_csv).parent.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass    
+    
     
     _, Aor = test(ori_model, loader_dict["test_remain"])
     best_aus = float("-inf")
@@ -147,7 +156,7 @@ def wood_fisher(ori_model, train_forget_loader, train_remain_loader, train_remai
     for key in keys:
         accs_dict[key].append(cur_accs_dict[key])
 
-    plot_unlearn_remain_acc_figure(1, accs_dict, experiment_path/f"lr{alpha}", plot_type="scatter")
+    plot_unlearn_remain_acc_figure(1, accs_dict, out_dir, plot_type="scatter")
 
     _, a_forget = test(unlearn_model, loader_dict["test_forget"])
     _, a_retain = test(unlearn_model, loader_dict["test_remain"])
