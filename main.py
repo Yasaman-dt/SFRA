@@ -644,9 +644,9 @@ if __name__ == '__main__':
     args_dict = vars(args)
     config = OmegaConf.create(args_dict)
     #OmegaConf.save(config, path / description / method_description / vice_description / "config.yaml")
-    OmegaConf.save(config, f"{path} / {description} / {method_description} / lr{args.unlearn_rate} / config.yaml")
+    OmegaConf.save(config, f"{path}/{description}/{method_description}/lr{args.unlearn_rate}/config.yaml")
     #logger, console_handler = log_utils.setup_logger(path / description / method_description / vice_description, logger_name="train_log")
-    logger, console_handler = log_utils.setup_logger(f"{path} / {description} / {method_description} / lr{args.unlearn_rate} /", logger_name="train_log")
+    logger, console_handler = log_utils.setup_logger(f"{path}/{description}/{method_description}/lr{args.unlearn_rate}/", logger_name="train_log")
     log_utils.enable_console_logging(logger, console_handler, True)
     
     unlearn_model = None
