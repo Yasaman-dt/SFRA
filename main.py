@@ -918,7 +918,7 @@ if __name__ == '__main__':
 
     base = Path("results")  # or Path(args.exps_dir).expanduser()
     results_csv_unlearn = base / args.method / (
-        f"{args.dataset_name}_{model_name}_unlearned_{args.method}_forget{forget_class}_model_metrics__lr{args.unlearn_rate}.csv"
+        f"{args.dataset_name}_{model_name}_unlearned_{args.method}_forget{forget_class}_model_metrics_lr{args.unlearn_rate}.csv"
     )
     
     # if 'ori_model' in locals() and ori_model is not None:
