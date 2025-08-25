@@ -92,7 +92,7 @@ def fisher( ori_model, train_forget_loader, train_remain_loader,
     
     _, Aor = test(ori_model, loader_dict["test_remain"])
     best_aus = float("-inf")
-    best_path = experiment_path / "ckpt_best_by_aus.pth"        
+    best_path = experiment_path / f"lr{alpha}/ckpt_best_by_aus.pth"       
     best_state = None
     epochs_since_improve = 0
 

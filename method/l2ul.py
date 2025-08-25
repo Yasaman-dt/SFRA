@@ -71,7 +71,7 @@ def l2ul_adv(ori_model, train_forget_loader, num_classes,
     
     _, Aor = test(ori_model, loader_dict["test_remain"])
     best_aus = float("-inf")
-    best_path = experiment_path / "ckpt_best_by_aus.pth"        
+    best_path = experiment_path / f"lr{unlearn_rate}/ckpt_best_by_aus.pth"        
     best_state = None
     epochs_since_improve = 0
 
