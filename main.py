@@ -641,6 +641,9 @@ if __name__ == '__main__':
     create_dir(path / description)
     create_dir(path / description / method_description)
     #create_dir(path / description / method_description / vice_description)
+    lr_dir = path / description / method_description / f"lr{args.unlearn_rate}"
+    create_dir(lr_dir)
+
     args_dict = vars(args)
     config = OmegaConf.create(args_dict)
     #OmegaConf.save(config, path / description / method_description / vice_description / "config.yaml")
