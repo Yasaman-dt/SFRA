@@ -103,7 +103,7 @@ def run_for_dataset(
     forget_classes: list[int] | None,
 ):
     out_csv_dir.mkdir(parents=True, exist_ok=True)
-    results_csv = out_csv_dir / f"results_original_{dataset_name}_{model_name}.csv"
+    results_csv = out_csv_dir / f"original/{dataset_name}_{model_name}_original_model_metrics.csv"
 
     # ---- Determinism ----
     seed = 0
