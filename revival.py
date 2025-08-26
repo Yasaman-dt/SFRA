@@ -18,101 +18,183 @@ from utils import (
 from trainer import *  # assumes load_model is here
 import random
 import math
+from copy import deepcopy
+from method.utils import *
+from pathlib import Path
 
+# ------------------ Argparse ------------------
+import argparse
 
-# # ------------------ Argparse ------------------
-# parser.add_argument('--method', type=str, default='original', help='Unlearning method to evaluate (e.g., original, retrained, FT, etc.)')
-# parser.add_argument('--model', type=str, default='resnet18', help='Model name (e.g., resnet18, vit, etc.)')
-# parser.add_argument('--dataset', type=str)
-# parser.add_argument('--lr', type=float)
+parser = argparse.ArgumentParser("Class unlearning revival")
+parser.add_argument('--method', type=str, default='original',
+                    choices=['original','retrained','random_label','finetune','gradient_ascent',
+                             'boundary_shrink','boundary_expand','l2ul_adv','fisher','wood_fisher','delete'])
+# accept both --model and --model_name, store in model_name
+parser.add_argument('--model', '--model_name', dest='model_name', type=str, default='resnet18')
+parser.add_argument('--dataset', type=str, required=True)
+parser.add_argument('--lr', type=float, default=5e-5)
+parser.add_argument('--epochs', type=int, default=50)
+args = parser.parse_args()
 
-# args = parser.parse_args()
+method       = args.method
+model_name   = args.model_name
+dataset_name = args.dataset
+lr           = args.lr
+epochs       = args.epochs
 
-# method = args.method
-# model_name = args.model
-# dataset_name = args.dataset
-# lr = args.lr
+# set num_classes from dataset
+NUM_CLASSES = {'cifar10': 10, 'cifar100': 100, 'tinyimagenet': 200, 'imagenet': 1000}
+try:
+    num_classes = NUM_CLASSES[dataset_name.lower()]
+except KeyError:
+    raise ValueError(f"Unknown dataset '{dataset_name}'. Add it to NUM_CLASSES.")
+
 
 # ------------------ Load Pre-Trained ResNet-18 and Run the Function ------------------
 DIR = "/export/livia/home/vision/Zdehghani/classification/exps"
 
-dataset_name = "cifar10"
-model_name = "resnet18"
-num_classes = 10
-method="retrained"  #method: random_label, finetune, gradient_ascent, boundary_shrink, boundary_expand, l2ul_adv, fisher, wood_fisher, delete
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 seed=42
-lr = 5e-5
-forget_class = 0
-checkpoint_folder = f"{dataset_name}_{model_name}_forgetcls{forget_class}/{method}"
+
+#dataset_name = "cifar10"
+#model_name = "resnet18"
+#num_classes = 10
+#method="boundary_shrink"  #method: random_label, finetune, gradient_ascent, boundary_shrink, boundary_expand, l2ul_adv, fisher, wood_fisher, delete
+#lr = 5e-05
+#forget_class = 0
+#epochs = 50
 
 save_dir1 = os.path.join(DIR, "tsne/tsne_embedding")
 save_dir2 = os.path.join(DIR, "tsne/tsne_prob")
 os.makedirs(save_dir1, exist_ok=True)
 os.makedirs(save_dir2, exist_ok=True)
 
-
-         
-print(f"  - Forget class {forget_class}")
-
-if method == 'original':
-    checkpoint_path_model = f"{DIR}/test_pretrained_model/{dataset_name}_{model_name}_original_model.pth"
-    
-elif method == 'retrained':
-    checkpoint_path_model = f"{DIR}/test_pretrained_model/{dataset_name}_{model_name}_retrain_forgetcls{forget_class}_model.pth"
-
-else:
-    checkpoint_path_model = f"{DIR}/{dataset_name}_{model_name}_forgetcls{forget_class}/{method}/lr{lr}/ckpt_best_by_aus.pth"
-
-
-model = load_model(checkpoint_path_model, model_name, num_classes)
-model.to(device).eval()
-
-
-
-# --- determinism ---
-seed = 0
-random.seed(seed); np.random.seed(seed); torch.manual_seed(seed)
-if torch.cuda.is_available():
-    torch.cuda.manual_seed_all(seed)
-torch.backends.cudnn.benchmark = False
-torch.backends.cudnn.deterministic = True
-g = torch.Generator(device="cpu").manual_seed(seed)
-
-# --- transforms & datasets ---
-wo_dataaug = False
-transform_train, transform_test = get_transforms(dataset_name, model_name, wo_dataaug=wo_dataaug)
-trainset, testset = get_dataset(dataset_name, transform_train, transform_test)
-
-# --- base loaders (with augmentation on train) ---
-batch_size_real = 256
-num_workers = 8
-all_train_loader, all_test_loader = get_dataloader(
-    trainset, testset, batch_size=batch_size_real, num_workers=num_workers
+AGG_CSV_DIR = os.path.join("results", method)
+AGG_CSV_PATH = os.path.join(
+    AGG_CSV_DIR,
+    f"{dataset_name}_{model_name}_unlearned_{method}_revival_by_forget_class.csv"
 )
+os.makedirs(AGG_CSV_DIR, exist_ok=True)
 
-# --- deterministic train-eval loader (NO AUG, no shuffle) ---
-trainset_eval = copy.copy(trainset)
-trainset_eval.transform = transform_test
-all_train_loader = DataLoader(
-    trainset_eval,
-    batch_size=batch_size_real, shuffle=False, drop_last=False,
-    num_workers=num_workers, pin_memory=True, generator=g
-)
 
-# --- retain/forget splits for the chosen forget_class ---
-# one-vs-all: pass [forget_class]
-(
-    train_fgt_loader, train_retain_loader,
-    test_fgt_loader,  test_retain_loader,
-    repair_class_loader,
-    train_fgt_idx, train_retain_idx,
-    test_fgt_idx,  test_retain_idx,
-) = get_unlearn_loader(
-    trainset, testset, [forget_class],
-    batch_size=batch_size_real, num_workers=num_workers, num_forget=float("inf")
-)
 
+COLUMNS = [
+    "forget_class", "dataset", "model", "method", "lr",
+    "epoch", "syn_train_loss", "syn_train_acc",
+    "syn_total", "syn_retain", "syn_forget",
+    "all_train", "all_test",
+    "train_fgt", "train_retain", "test_fgt", "test_retain",
+]
+
+def append_best_for_class(forget_class: int, best_row: dict):
+    """
+    Append exactly ONE row per class with a fixed schema.
+    """
+    if best_row is None:
+        print(f"[AGG] No best row to append for class {forget_class}.")
+        return
+
+    row = {
+        "forget_class": int(forget_class),
+        "dataset": dataset_name,
+        "model": model_name,
+        "method": method,
+        "lr": lr,
+        **best_row,  # expects keys like epoch, syn_* , all_*, train_*, test_*
+    }
+
+    # Enforce column order; missing keys become NaN
+    df = pd.DataFrame([row], columns=COLUMNS)
+
+    header_needed = not os.path.exists(AGG_CSV_PATH)
+
+    METRIC_COLS = [
+        "syn_train_loss", "syn_train_acc",
+        "syn_total", "syn_retain", "syn_forget",
+        "all_train", "all_test",
+        "train_fgt", "train_retain", "test_fgt", "test_retain",
+    ]
+
+    # after df = pd.DataFrame([row], columns=COLUMNS)
+    df[METRIC_COLS] = df[METRIC_COLS].apply(pd.to_numeric, errors="coerce").round(3)
+
+    df.to_csv(
+        AGG_CSV_PATH,
+        mode="a",
+        header=header_needed,
+        index=False,
+        float_format="%.3f"
+    )
+
+    print(f"[AGG] Appended best row for class {forget_class} -> {AGG_CSV_PATH}")
+
+
+def checkpoint_for(method, dataset_name, model_name, forget_class, lr, base_dir):
+    if method == 'original':
+        return f"{base_dir}/test_pretrained_model/{dataset_name}_{model_name}_original_model.pth"
+    elif method == 'retrained':
+        return f"{base_dir}/test_pretrained_model/{dataset_name}_{model_name}_retrain_forgetcls{forget_class}_model.pth"
+    else:
+        return f"{base_dir}/{dataset_name}_{model_name}_forgetcls{forget_class}/{method}/lr{lr}/ckpt_best_by_aus.pth"
+
+
+def make_feature_extractor(net, num_classes):
+    """
+    Returns a copy of `net` with the final classification head removed,
+    so its forward(x) returns the pre-FC embedding.
+    Works for torchvision resnet-style models and most nets that end in nn.Linear.
+    """
+    feat_net = deepcopy(net).eval().to(device)
+    # common case: torchvision resnet has attribute 'fc'
+    if hasattr(feat_net, "fc") and isinstance(feat_net.fc, nn.Linear) and feat_net.fc.out_features == num_classes:
+        feat_net.fc = nn.Identity()
+        return feat_net
+
+    # generic fallback: replace the last nn.Linear (with out_features==num_classes) by Identity
+    last_linear = None
+    for name, m in reversed(list(feat_net.named_modules())):
+        if isinstance(m, nn.Linear) and m.out_features == num_classes:
+            last_linear = name
+            break
+    if last_linear is None:
+        raise RuntimeError("Cannot find final Linear layer to strip for feature extractor.")
+    # surgically replace that module with Identity
+    def set_module(root, dotted, new):
+        parts = dotted.split(".")
+        parent = root
+        for p in parts[:-1]:
+            parent = getattr(parent, p)
+        setattr(parent, parts[-1], new)
+    set_module(feat_net, last_linear, nn.Identity())
+    return feat_net
+
+
+
+# ---- one-time embedding pass + fast embedding loaders ----
+
+
+def make_emb_loader(x, y, bs=4096, shuffle=False, num_workers=4):
+    ds  = TensorDataset(x, y)                 # x,y are CPU tensors now
+    return DataLoader(
+        ds, batch_size=bs, shuffle=shuffle, drop_last=False,
+        pin_memory=(device == 'cuda'),        # OK: pin CPU → faster H2D
+        num_workers=num_workers,
+        persistent_workers=True,
+        prefetch_factor=4
+    )
+
+
+
+@torch.inference_mode()
+def eval_accuracy_on_emb_loader(fc, loader, device):
+    total, correct = 0, 0
+    for x, y in loader:
+        x = x.to(device, non_blocking=True)
+        y = y.to(device, non_blocking=True)
+        logits = fc(x)
+        correct += (logits.argmax(dim=1) == y).sum().item()
+        total   += y.numel()
+    return 100.0 * correct / max(total, 1)
 
 
 # ------------------ Synthetic pre-FC embeddings + selection (retain-only forget set) ------------------
@@ -121,6 +203,8 @@ def _get_final_linear(model, num_classes):
         if isinstance(module, nn.Linear) and module.out_features == num_classes:
             return module
     raise RuntimeError("Could not find final Linear layer with out_features == num_classes.")
+
+
 
 
 @torch.no_grad()
@@ -160,7 +244,7 @@ def _sample_predicted_as_class(
 
 def build_synthetic_embeddings_and_splits(
     model, num_classes, forget_class, device,
-    per_class=1000, retain_top_k=90, per_retain_for_forget=10, loader_batch_size=256
+    per_class, retain_top_k, per_retain_for_forget, loader_batch_size=256
 ):
     fc = _get_final_linear(model, num_classes)
     emb_dim = fc.in_features
@@ -202,10 +286,10 @@ def build_synthetic_embeddings_and_splits(
     forget_feats  = torch.cat(forget_feats_list, dim=0)
     forget_labels = torch.full((forget_feats.shape[0],), forget_class, device=device, dtype=torch.long)
 
-    retain_ds = TensorDataset(retain_feats, retain_labels)
-    forget_ds = TensorDataset(forget_feats, forget_labels)
+    retain_ds = TensorDataset(retain_feats.cpu(), retain_labels.cpu())
+    forget_ds  = TensorDataset(forget_feats.cpu(),  forget_labels.cpu())
     retain_loader = DataLoader(retain_ds, batch_size=loader_batch_size, shuffle=True, drop_last=False)
-    forget_loader = DataLoader(forget_ds, batch_size=loader_batch_size, shuffle=True, drop_last=False)
+    forget_loader  = DataLoader(forget_ds,  batch_size=loader_batch_size, shuffle=True, drop_last=False)
 
     summary = {
         "emb_dim": emb_dim,
@@ -223,72 +307,12 @@ def build_synthetic_embeddings_and_splits(
         "summary": summary
     }
 
-
-
-
-
-# ---- run it ----
-synth = build_synthetic_embeddings_and_splits(
-    model=model,
-    num_classes=num_classes,
-    forget_class=forget_class,
-    device=device,
-    per_class=1000,
-    retain_top_k=180,
-    per_retain_for_forget=20,   # 10 from each retain class → e.g., 9*10 = 90 total for CIFAR-10
-    loader_batch_size=256,
-)
-
-print("Synthetic selection summary:", synth["summary"])
-# Access: synth["retain_loader"], synth["forget_loader"], etc.
-
-# === after you build `synth` ===
-syn_retain_eval_loader = DataLoader(
-    TensorDataset(synth["retain_feats"], synth["retain_labels"]),
-    batch_size=1024, shuffle=False, drop_last=False
-)
-syn_forget_eval_loader = DataLoader(
-    TensorDataset(synth["forget_feats"], synth["forget_labels"]),
-    batch_size=1024, shuffle=False, drop_last=False
-)
-n_syn_ret = len(syn_retain_eval_loader.dataset)
-n_syn_fgt = len(syn_forget_eval_loader.dataset)
-
-# (optional) keep a history list
-metrics_history = []
-
-
-
-def _get_final_linear(model, num_classes):
-    for _, m in reversed(list(model.named_modules())):
-        if isinstance(m, nn.Linear) and m.out_features == num_classes:
-            return m
-    raise RuntimeError("No final nn.Linear with out_features == num_classes found.")
-
-# 1) Freeze backbone; train only FC
-for p in model.parameters():
-    p.requires_grad = False
-fc = _get_final_linear(model, num_classes)
-for p in fc.parameters():
-    p.requires_grad = True
-model.eval()  # backbone is frozen; we won't backprop through it
-
-# 2) Train set from synthetic data (retain + forget)
-train_feats = torch.cat([synth["retain_feats"], synth["forget_feats"]], dim=0)
-train_labels = torch.cat([synth["retain_labels"], synth["forget_labels"]], dim=0)
-train_loader_syn = DataLoader(
-    list(zip(train_feats, train_labels)), batch_size=256, shuffle=True, drop_last=False
-)
-
-criterion = nn.CrossEntropyLoss()
-optimizer = optim.Adam(fc.parameters(), lr=1e-2, weight_decay=1e-4)
-
 @torch.no_grad()
 def eval_accuracy_on_loader(model, fc, loader, device):
     """
     Works with loaders that yield either:
-      - (images, labels): runs full model forward
-      - (pre_fc_embeddings, labels): applies fc directly
+    - (images, labels): runs full model forward
+    - (pre_fc_embeddings, labels): applies fc directly
     """
     model.eval()
     total, correct = 0, 0
@@ -311,143 +335,234 @@ def eval_accuracy_on_loader(model, fc, loader, device):
     return 100.0 * correct / max(total, 1)
 
 
-# ----- Baseline BEFORE any training (epoch 0) -----
-fc.eval()
+
+# --- determinism ---
+seed = 0
+random.seed(seed); np.random.seed(seed); torch.manual_seed(seed)
+if torch.cuda.is_available():
+    torch.cuda.manual_seed_all(seed)
+torch.backends.cudnn.benchmark = False
+torch.backends.cudnn.deterministic = True
+g = torch.Generator(device="cpu").manual_seed(seed)
+
+for forget_class in range(num_classes):
+    print(f"\n================= FORGET CLASS {forget_class} =================")
 
 
-# where to save the best revival metrics
-best_csv_dir = os.path.join("results", method)
-best_csv_path = os.path.join(
-    best_csv_dir,
-    f"{dataset_name}_{model_name}_unlearned_{method}_revival.csv"
-)
-os.makedirs(best_csv_dir, exist_ok=True)
+    # per-class experiment folder
+    experiment_path = Path(f"results/{method}/plots/forget_class_{forget_class}")
+    experiment_path.mkdir(parents=True, exist_ok=True)
 
-best_test_fgt = -math.inf
-best_train_fgt = -math.inf
-best_row = None
+    # keep curves from epoch 0 baseline onward
+    accs_curves = {
+        "train_forget": [],  # %
+        "test_forget":  [],
+        "train_remain": [],
+        "test_remain":  [],
+    }
 
+    ckpt = checkpoint_for(method, dataset_name, model_name, forget_class, lr, DIR)
+    model = load_model(ckpt, model_name, num_classes).to(device).eval()
 
+    # --- transforms & datasets ---
+    wo_dataaug = False
+    transform_train, transform_test = get_transforms(dataset_name, model_name, wo_dataaug=wo_dataaug)
+    trainset, testset = get_dataset(dataset_name, transform_train, transform_test)
 
-def save_best_revival_result(row_dict):
-    """
-    Keep the row with the highest test_fgt.
-    Break ties with higher train_fgt.
-    Save the single best row to CSV every time it improves.
-    """
-    global best_test_fgt, best_train_fgt, best_row
-    test_fgt = row_dict.get("test_fgt", float("-inf"))
-    train_fgt = row_dict.get("train_fgt", float("-inf"))
-
-    is_better = (test_fgt > best_test_fgt) or (
-        test_fgt == best_test_fgt and train_fgt > best_train_fgt
+    # --- base loaders (with augmentation on train) ---
+    batch_size_real = 256
+    num_workers = 8
+    all_train_loader, all_test_loader = get_dataloader(
+        trainset, testset, batch_size=batch_size_real, num_workers=num_workers
     )
-    if is_better:
-        best_test_fgt = test_fgt
-        best_train_fgt = train_fgt
-        best_row = row_dict.copy()
-        # write single-row CSV
-        pd.DataFrame([best_row]).to_csv(best_csv_path, index=False)
-        print(f"[BEST UPDATE] Saved best revival to {best_csv_path} | "
-              f"test_fgt={test_fgt:.2f} train_fgt={train_fgt:.2f}")
+
+    # --- deterministic train-eval loader (NO AUG, no shuffle) ---
+    trainset_eval = copy.copy(trainset)
+    trainset_eval.transform = transform_test
+    all_train_loader = DataLoader(
+        trainset_eval,
+        batch_size=batch_size_real, shuffle=False, drop_last=False,
+        num_workers=num_workers, pin_memory=True, generator=g
+    )
+
+
+    # --- retain/forget splits for the chosen forget_class ---
+    # one-vs-all: pass [forget_class]
+    (
+        train_fgt_loader, train_retain_loader,
+        test_fgt_loader,  test_retain_loader,
+        repair_class_loader,
+        train_fgt_idx, train_retain_idx,
+        test_fgt_idx,  test_retain_idx,
+    ) = get_unlearn_loader(
+        trainset, testset, [forget_class],
+        batch_size=batch_size_real, num_workers=num_workers, num_forget=float("inf")
+    )
+
+
+    feature_model = make_feature_extractor(model, num_classes)
+    feature_model.eval()
+
+    @torch.inference_mode()
+    def embed_loader_to_tensor(loader):
+        feats, labels = [], []
+        for x, y in loader:
+            x = x.to(device, non_blocking=True)
+            f = feature_model(x)                   
+            feats.append(f.detach().cpu())          
+            labels.append(y.cpu())                  
+        return torch.cat(feats, dim=0), torch.cat(labels, dim=0)
 
 
 
-# synthetic eval
-acc_syn_ret   = eval_accuracy_on_loader(model, fc, syn_retain_eval_loader, device)
-acc_syn_fgt   = eval_accuracy_on_loader(model, fc, syn_forget_eval_loader, device)
-acc_syn_total = (acc_syn_ret * n_syn_ret + acc_syn_fgt * n_syn_fgt) / (n_syn_ret + n_syn_fgt)
+    # ---- embed each real loader ONCE ----
+    all_train_feats, all_train_labels = embed_loader_to_tensor(all_train_loader)
+    all_test_feats,  all_test_labels  = embed_loader_to_tensor(all_test_loader)
 
-# real loaders eval
-with torch.no_grad():
-    acc_all_train    = eval_accuracy_on_loader(model, fc, all_train_loader,    device)
-    acc_all_test     = eval_accuracy_on_loader(model, fc, all_test_loader,     device)
-    acc_train_fgt    = eval_accuracy_on_loader(model, fc, train_fgt_loader,    device)
-    acc_train_retain = eval_accuracy_on_loader(model, fc, train_retain_loader, device)
-    acc_test_fgt     = eval_accuracy_on_loader(model, fc, test_fgt_loader,     device)
-    acc_test_retain  = eval_accuracy_on_loader(model, fc, test_retain_loader,  device)
+    train_fgt_feats, train_fgt_labels = embed_loader_to_tensor(train_fgt_loader)
+    train_ret_feats, train_ret_labels = embed_loader_to_tensor(train_retain_loader)
+    test_fgt_feats,  test_fgt_labels  = embed_loader_to_tensor(test_fgt_loader)
+    test_ret_feats,  test_ret_labels  = embed_loader_to_tensor(test_retain_loader)
 
-print(
-    f"[Epoch 00] "
-    f"syn_train_loss=NA syn_train_acc=NA | "
-    f"syn_total={acc_syn_total:.2f}% syn_ret={acc_syn_ret:.2f}% syn_fgt={acc_syn_fgt:.2f}% | "
-    f"all_train={acc_all_train:.2f}% all_test={acc_all_test:.2f}% | "
-    f"train_fgt={acc_train_fgt:.2f}% train_ret={acc_train_retain:.2f}% | "
-    f"test_fgt={acc_test_fgt:.2f}% test_ret={acc_test_retain:.2f}%"
-)
+    # (optional) move long-lived cached embeddings to CPU to free GPU RAM
+    # all_train_feats = all_train_feats.cpu(); all_test_feats = all_test_feats.cpu()
+    # ... same for the rest
 
-metrics_history.append({
-    "epoch": 0,
-    "syn_train_loss": None,
-    "syn_train_acc": None,
-    "syn_total": float(acc_syn_total),
-    "syn_retain": float(acc_syn_ret),
-    "syn_forget": float(acc_syn_fgt),
-    "all_train": float(acc_all_train),
-    "all_test": float(acc_all_test),
-    "train_fgt": float(acc_train_fgt),
-    "train_retain": float(acc_train_retain),
-    "test_fgt": float(acc_test_fgt),
-    "test_retain": float(acc_test_retain),
-})
-save_best_revival_result(metrics_history[-1])
+    # ---- wrap as fast embedding loaders (no backbone in the loop) ----
+    all_train_emb_loader = make_emb_loader(all_train_feats, all_train_labels)
+    all_test_emb_loader  = make_emb_loader(all_test_feats,  all_test_labels)
+    train_fgt_emb_loader = make_emb_loader(train_fgt_feats, train_fgt_labels)
+    train_ret_emb_loader = make_emb_loader(train_ret_feats, train_ret_labels)
+    test_fgt_emb_loader  = make_emb_loader(test_fgt_feats,  test_fgt_labels)
+    test_ret_emb_loader  = make_emb_loader(test_ret_feats,  test_ret_labels)
 
 
 
-# 3) Train only the FC for a few epochs; evaluate on real loaders each epoch
-epochs = 50
-for epoch in range(1, epochs + 1):
-    fc.train()
-    running_loss, seen, right = 0.0, 0, 0
-    for feats, targets in train_loader_syn:
-        feats = feats.to(device)
-        targets = targets.to(device)
 
-        logits = fc(feats)
-        loss = criterion(logits, targets)
 
-        optimizer.zero_grad(set_to_none=True)
-        loss.backward()
-        optimizer.step()
+    # ---- run it ----
+    synth = build_synthetic_embeddings_and_splits(
+        model=model,
+        num_classes=num_classes,
+        forget_class=forget_class,
+        device=device,
+        per_class=5000,
+        retain_top_k=900,
+        per_retain_for_forget=100,   # 10 from each retain class → e.g., 9*10 = 90 total for CIFAR-10
+        loader_batch_size=256,
+    )
 
-        running_loss += loss.item() * feats.size(0)
-        preds = logits.argmax(dim=1)
-        right += (preds == targets).sum().item()
-        seen += targets.numel()
+    print("Synthetic selection summary:", synth["summary"])
+    # Access: synth["retain_loader"], synth["forget_loader"], etc.
 
-    train_loss = running_loss / max(seen, 1)
-    train_acc  = 100.0 * right / max(seen, 1)
+    # === after you build `synth` ===
+    syn_retain_eval_loader = DataLoader(TensorDataset(synth["retain_feats"].cpu(),
+                                                    synth["retain_labels"].cpu()),
+                                        batch_size=1024, shuffle=False, drop_last=False)
+    syn_forget_eval_loader = DataLoader(TensorDataset(synth["forget_feats"].cpu(),
+                                                    synth["forget_labels"].cpu()),
+                                        batch_size=1024, shuffle=False, drop_last=False)
 
-    # ----- Synthetic eval (retain / forget / total) -----
-    acc_syn_ret = eval_accuracy_on_loader(model, fc, syn_retain_eval_loader, device)
-    acc_syn_fgt = eval_accuracy_on_loader(model, fc, syn_forget_eval_loader, device)
+    n_syn_ret = len(syn_retain_eval_loader.dataset)
+    n_syn_fgt = len(syn_forget_eval_loader.dataset)
+
+    # (optional) keep a history list
+    metrics_history = []
+
+
+
+
+    # 1) Freeze backbone; train only FC
+    for p in model.parameters():
+        p.requires_grad = False
+    fc = _get_final_linear(model, num_classes)
+    for p in fc.parameters():
+        p.requires_grad = True
+    model.eval()  # backbone is frozen; we won't backprop through it
+
+    # 2) Train set from synthetic data (retain + forget)
+    train_feats = torch.cat([synth["retain_feats"], synth["forget_feats"]], dim=0)
+    train_labels = torch.cat([synth["retain_labels"], synth["forget_labels"]], dim=0)
+    train_loader_syn = DataLoader(
+        list(zip(train_feats, train_labels)), batch_size=256, shuffle=True, drop_last=False
+    )
+
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.Adam(fc.parameters(), lr=1e-2, weight_decay=1e-4)
+
+
+    # ----- Baseline BEFORE any training (epoch 0) -----
+    fc.eval()
+
+
+
+    # --- keep this once, above the function (replace your current `best = {...}`) ---
+    best = {"key": (float("-inf"), float("-inf"), float("-inf"), float("-inf")), "row": None}
+
+    def _safe_get(row, k):
+        v = row.get(k, float("-inf"))
+        return v if (isinstance(v, (int, float)) and v == v) else float("-inf")
+
+    def _key_from_row(row):
+        # Order of priority for “best”: test_fgt, then test_retain, then train_fgt, then train_retain
+        return (
+            float(_safe_get(row, "test_fgt")),
+            float(_safe_get(row, "test_retain")),
+            float(_safe_get(row, "train_fgt")),
+            float(_safe_get(row, "train_retain")),
+        )
+
+
+    def save_best_revival_result(row_dict):
+        """
+        Update in-memory 'best' by (test_fgt, test_retain, train_fgt, train_retain).
+        We only WRITE TO DISK ONCE per forget_class, after the epoch loop.
+        """
+        key = (
+            float(_safe_get(row_dict, "test_fgt")),
+            float(_safe_get(row_dict, "test_retain")),
+            float(_safe_get(row_dict, "train_fgt")),
+            float(_safe_get(row_dict, "train_retain")),
+        )
+        if key > best["key"]:  # lexicographic tuple comparison
+            best["key"] = key
+            best["row"] = row_dict.copy()
+
+    # synthetic eval
+    acc_syn_ret   = eval_accuracy_on_loader(model, fc, syn_retain_eval_loader, device)
+    acc_syn_fgt   = eval_accuracy_on_loader(model, fc, syn_forget_eval_loader, device)
     acc_syn_total = (acc_syn_ret * n_syn_ret + acc_syn_fgt * n_syn_fgt) / (n_syn_ret + n_syn_fgt)
 
-
-
-    # ----- Eval on your real loaders (images OR real-embeddings) -----
+    # real loaders eval
     with torch.no_grad():
-        acc_all_train   = eval_accuracy_on_loader(model, fc, all_train_loader,   device)
-        acc_all_test    = eval_accuracy_on_loader(model, fc, all_test_loader,    device)
-        acc_train_fgt   = eval_accuracy_on_loader(model, fc, train_fgt_loader,   device)
-        acc_train_retain= eval_accuracy_on_loader(model, fc, train_retain_loader,device)
-        acc_test_fgt    = eval_accuracy_on_loader(model, fc, test_fgt_loader,    device)
-        acc_test_retain = eval_accuracy_on_loader(model, fc, test_retain_loader, device)
+        # acc_all_train    = eval_accuracy_on_loader(model, fc, all_train_loader,    device)
+        # acc_all_test     = eval_accuracy_on_loader(model, fc, all_test_loader,     device)
+        # acc_train_fgt    = eval_accuracy_on_loader(model, fc, train_fgt_loader,    device)
+        # acc_train_retain = eval_accuracy_on_loader(model, fc, train_retain_loader, device)
+        # acc_test_fgt     = eval_accuracy_on_loader(model, fc, test_fgt_loader,     device)
+        # acc_test_retain  = eval_accuracy_on_loader(model, fc, test_retain_loader,  device)
+
+        acc_all_train    = eval_accuracy_on_emb_loader(fc, all_train_emb_loader,    device)
+        acc_all_test     = eval_accuracy_on_emb_loader(fc, all_test_emb_loader,     device)
+        acc_train_fgt    = eval_accuracy_on_emb_loader(fc, train_fgt_emb_loader,    device)
+        acc_train_retain = eval_accuracy_on_emb_loader(fc, train_ret_emb_loader,    device)
+        acc_test_fgt     = eval_accuracy_on_emb_loader(fc, test_fgt_emb_loader,     device)
+        acc_test_retain  = eval_accuracy_on_emb_loader(fc, test_ret_emb_loader,     device)
+
 
     print(
-        f"[Epoch {epoch:02d}] "
-        f"syn_train_loss={train_loss:.4f} syn_train_acc={train_acc:.2f}% | "
+        f"[Epoch 00] "
+        f"syn_train_loss=NA syn_train_acc=NA | "
         f"syn_total={acc_syn_total:.2f}% syn_ret={acc_syn_ret:.2f}% syn_fgt={acc_syn_fgt:.2f}% | "
         f"all_train={acc_all_train:.2f}% all_test={acc_all_test:.2f}% | "
         f"train_fgt={acc_train_fgt:.2f}% train_ret={acc_train_retain:.2f}% | "
         f"test_fgt={acc_test_fgt:.2f}% test_ret={acc_test_retain:.2f}%"
     )
 
-    # (optional) store metrics
     metrics_history.append({
-        "epoch": epoch,
-        "syn_train_loss": float(train_loss),
-        "syn_train_acc": float(train_acc),
+        "epoch": 0,
+        "syn_train_loss": None,
+        "syn_train_acc": None,
         "syn_total": float(acc_syn_total),
         "syn_retain": float(acc_syn_ret),
         "syn_forget": float(acc_syn_fgt),
@@ -458,13 +573,158 @@ for epoch in range(1, epochs + 1):
         "test_fgt": float(acc_test_fgt),
         "test_retain": float(acc_test_retain),
     })
-    save_best_revival_result(metrics_history[-1])
+
+    row0 = {
+        "epoch": 0,
+        "syn_train_loss": None,
+        "syn_train_acc": None,
+        "syn_total": float(acc_syn_total),
+        "syn_retain": float(acc_syn_ret),
+        "syn_forget": float(acc_syn_fgt),
+        "all_train": float(acc_all_train),
+        "all_test": float(acc_all_test),
+        "train_fgt": float(acc_train_fgt),
+        "train_retain": float(acc_train_retain),
+        "test_fgt": float(acc_test_fgt),
+        "test_retain": float(acc_test_retain),
+    }
+    best["row"] = row0.copy()
+    best["key"] = _key_from_row(row0)
 
 
-# (optional) save metrics
-if metrics_history:
-    os.makedirs(f"{DIR}/logs", exist_ok=True)
-    pd.DataFrame(metrics_history).to_csv(
-        f"{DIR}/logs/fc_syn_finetune_metrics_{dataset_name}_{model_name}_forget{forget_class}.csv",
-        index=False
-    )
+    # # map your naming: remain == retain
+    # accs_curves["train_forget"].append(float(acc_train_fgt) / 100.0)
+    # accs_curves["test_forget"].append(float(acc_test_fgt) / 100.0)
+    # accs_curves["train_remain"].append(float(acc_train_retain) / 100.0)
+    # accs_curves["test_remain"].append(float(acc_test_retain) / 100.0)
+
+    # plot_unlearn_remain_acc_figure(
+    #     epoch=0,
+    #     accs_dict=accs_curves,
+    #     experiment_path=experiment_path,
+    #     plot_type="plot",  # or "scatter"
+    # )
+    best_test_fgt = acc_test_fgt
+    best_train_fgt = acc_train_fgt
+    best_test_retain = acc_test_retain
+    best_train_retain = acc_train_retain
+    best_row = None
+    # 3) Train only the FC for a few epochs; evaluate on real loaders each epoch
+    for epoch in range(1, epochs + 1):
+        fc.train()
+        running_loss, seen, right = 0.0, 0, 0
+        for feats, targets in train_loader_syn:
+            feats = feats.to(device)
+            targets = targets.to(device)
+
+            logits = fc(feats)
+            loss = criterion(logits, targets)
+
+            optimizer.zero_grad(set_to_none=True)
+            loss.backward()
+            optimizer.step()
+
+            running_loss += loss.item() * feats.size(0)
+            preds = logits.argmax(dim=1)
+            right += (preds == targets).sum().item()
+            seen += targets.numel()
+
+        train_loss = running_loss / max(seen, 1)
+        train_acc  = 100.0 * right / max(seen, 1)
+
+        # ----- Synthetic eval (retain / forget / total) -----
+        acc_syn_ret = eval_accuracy_on_loader(model, fc, syn_retain_eval_loader, device)
+        acc_syn_fgt = eval_accuracy_on_loader(model, fc, syn_forget_eval_loader, device)
+        acc_syn_total = (acc_syn_ret * n_syn_ret + acc_syn_fgt * n_syn_fgt) / (n_syn_ret + n_syn_fgt)
+
+
+        # ----- Eval on your real loaders (images OR real-embeddings) -----
+        with torch.no_grad():
+            # acc_all_train   = eval_accuracy_on_loader(model, fc, all_train_loader,   device)
+            # acc_all_test    = eval_accuracy_on_loader(model, fc, all_test_loader,    device)
+            # acc_train_fgt   = eval_accuracy_on_loader(model, fc, train_fgt_loader,   device)
+            # acc_train_retain= eval_accuracy_on_loader(model, fc, train_retain_loader,device)
+            # acc_test_fgt    = eval_accuracy_on_loader(model, fc, test_fgt_loader,    device)
+            # acc_test_retain = eval_accuracy_on_loader(model, fc, test_retain_loader, device)
+
+            acc_all_train    = eval_accuracy_on_emb_loader(fc, all_train_emb_loader,    device)
+            acc_all_test     = eval_accuracy_on_emb_loader(fc, all_test_emb_loader,     device)
+            acc_train_fgt    = eval_accuracy_on_emb_loader(fc, train_fgt_emb_loader,    device)
+            acc_train_retain = eval_accuracy_on_emb_loader(fc, train_ret_emb_loader,    device)
+            acc_test_fgt     = eval_accuracy_on_emb_loader(fc, test_fgt_emb_loader,     device)
+            acc_test_retain  = eval_accuracy_on_emb_loader(fc, test_ret_emb_loader,     device)
+
+
+        print(
+            f"[Epoch {epoch:02d}] "
+            f"syn_train_loss={train_loss:.4f} syn_train_acc={train_acc:.2f}% | "
+            f"syn_total={acc_syn_total:.2f}% syn_ret={acc_syn_ret:.2f}% syn_fgt={acc_syn_fgt:.2f}% | "
+            f"all_train={acc_all_train:.2f}% all_test={acc_all_test:.2f}% | "
+            f"train_fgt={acc_train_fgt:.2f}% train_ret={acc_train_retain:.2f}% | "
+            f"test_fgt={acc_test_fgt:.2f}% test_ret={acc_test_retain:.2f}%"
+        )
+
+
+        metrics_history.append({
+            "epoch": epoch,
+            "syn_train_loss": float(train_loss),
+            "syn_train_acc": float(train_acc),
+            "syn_total": float(acc_syn_total),
+            "syn_retain": float(acc_syn_ret),
+            "syn_forget": float(acc_syn_fgt),
+            "all_train": float(acc_all_train),
+            "all_test": float(acc_all_test),
+            "train_fgt": float(acc_train_fgt),
+            "train_retain": float(acc_train_retain),
+            "test_fgt": float(acc_test_fgt),
+            "test_retain": float(acc_test_retain),
+        })
+
+
+        row = {
+            "epoch": epoch,
+            "syn_train_loss": float(train_loss),
+            "syn_train_acc": float(train_acc),
+            "syn_total": float(acc_syn_total),
+            "syn_retain": float(acc_syn_ret),
+            "syn_forget": float(acc_syn_fgt),
+            "all_train": float(acc_all_train),
+            "all_test": float(acc_all_test),
+            "train_fgt": float(acc_train_fgt),
+            "train_retain": float(acc_train_retain),
+            "test_fgt": float(acc_test_fgt),
+            "test_retain": float(acc_test_retain),
+        }
+        key = _key_from_row(row)
+        if key > best["key"]:
+            best["key"] = key
+            best["row"] = row.copy()
+
+
+        # append as FRACTIONS
+        accs_curves["train_forget"].append(float(acc_train_fgt) / 100.0)
+        accs_curves["test_forget"].append(float(acc_test_fgt) / 100.0)
+        accs_curves["train_remain"].append(float(acc_train_retain) / 100.0)
+        accs_curves["test_remain"].append(float(acc_test_retain) / 100.0)
+
+        # re-plot; epoch must equal the length of your y-series (1..N)
+        epoch_for_plot = len(accs_curves["train_forget"])
+        plot_unlearn_remain_acc_figure(
+            epoch=epoch_for_plot,                      
+            accs_dict=accs_curves,
+            experiment_path=experiment_path,
+            plot_type="plot",
+        )
+
+    # # === AFTER the epoch loop finishes, write ONE best row for this forget_class ===
+    # best_csv_dir = os.path.join("results", method)
+    # best_csv_path = os.path.join(
+    #     best_csv_dir,
+    #     f"{dataset_name}_{model_name}_unlearned_{method}_revival.csv"
+    # )
+    # os.makedirs(best_csv_dir, exist_ok=True)
+
+    if best["row"] is not None:
+        append_best_for_class(forget_class, best["row"])
+    else:
+        print(f"[BEST PER CLASS] No best row found for forget_class={forget_class}.")
