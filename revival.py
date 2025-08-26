@@ -34,6 +34,22 @@ parser.add_argument('--model', '--model_name', dest='model_name', type=str, defa
 parser.add_argument('--dataset', type=str, required=True)
 parser.add_argument('--lr', type=float, default=5e-5)
 parser.add_argument('--epochs', type=int, default=50)
+parser.add_argument(
+    '--forget',
+    type=str,
+    default='all',
+    help=(
+        "Which class(es) to forget. Options:\n"
+        "  - 'all' (default) → run 0..num_classes-1\n"
+        "  - a single int, e.g. '7'\n"
+        "  - a comma list, e.g. '1,3,5'\n"
+        "  - a range, e.g. '2-6'\n"
+        "You can also combine comma lists and ranges: '0,2-4,7'"
+    )
+)
+
+
+
 args = parser.parse_args()
 
 method       = args.method
@@ -345,7 +361,38 @@ torch.backends.cudnn.benchmark = False
 torch.backends.cudnn.deterministic = True
 g = torch.Generator(device="cpu").manual_seed(seed)
 
-for forget_class in range(num_classes):
+def _parse_forget_arg(s: str, num_classes: int):
+    s = (s or 'all').strip().lower()
+    if s in ('all', '-1'):
+        return list(range(num_classes))
+
+    # allow "7", "1,3,5", "2-6", or combos like "0,2-4,7"
+    selected = set()
+    for part in s.split(','):
+        part = part.strip()
+        if not part:
+            continue
+        if '-' in part:
+            a, b = part.split('-', 1)
+            a, b = int(a), int(b)
+            if a > b:
+                a, b = b, a
+            for c in range(a, b + 1):
+                if 0 <= c < num_classes:
+                    selected.add(c)
+        else:
+            c = int(part)
+            if 0 <= c < num_classes:
+                selected.add(c)
+
+    if not selected:
+        raise ValueError(f"No valid classes parsed from --forget='{s}'. "
+                         f"Valid range is 0..{num_classes-1} or 'all'.")
+    return sorted(selected)
+
+forget_classes = _parse_forget_arg(args.forget, num_classes)
+
+for forget_class in forget_classes:
     print(f"\n================= FORGET CLASS {forget_class} =================")
 
 
