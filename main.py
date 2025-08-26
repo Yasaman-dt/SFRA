@@ -356,7 +356,7 @@ if __name__ == '__main__':
             gather_and_write_metrics_csv(
                 csv_path=str(results_csv),
                 model=retrain_model,
-                method="retrain",
+                method="retrained",
                 forget_class=forget_label,
                 train_retain_loader=train_remain_loader,
                 train_forget_loader=train_forget_loader,
@@ -370,7 +370,7 @@ if __name__ == '__main__':
             gather_and_write_metrics_csv(
                 csv_path=str(results_csv),
                 model=retrain_model,
-                method="retrain",
+                method="retrained",
                 forget_class=forget_class,
                 train_retain_loader=train_remain_loader,
                 train_forget_loader=train_forget_loader,
@@ -940,7 +940,7 @@ if __name__ == '__main__':
     #     gather_and_write_metrics_csv(
     #         csv_path=str(results_csv_retrain_scratch),
     #         model=retrain_model,
-    #         method="retrain",
+    #         method="retrained",
     #         forget_class=csv_forget,
     #         train_retain_loader=train_remain_loader,
     #         train_forget_loader=train_forget_loader,
