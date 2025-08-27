@@ -88,7 +88,7 @@ os.makedirs(save_dir2, exist_ok=True)
 AGG_CSV_DIR = os.path.join("results", method)
 AGG_CSV_PATH = os.path.join(
     AGG_CSV_DIR,
-    f"{dataset_name}_{model_name}_unlearned_{method}_revival_by_forget_class_{lr}.csv"
+    f"{dataset_name}_{model_name}_unlearned_{method}_revival_by_forget_class_lr{lr}.csv"
 )
 os.makedirs(AGG_CSV_DIR, exist_ok=True)
 
