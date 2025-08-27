@@ -397,7 +397,7 @@ for forget_class in forget_classes:
 
 
     # per-class experiment folder
-    experiment_path = Path(f"results/{method}/plots_{model_name}/forget_class_{forget_class}")
+    experiment_path = Path(f"results/{method}/plots_{model_name}_lr{lr}/forget_class_{forget_class}")
     experiment_path.mkdir(parents=True, exist_ok=True)
 
     # keep curves from epoch 0 baseline onward
