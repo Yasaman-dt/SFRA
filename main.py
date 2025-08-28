@@ -351,7 +351,7 @@ if __name__ == '__main__':
         print('\nretrain model acc:\n', test_each_classes(retrain_model, test_loader, num_classes))
         
         # --- write metrics row for RETRAIN (from-scratch) ---
-        results_csv = ckpt_path / f"{args.dataset_name}_{model_name}_retrain_forget{forget_class}_model_metrics.csv"
+        results_csv = ckpt_path / f"{args.dataset_name}_{model_name}_unlearned_retrained_forget{forget_class}_model_metrics.csv"
         if args.forget_id is not None:
             gather_and_write_metrics_csv(
                 csv_path=str(results_csv),
@@ -914,7 +914,7 @@ if __name__ == '__main__':
 
     results_csv_original = ckpt_path / f"{args.dataset_name}_{model_name}_original_model_metrics.csv"
 
-    results_csv_retrain_scratch = ckpt_path / f"{args.dataset_name}_{model_name}_retrain_forget{forget_class}_model_metrics.csv"
+    results_csv_retrain_scratch = ckpt_path / f"{args.dataset_name}_{model_name}_unlearned_retrained_forget{forget_class}_model_metrics.csv"
 
     base = Path("results")  # or Path(args.exps_dir).expanduser()
     results_csv_unlearn = base / args.method / (
