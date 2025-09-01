@@ -47,8 +47,12 @@ parser.add_argument(
         "You can also combine comma lists and ranges: '0,2-4,7'"
     )
 )
-
-
+parser.add_argument(
+    '--tpr', type=int, default=5000,
+    help='How many synthetic embeddings to *generate* per class before top-K filtering.'
+)
+parser.add_argument(
+    '--cpr', type=int, default=200)
 
 args = parser.parse_args()
 
@@ -57,6 +61,9 @@ model_name   = args.model_name
 dataset_name = args.dataset
 lr           = args.lr
 epochs       = args.epochs
+total_per_class = args.tpr 
+choose_per_retain_class_for_fgt = args.cpr           
+
 
 # set num_classes from dataset
 NUM_CLASSES = {'cifar10': 10, 'cifar100': 100, 'tinyimagenet': 200, 'imagenet': 1000}
@@ -161,12 +168,20 @@ def make_feature_extractor(net, num_classes):
     Works for torchvision resnet-style models and most nets that end in nn.Linear.
     """
     feat_net = deepcopy(net).eval().to(device)
-    # common case: torchvision resnet has attribute 'fc'
+
+    # Common fast-paths
     if hasattr(feat_net, "fc") and isinstance(feat_net.fc, nn.Linear) and feat_net.fc.out_features == num_classes:
         feat_net.fc = nn.Identity()
         return feat_net
+    if hasattr(feat_net, "head") and isinstance(feat_net.head, nn.Linear) and feat_net.head.out_features == num_classes:
+        feat_net.head = nn.Identity()
+        return feat_net
+    if hasattr(feat_net, "heads") and hasattr(feat_net.heads, "head") and \
+       isinstance(feat_net.heads.head, nn.Linear) and feat_net.heads.head.out_features == num_classes:
+        feat_net.heads.head = nn.Identity()
+        return feat_net
 
-    # generic fallback: replace the last nn.Linear (with out_features==num_classes) by Identity
+    # Generic fallback
     last_linear = None
     for name, m in reversed(list(feat_net.named_modules())):
         if isinstance(m, nn.Linear) and m.out_features == num_classes:
@@ -174,13 +189,14 @@ def make_feature_extractor(net, num_classes):
             break
     if last_linear is None:
         raise RuntimeError("Cannot find final Linear layer to strip for feature extractor.")
-    # surgically replace that module with Identity
+
     def set_module(root, dotted, new):
         parts = dotted.split(".")
         parent = root
         for p in parts[:-1]:
             parent = getattr(parent, p)
         setattr(parent, parts[-1], new)
+
     set_module(feat_net, last_linear, nn.Identity())
     return feat_net
 
@@ -486,16 +502,15 @@ for forget_class in forget_classes:
 
 
 
-
     # ---- run it ----
     synth = build_synthetic_embeddings_and_splits(
         model=model,
         num_classes=num_classes,
         forget_class=forget_class,
         device=device,
-        per_class=5000,
-        retain_top_k=900,
-        per_retain_for_forget=100,   # 10 from each retain class → e.g., 9*10 = 90 total for CIFAR-10
+        per_class=total_per_class,
+        retain_top_k=choose_per_retain_class_for_fgt*9,
+        per_retain_for_forget=choose_per_retain_class_for_fgt,   # 10 from each retain class → e.g., 9*10 = 90 total for CIFAR-10
         loader_batch_size=256,
     )
 
@@ -536,7 +551,13 @@ for forget_class in forget_classes:
 
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(fc.parameters(), lr=1e-2, weight_decay=1e-4)
-
+    # optimizer = optim.SGD(
+    #     fc.parameters(),
+    #     lr=1e-2,
+    #     momentum=0.9,
+    #     weight_decay=1e-4,
+    #     nesterov=True
+    # )
 
     # ----- Baseline BEFORE any training (epoch 0) -----
     fc.eval()
