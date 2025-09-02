@@ -107,8 +107,8 @@ def boundary_expand(ori_model, train_forget_loader,
         plot_unlearn_remain_acc_figure(epoch+1, accs_dict, experiment_path/f"lr{unlearn_rate}")
 
 
-        _, a_forget = test(unlearn_model, loader_dict["test_forget"])
-        _, a_retain = test(unlearn_model, loader_dict["test_remain"])
+        _, a_forget = test(unlearn_model, loader_dict["test_forget"], extra_class=1)
+        _, a_retain = test(unlearn_model, loader_dict["test_remain"], extra_class=1)
         aus = calculate_AUS(a_forget, a_retain, Aor)
         if aus > best_aus:
              best_aus = aus
