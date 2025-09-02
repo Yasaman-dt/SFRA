@@ -52,7 +52,7 @@ parser.add_argument(
     help='How many synthetic embeddings to *generate* per class before top-K filtering.'
 )
 parser.add_argument(
-    '--cpr', type=int, default=200)
+    '--cpr', type=int, default=100)
 
 args = parser.parse_args()
 
