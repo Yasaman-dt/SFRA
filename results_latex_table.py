@@ -14,8 +14,11 @@ methods = [
     "original", "retrained",
     "random_label", "finetune", "gradient_ascent",
     "boundary_shrink", "boundary_expand",
-    "l2ul_adv", "fisher", "wood_fisher", "delete"
+    "l2ul_adv", "l2ul_imp", "fisher", "wood_fisher", "delete",
+    "bad_teacher", "salun",
 ]
+
+
 
 MODELS   = ["resnet18", "vit-s-16", "swin-t", "vgg16"]
 
@@ -337,7 +340,10 @@ METHOD_ORDER = [
     "gradient_ascent",
     "random_label", 
     "boundary_shrink", "boundary_expand",
-    "l2ul_adv", "fisher", "wood_fisher", "delete"
+    "l2ul_adv", "l2ul_imp",
+    "fisher", "wood_fisher",
+    "bad_teacher", "salun",
+    "delete",
 ]
 PHASE_ORDER = ["forget", "revival"]  # non-original methods get these two rows
 
@@ -449,10 +455,13 @@ method_name_and_ref = {
     "boundary_shrink": r"Boundary Shrink \cite{chen2023boundary}",
     "boundary_expand": r"Boundary Expand \cite{chen2023boundary}",
     "scrub": r"SCRUB \cite{kurmanji2023towards}",
-    # "l2ul_adv": r"L2UL-Adv",
+    "l2ul_adv": r"Learn to Unlearn Adv \cite{cha2024learning}",
+    "l2ul_imp": r"Learn to Unlearn Adv+IMP \cite{cha2024learning}",
     # "fisher": r"Fisher",
     # "wood_fisher": r"WoodFisher",
     "delete": r"Delete \cite{zhou2025decoupled}",
+    "bad_teacher" : r"Bad Teacher \cite{chundawat2023can}",
+    "salun" : r"Saliency Unlearn \cite{fan2023salun}",
 }
 
 
