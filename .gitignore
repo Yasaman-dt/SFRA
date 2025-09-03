@@ -17,3 +17,6 @@ __pycache__/
 *.pt
 *.pth
 *.ckpt
+
+
+results
