@@ -14,14 +14,6 @@ from .delete import *
 from .salun import *
 from .bad_teacher import *
 
+from .l2ul import *
 
-try:
-    from .l2ul import *
-except ModuleNotFoundError as e:
-    if getattr(e, "name", "") == "advertorch":
-        print("[WARN] 'advertorch' not installed; L2UL disabled.")
-    else:
-        raise
-except ImportError as e:
-    # e.g., advertorch found but incompatible (zero_gradients missing)
-    print(f"[WARN] 'advertorch' incompatible ({e}); L2UL disabled.")
+

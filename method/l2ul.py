@@ -10,7 +10,74 @@ import tqdm
 import itertools
 
 
-from advertorch.attacks import L2PGDAttack
+#from advertorch.attacks import L2PGDAttack
+
+import torch
+import torch.nn.functional as F
+
+class L2PGDAttack:
+    def __init__(self, model, eps=0.4, eps_iter=0.1, nb_iter=10,
+                 rand_init=True, targeted=True, clip_min=None, clip_max=None):
+        self.model = model
+        self.eps = eps
+        self.eps_iter = eps_iter
+        self.nb_iter = nb_iter
+        self.rand_init = rand_init
+        self.targeted = targeted
+        self.clip_min = clip_min
+        self.clip_max = clip_max
+
+    @torch.no_grad()
+    def _project(self, delta):
+        # per-sample L2 projection to radius eps
+        b = delta.shape[0]
+        flat = delta.view(b, -1)
+        norms = flat.norm(p=2, dim=1, keepdim=True).clamp(min=1e-12)
+        factors = (self.eps / norms).clamp(max=1.0)
+        return (flat * factors).view_as(delta)
+
+    def perturb(self, x, y_target):
+        # Work with grads; we’ll turn them on manually
+        x_orig = x.detach()
+        if self.rand_init:
+            delta = torch.randn_like(x_orig)
+            delta = self._project(delta)
+        else:
+            delta = torch.zeros_like(x_orig)
+
+        delta.requires_grad_(True)
+
+        for _ in range(self.nb_iter):
+            x_adv = x_orig + delta
+            if self.clip_min is not None and self.clip_max is not None:
+                x_adv = x_adv.clamp_(self.clip_min, self.clip_max)
+
+            # forward with grads
+            logits = self.model(x_adv)
+            loss = F.cross_entropy(logits, y_target)
+
+            # targeted attack minimizes CE toward target;
+            # untargeted maximizes CE => flip sign
+            grad_sign = 1.0 if self.targeted else -1.0
+
+            # compute grad wrt x_adv
+            grad = torch.autograd.grad(grad_sign * loss, x_adv, retain_graph=False, create_graph=False)[0]
+
+            # normalized L2 step
+            b = grad.shape[0]
+            gflat = grad.view(b, -1)
+            gnorm = gflat.norm(p=2, dim=1).view(b, *([1] * (grad.dim() - 1))).clamp(min=1e-12)
+            step = grad / gnorm
+            with torch.no_grad():
+                delta -= self.eps_iter * step
+                # stay in L2 ball
+                delta = (x_orig + self._project(delta)) - x_orig
+            delta.requires_grad_(True)
+
+        x_adv = (x_orig + delta).detach()
+        if self.clip_min is not None and self.clip_max is not None:
+            x_adv = x_adv.clamp_(self.clip_min, self.clip_max)
+        return x_adv
 
 
 def estimate_parameter_importance(data_loader, model, num_samples=0):  
