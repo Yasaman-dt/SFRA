@@ -28,7 +28,7 @@ import argparse
 parser = argparse.ArgumentParser("Class unlearning revival")
 parser.add_argument('--method', type=str, default='original',
                     choices=['original','retrained','random_label','finetune','gradient_ascent',
-                             'boundary_shrink','boundary_expand','l2ul_adv','fisher','wood_fisher','delete',
+                             'boundary_shrink','boundary_expand','l2ul_adv','l2ul_imp','fisher','wood_fisher','delete',
                              'bad_teacher', 'salun'])
 # accept both --model and --model_name, store in model_name
 parser.add_argument('--model', '--model_name', dest='model_name', type=str, default='resnet18')
@@ -83,7 +83,7 @@ seed=42
 #dataset_name = "cifar10"
 #model_name = "resnet18"
 #num_classes = 10
-#method="boundary_shrink"  #method: random_label, finetune, gradient_ascent, boundary_shrink, boundary_expand, l2ul_adv, fisher, wood_fisher, delete
+#method="boundary_shrink"  #method: random_label, finetune, gradient_ascent, boundary_shrink, boundary_expand, l2ul_adv, l2ul_imp, fisher, wood_fisher, delete
 #lr = 5e-05
 #forget_class = 0
 #epochs = 50
