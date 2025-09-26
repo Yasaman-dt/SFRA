@@ -77,10 +77,21 @@ def get_model(model_name, num_classes, use_pretrained):
         model = vgg11_bn(num_classes=num_classes)
         
     elif model_name == "vit-s-16":  
+        model = _vision_transformer(
+            num_classes=num_classes,
+            patch_size=16,
+            num_layers=12, 
+            num_heads=6,   
+            hidden_dim=384, 
+            mlp_dim=1536, 
+            progress=False,
+            weights=None, 
+        )
+    
+    elif model_name == "vit-b-16":  
         vit_w = ViT_B_16_Weights.IMAGENET1K_V1 if use_pretrained else None
         
         if vit_w is not None:
-            # PRETRAINED: do NOT pass num_classes; constructor expects 1000 with weights
             model = _vision_transformer(
                 patch_size=16,
                 num_layers=12,     # base
@@ -90,10 +101,8 @@ def get_model(model_name, num_classes, use_pretrained):
                 progress=False,
                 weights=vit_w,
             )
-            # now swap the classifier to your dataset size
             model = _reset_classifier(model, num_classes)
         else:
-            # FROM SCRATCH: safe to pass num_classes
             model = _vision_transformer(
                 num_classes=num_classes,
                 patch_size=16,
@@ -104,10 +113,13 @@ def get_model(model_name, num_classes, use_pretrained):
                 progress=False,
                 weights=None,
             )
+            
     elif model_name == "swin-t":
         model = swin_tiny_patch4_window7_224(pretrained=use_pretrained, num_classes=num_classes)
+        
     else:
         raise ValueError(f"Unknown model: {model_name}")
+    
     return model
 
 def load_model(model_path, model_name, num_classes):

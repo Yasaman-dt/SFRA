@@ -1,6 +1,6 @@
-pretrain_epoch: 100
-pretrain_lr: 0.01
-batch_size: 64
+pretrain_epoch: 200
+pretrain_lr: 0.1
+batch_size: 256
 
 unlearn_epoch: 300
 unlearn_rate: 5e-5

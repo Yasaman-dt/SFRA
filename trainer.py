@@ -22,6 +22,8 @@ import tqdm
 def optimizer_picker(optimization, param, lr):
     if optimization == 'adam':
         optimizer = optim.Adam(param, lr=lr)
+    elif optimization == 'adamw':
+        optimizer = optim.AdamW(param, lr=lr, betas=(0.9, 0.999), weight_decay=5e-2)        
     elif optimization == 'sgd':
         optimizer = optim.SGD(param, lr=lr, momentum=0.9, weight_decay=5e-4)
     else:
