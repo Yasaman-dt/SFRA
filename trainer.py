@@ -91,12 +91,12 @@ def test(model, data_loader, extra_class=0):
 
 
 @timer
-def train_save_model(train_loader, test_loader, model_name, optim_name, learning_rate, num_epochs, path, description):
+def train_save_model(train_loader, test_loader, model_name, optim_name, learning_rate, num_epochs, path, description, use_pretrained=False):
 
     num_classes = max(train_loader.dataset.targets) + 1  # if args.num_classes is None else args.num_classes
     print(f"num_classes:{num_classes}")
 
-    model = get_model(model_name, num_classes)
+    model = get_model(model_name, num_classes, use_pretrained)
     model = model.to("cuda")
     print(f"Model {model_name} loaded")
 

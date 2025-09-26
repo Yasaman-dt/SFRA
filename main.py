@@ -108,7 +108,7 @@ if __name__ == '__main__':
     parser.add_argument("--seed", type=int, default=2022)
     parser.add_argument('--load_original_model_path', type=str, default=None)
     parser.add_argument('--load_retrain_model_path', type=str, default=None)
-
+    parser.add_argument('--use_pretrained', action='store_true', help='Load ImageNet-1k pretrained weights when available')
 
     args = parser.parse_args()
 
@@ -282,7 +282,8 @@ if __name__ == '__main__':
                                          args.pretrain_lr,
                                          args.pretrain_epoch,
                                          ckpt_path,
-                                         f"{args.dataset_name}_{model_name}_original_model")
+                                         f"{args.dataset_name}_{model_name}_original_model",
+                                         use_pretrained=args.use_pretrained)
         print('\noriginal model acc:\n', test_each_classes(ori_model, test_loader, num_classes))
 
         csv_forget = args.forget_id if args.forget_id is not None else forget_class
@@ -347,7 +348,8 @@ if __name__ == '__main__':
                                              args.pretrain_lr, 
                                              args.pretrain_epoch,
                                              ckpt_path,
-                                             save_desc)
+                                             save_desc,
+                                             use_pretrained=args.use_pretrained)
         print('\nretrain model acc:\n', test_each_classes(retrain_model, test_loader, num_classes))
         
         # --- write metrics row for RETRAIN (from-scratch) ---
@@ -741,7 +743,7 @@ if __name__ == '__main__':
 
     elif args.method == "bad_teacher":
         good_teacher_model = copy.deepcopy(ori_model).to("cuda")
-        bad_teacher_model = get_model(model_name, num_classes).to("cuda")
+        bad_teacher_model = get_model(model_name, num_classes, use_pretrained=args.use_pretrained).to("cuda")
 
         filtered_remain_index = random.sample(train_remain_index, int(0.3*len(train_remain_index))) if args.retain_data else []
         
