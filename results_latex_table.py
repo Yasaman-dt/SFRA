@@ -20,7 +20,7 @@ methods = [
 
 
 
-MODELS   = ["resnet18", "vit-s-16", "swin-t", "vgg16"]
+MODELS   = ["resnet18", "vit-s-16", "vit-b-16", "swin-t", "vgg16"]
 
 KNOWN_METHODS = set(methods)
 
