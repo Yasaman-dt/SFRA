@@ -26,7 +26,6 @@ def optimizer_picker(optimization, param, lr, model_name):
         optimizer = optim.AdamW(param, lr=lr, betas=(0.9, 0.999), weight_decay=5e-2) 
     elif optimization == 'sgd': 
         if model_name == "vit-b-16":
-            print("2222222")
             optimizer = optim.SGD(param, lr=0.1, weight_decay=5e-5)
         else:
             optimizer = optim.SGD(param, lr=lr, momentum=0.9, weight_decay=5e-4)
@@ -40,8 +39,7 @@ def train(model, data_loader, optimizer, epoch, model_name, tqdm_on=True):
     # running_loss = 0.0
     # correct = 0
     # total = 0
-    if model_name.lower().startswith("vit-b-16"):
-        print("333333")
+    if model_name == "vit-b-16":
         criterion = nn.CrossEntropyLoss(label_smoothing=0.4)
     else:
         criterion = nn.CrossEntropyLoss()
@@ -117,16 +115,13 @@ def train_save_model(train_loader, test_loader, model_name, optim_name, learning
     optimizer = optimizer_picker(optim_name, model.parameters(), lr=learning_rate, model_name=model_name)
 
 
-    if model_name.casefold().startswith("vit-b-16") and dataset_name.casefold() in {"cifar10", "cifar100"}:
-        print("111111111")
+    if model_name=="vit-b-16" and dataset_name.casefold() in {"cifar10", "cifar100"}:
         scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs)
     else:
         scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=25, gamma=0.1)  # 25 to match old recipe
 
-        
-    
+ 
     best_acc = 0
-
 
     train_losses = []
     train_accuracies = []
