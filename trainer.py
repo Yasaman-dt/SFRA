@@ -31,12 +31,15 @@ def optimizer_picker(optimization, param, lr):
     return optimizer
 
 
-def train(model, data_loader, optimizer, epoch, tqdm_on=True):    
+def train(model, data_loader, optimizer, epoch, model_name, tqdm_on=True):    
     model.train()
     # running_loss = 0.0
     # correct = 0
     # total = 0
-    criterion = nn.CrossEntropyLoss()
+    if model_name.lower().startswith("vit"):
+        criterion = nn.CrossEntropyLoss(label_smoothing=0.4)
+    else:
+        criterion = nn.CrossEntropyLoss()
 
     # for step, (batch_x, batch_y) in enumerate(tqdm.tqdm(data_loader)):
     if tqdm_on:
@@ -108,7 +111,14 @@ def train_save_model(train_loader, test_loader, model_name, optim_name, learning
 
     optimizer = optimizer_picker(optim_name, model.parameters(), lr=learning_rate)
 
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=40, gamma=0.1)  
+
+    if model_name.lower().startswith("vit"):
+        scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs)
+    else:
+        scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=25, gamma=0.1)  # 25 to match old recipe
+
+        
+    
     best_acc = 0
 
 
@@ -124,7 +134,7 @@ def train_save_model(train_loader, test_loader, model_name, optim_name, learning
     
     start_time = time.time()
     for epoch in range(num_epochs):
-        train(model=model, data_loader=train_loader, optimizer=optimizer, epoch=epoch)
+        train(model=model, data_loader=train_loader, optimizer=optimizer, epoch=epoch, model_name=model_name)
 
         train_loss, train_acc = test(model=model, data_loader=train_loader)
         print(f"Train Loss: {train_loss:.2f}, Train Accuracy: {train_acc:.2%}")

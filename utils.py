@@ -12,6 +12,22 @@ from PIL import Image
 import matplotlib.pyplot as plt
 from omegaconf import OmegaConf
 import csv, json
+import torchvision.transforms as transforms
+from torchvision.transforms import InterpolationMode
+
+CIFAR_MEAN, CIFAR_STD = (0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616)
+TINY_MEAN,  TINY_STD  = (0.4802, 0.4481, 0.3975), (0.2302, 0.2265, 0.2262)
+
+def make_vit_transforms(train: bool, dataset_name: str):
+    resize = transforms.Resize(224, interpolation=InterpolationMode.BICUBIC, antialias=True)
+    aug = [resize]
+    if train: aug.append(transforms.RandomHorizontalFlip(0.5))
+    if dataset_name in {"cifar10","cifar100"}:
+        mean, std = CIFAR_MEAN, CIFAR_STD
+    elif dataset_name == "tiny_imagenet":
+        mean, std = TINY_MEAN, TINY_STD
+    aug += [transforms.ToTensor(), transforms.Normalize(mean, std)]
+    return transforms.Compose(aug)
 
 @torch.inference_mode()
 def _infer_num_classes(model, any_loader=None):
@@ -356,19 +372,37 @@ class Identity:
 def get_transforms(dataset_name, model_name, wo_dataaug): 
     resize_transform = Identity()   if "my" in model_name or model_name == "vgg16" \
                                     else transforms.Resize((224,224))  
+                                    
+    is_vit = model_name.startswith("vit")
+    bicubic_resize = transforms.Resize(224, interpolation=transforms.InterpolationMode.BICUBIC, antialias=True)
     if dataset_name in ["cifar10", "cifar100"]:
-        transform_train = transforms.Compose([
-            transforms.RandomHorizontalFlip(),
-            transforms.RandomCrop(32, padding=4),
-            resize_transform,
-            transforms.ToTensor(),          
-            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616)),
-        ])
-        transform_test = transforms.Compose([
-            resize_transform,
-            transforms.ToTensor(),
-            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616)),
-        ])
+
+        if is_vit:
+            transform_train = transforms.Compose([
+                bicubic_resize,
+                transforms.RandomHorizontalFlip(),
+                transforms.ToTensor(),
+                transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616)),
+            ])
+            transform_test = transforms.Compose([
+                bicubic_resize,
+                transforms.ToTensor(),
+                transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616)),
+            ])
+
+        else:
+            transform_train = transforms.Compose([
+                transforms.RandomHorizontalFlip(),
+                transforms.RandomCrop(32, padding=4),
+                resize_transform,
+                transforms.ToTensor(),          
+                transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616)),
+            ])
+            transform_test = transforms.Compose([
+                resize_transform,
+                transforms.ToTensor(),
+                transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616)),
+            ])
     elif dataset_name == "vggface": 
         transform_train = transforms.Compose([
             # transforms.RandomCrop(32, padding=4),
@@ -384,19 +418,32 @@ def get_transforms(dataset_name, model_name, wo_dataaug):
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
         ])
     elif dataset_name == "tiny_imagenet":
-        transform_train = transforms.Compose([
-            transforms.RandomHorizontalFlip(),
-            transforms.RandomCrop(64, padding=4),
-            resize_transform,
-            transforms.ToTensor(),
-            transforms.Normalize((0.4802, 0.4481, 0.3975), (0.2302, 0.2265, 0.2262))
-        ])
+        if is_vit:
+            transform_train = transforms.Compose([
+                bicubic_resize,
+                transforms.RandomHorizontalFlip(),
+                transforms.ToTensor(),
+                transforms.Normalize((0.4802, 0.4481, 0.3975), (0.2302, 0.2265, 0.2262)),
+            ])
+            transform_test = transforms.Compose([
+                bicubic_resize,
+                transforms.ToTensor(),
+                transforms.Normalize((0.4802, 0.4481, 0.3975), (0.2302, 0.2265, 0.2262)),
+            ])
+        else:
+            transform_train = transforms.Compose([
+                transforms.RandomHorizontalFlip(),
+                transforms.RandomCrop(64, padding=4),
+                resize_transform,
+                transforms.ToTensor(),
+                transforms.Normalize((0.4802, 0.4481, 0.3975), (0.2302, 0.2265, 0.2262))
+            ])
 
-        transform_test = transforms.Compose([
-            resize_transform,
-            transforms.ToTensor(),
-            transforms.Normalize((0.4802, 0.4481, 0.3975), (0.2302, 0.2265, 0.2262))
-        ])
+            transform_test = transforms.Compose([
+                resize_transform,
+                transforms.ToTensor(),
+                transforms.Normalize((0.4802, 0.4481, 0.3975), (0.2302, 0.2265, 0.2262))
+            ])
     else:
         raise ValueError(f"Unknown dataset: {dataset_name}")
     if wo_dataaug:
