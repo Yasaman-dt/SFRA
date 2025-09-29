@@ -2,11 +2,11 @@ from .allcnn import *
 from .resnet import *
 from .vgg import *
 from .vision_transformer import *
+from .vision_transformer import ViT_16_mod
 from .swin_transformer import *
 import torch.nn as nn
 import torch
 from torchvision import models
-from torchvision.models.vision_transformer import ViT_B_16_Weights
 
 def _reset_classifier(model, num_classes: int):
     """
@@ -88,31 +88,8 @@ def get_model(model_name, num_classes, use_pretrained):
             weights=None, 
         )
     
-    elif model_name == "vit-b-16":  
-        vit_w = ViT_B_16_Weights.IMAGENET1K_V1 if use_pretrained else None
-        
-        if vit_w is not None:
-            model = _vision_transformer(
-                patch_size=16,
-                num_layers=12,     # base
-                num_heads=12,      # base
-                hidden_dim=768,    # base
-                mlp_dim=3072,      # base
-                progress=False,
-                weights=vit_w,
-            )
-            model = _reset_classifier(model, num_classes)
-        else:
-            model = _vision_transformer(
-                num_classes=num_classes,
-                patch_size=16,
-                num_layers=12,
-                num_heads=12,
-                hidden_dim=768,
-                mlp_dim=3072,
-                progress=False,
-                weights=None,
-            )
+    elif model_name == "vit-b-16":
+        model = ViT_16_mod(n_classes=num_classes).to('cuda')
             
     elif model_name == "swin-t":
         model = swin_tiny_patch4_window7_224(pretrained=use_pretrained, num_classes=num_classes)
