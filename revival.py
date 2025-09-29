@@ -104,6 +104,7 @@ os.makedirs(AGG_CSV_DIR, exist_ok=True)
 
 COLUMNS = [
     "forget_class", "dataset", "model", "method", "lr",
+    "epochs_total", "tpr", "cpr",
     "epoch", "syn_train_loss", "syn_train_acc",
     "syn_total", "syn_retain", "syn_forget",
     "all_train", "all_test",
@@ -124,6 +125,9 @@ def append_best_for_class(forget_class: int, best_row: dict):
         "model": model_name,
         "method": method,
         "lr": lr,
+        "epochs_total": epochs,                         
+        "tpr": total_per_class,                          
+        "cpr": choose_per_retain_class_for_fgt,    
         **best_row,  # expects keys like epoch, syn_* , all_*, train_*, test_*
     }
 
@@ -133,6 +137,7 @@ def append_best_for_class(forget_class: int, best_row: dict):
     header_needed = not os.path.exists(AGG_CSV_PATH)
 
     METRIC_COLS = [
+        "epochs_total", "tpr", "cpr",
         "syn_train_loss", "syn_train_acc",
         "syn_total", "syn_retain", "syn_forget",
         "all_train", "all_test",
@@ -412,7 +417,6 @@ forget_classes = _parse_forget_arg(args.forget, num_classes)
 for forget_class in forget_classes:
     print(f"\n================= FORGET CLASS {forget_class} =================")
 
-
     # per-class experiment folder
     experiment_path = Path(f"results/{method}/plots_{model_name}_lr{lr}/forget_class_{forget_class}")
     experiment_path.mkdir(parents=True, exist_ok=True)
@@ -499,8 +503,6 @@ for forget_class in forget_classes:
     train_ret_emb_loader = make_emb_loader(train_ret_feats, train_ret_labels)
     test_fgt_emb_loader  = make_emb_loader(test_fgt_feats,  test_fgt_labels)
     test_ret_emb_loader  = make_emb_loader(test_ret_feats,  test_ret_labels)
-
-
 
 
     # ---- run it ----
