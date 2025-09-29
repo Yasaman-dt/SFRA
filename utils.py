@@ -15,19 +15,7 @@ import csv, json
 import torchvision.transforms as transforms
 from torchvision.transforms import InterpolationMode
 
-CIFAR_MEAN, CIFAR_STD = (0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616)
-TINY_MEAN,  TINY_STD  = (0.4802, 0.4481, 0.3975), (0.2302, 0.2265, 0.2262)
 
-def make_vit_transforms(train: bool, dataset_name: str):
-    resize = transforms.Resize(224, interpolation=InterpolationMode.BICUBIC, antialias=True)
-    aug = [resize]
-    if train: aug.append(transforms.RandomHorizontalFlip(0.5))
-    if dataset_name in {"cifar10","cifar100"}:
-        mean, std = CIFAR_MEAN, CIFAR_STD
-    elif dataset_name == "tiny_imagenet":
-        mean, std = TINY_MEAN, TINY_STD
-    aug += [transforms.ToTensor(), transforms.Normalize(mean, std)]
-    return transforms.Compose(aug)
 
 @torch.inference_mode()
 def _infer_num_classes(model, any_loader=None):
@@ -369,25 +357,37 @@ class Identity:
         return x
 
 
+mean = {
+        'cifar10': (0.4914, 0.4822, 0.4465),
+        'cifar100': (0.5071, 0.4867, 0.4408),
+        'tiny_imagenet': (0.485, 0.456, 0.406),
+        }
+
+std = {
+        'cifar10': (0.2023, 0.1994, 0.2010),
+        'cifar100': (0.2675, 0.2565, 0.2761),
+        'tiny_imagenet': (0.229, 0.224, 0.225),
+        }
+
+
+
 def get_transforms(dataset_name, model_name, wo_dataaug): 
     resize_transform = Identity()   if "my" in model_name or model_name == "vgg16" \
                                     else transforms.Resize((224,224))  
                                     
-    is_vit = model_name.startswith("vit")
-    bicubic_resize = transforms.Resize(224, interpolation=transforms.InterpolationMode.BICUBIC, antialias=True)
+    is_vit_b_16 = model_name.startswith("vit-b-16")
     if dataset_name in ["cifar10", "cifar100"]:
-
-        if is_vit:
+        if is_vit_b_16:
             transform_train = transforms.Compose([
-                bicubic_resize,
+                transforms.Resize(224, interpolation=transforms.InterpolationMode.BICUBIC, antialias=True),
                 transforms.RandomHorizontalFlip(),
                 transforms.ToTensor(),
-                transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616)),
+                transforms.Normalize(mean=mean[dataset_name], std=std[dataset_name]),
             ])
             transform_test = transforms.Compose([
-                bicubic_resize,
+                transforms.Resize(224, interpolation=transforms.InterpolationMode.BICUBIC, antialias=True),
                 transforms.ToTensor(),
-                transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616)),
+                transforms.Normalize(mean=mean[dataset_name], std=std[dataset_name]),
             ])
 
         else:
@@ -403,6 +403,8 @@ def get_transforms(dataset_name, model_name, wo_dataaug):
                 transforms.ToTensor(),
                 transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616)),
             ])
+            
+
     elif dataset_name == "vggface": 
         transform_train = transforms.Compose([
             # transforms.RandomCrop(32, padding=4),
@@ -417,18 +419,20 @@ def get_transforms(dataset_name, model_name, wo_dataaug):
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
         ])
+        
+        
     elif dataset_name == "tiny_imagenet":
-        if is_vit:
+        if is_vit_b_16:
             transform_train = transforms.Compose([
-                bicubic_resize,
+                transforms.Resize(224, interpolation=transforms.InterpolationMode.BICUBIC, antialias=True),
                 transforms.RandomHorizontalFlip(),
                 transforms.ToTensor(),
-                transforms.Normalize((0.4802, 0.4481, 0.3975), (0.2302, 0.2265, 0.2262)),
+                transforms.Normalize(mean=mean[dataset_name], std=std[dataset_name]),
             ])
             transform_test = transforms.Compose([
-                bicubic_resize,
+                transforms.Resize(224, interpolation=transforms.InterpolationMode.BICUBIC, antialias=True),
                 transforms.ToTensor(),
-                transforms.Normalize((0.4802, 0.4481, 0.3975), (0.2302, 0.2265, 0.2262)),
+                transforms.Normalize(mean=mean[dataset_name], std=std[dataset_name]),
             ])
         else:
             transform_train = transforms.Compose([
@@ -461,9 +465,10 @@ def get_dataset(dataset_name, transform_train, transform_test, path=Path("~/data
     elif dataset_name == 'tiny_imagenet':
         # data_dir = os.path.join(path, 'tiny-imagenet-200') 
 
-        tinyimagenet_dir = os.path.join(path, 'tiny-imagenet-200')
+        tinyimagenet_dir = os.path.join(path, 'TinyImageNet')
         train_dataset = datasets.ImageFolder(root=os.path.join(tinyimagenet_dir, 'train'), transform=transform_train)
         test_dataset = TinyImageNet_load(tinyimagenet_dir, train=False, transform=transform_test)
+        
     elif dataset_name == 'vggface':
         config_path = 'config/vggface_sample.yaml'
         sample_config = OmegaConf.load(config_path)

@@ -19,13 +19,17 @@ import tqdm
 #     return criterion
 
 
-def optimizer_picker(optimization, param, lr):
+def optimizer_picker(optimization, param, lr, model_name):
     if optimization == 'adam':
         optimizer = optim.Adam(param, lr=lr)
     elif optimization == 'adamw':
-        optimizer = optim.AdamW(param, lr=lr, betas=(0.9, 0.999), weight_decay=5e-2)        
-    elif optimization == 'sgd':
-        optimizer = optim.SGD(param, lr=lr, momentum=0.9, weight_decay=5e-4)
+        optimizer = optim.AdamW(param, lr=lr, betas=(0.9, 0.999), weight_decay=5e-2) 
+    elif optimization == 'sgd': 
+        if model_name == "vit-b-16":
+            print("2222222")
+            optimizer = optim.SGD(param, lr=0.1, weight_decay=5e-5)
+        else:
+            optimizer = optim.SGD(param, lr=lr, momentum=0.9, weight_decay=5e-4)
     else:
         raise ValueError("loss function not found")
     return optimizer
@@ -36,7 +40,8 @@ def train(model, data_loader, optimizer, epoch, model_name, tqdm_on=True):
     # running_loss = 0.0
     # correct = 0
     # total = 0
-    if model_name.lower().startswith("vit"):
+    if model_name.lower().startswith("vit-b-16"):
+        print("333333")
         criterion = nn.CrossEntropyLoss(label_smoothing=0.4)
     else:
         criterion = nn.CrossEntropyLoss()
@@ -96,7 +101,7 @@ def test(model, data_loader, extra_class=0):
 
 
 @timer
-def train_save_model(train_loader, test_loader, model_name, optim_name, learning_rate, num_epochs, path, description, use_pretrained=False):
+def train_save_model(train_loader, test_loader, model_name, optim_name, learning_rate, num_epochs, path, description, use_pretrained=False, dataset_name: str = None):
 
     num_classes = max(train_loader.dataset.targets) + 1  # if args.num_classes is None else args.num_classes
     print(f"num_classes:{num_classes}")
@@ -109,10 +114,11 @@ def train_save_model(train_loader, test_loader, model_name, optim_name, learning
         print(f"Using {torch.cuda.device_count()} GPUs!")
         model = nn.DataParallel(model)
 
-    optimizer = optimizer_picker(optim_name, model.parameters(), lr=learning_rate)
+    optimizer = optimizer_picker(optim_name, model.parameters(), lr=learning_rate, model_name=model_name)
 
 
-    if model_name.lower().startswith("vit"):
+    if model_name.casefold().startswith("vit-b-16") and dataset_name.casefold() in {"cifar10", "cifar100"}:
+        print("111111111")
         scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs)
     else:
         scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=25, gamma=0.1)  # 25 to match old recipe
@@ -185,9 +191,9 @@ def train_save_model(train_loader, test_loader, model_name, optim_name, learning
 
 
 @timer
-def finetune_save_model(train_loader, test_loader, model, optim_name, learning_rate, num_epochs, path, description):
+def finetune_save_model(train_loader, test_loader, model, optim_name, learning_rate, num_epochs, path, description, model_name):
 
-    optimizer = optimizer_picker(optim_name, model.parameters(), lr=learning_rate)
+    optimizer = optimizer_picker(optim_name, model.parameters(), lr=learning_rate, model_name=model_name)
 
     best_acc = 0
 

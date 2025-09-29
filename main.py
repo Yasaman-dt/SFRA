@@ -260,7 +260,8 @@ if __name__ == '__main__':
                                          args.pretrain_lr,
                                          args.pretrain_epoch,
                                          ckpt_path,
-                                         f"{args.dataset_name}_{model_name}_pretrain_model")
+                                         f"{args.dataset_name}_{model_name}_pretrain_model",
+                                         dataset_name=args.dataset_name)
             
             ori_model.fc = torch.nn.Linear(ori_model.fc.in_features, 10)
             ori_model = ori_model.to("cuda")
@@ -272,7 +273,8 @@ if __name__ == '__main__':
                                             args.finetune_lr,
                                             args.finetune_epoch,
                                             ckpt_path,
-                                            f"{args.dataset_name}_{model_name}_original_model")
+                                            f"{args.dataset_name}_{model_name}_original_model",
+                                            model_name)
             
         else:
             ori_model = train_save_model(train_loader,
@@ -283,7 +285,8 @@ if __name__ == '__main__':
                                          args.pretrain_epoch,
                                          ckpt_path,
                                          f"{args.dataset_name}_{model_name}_original_model",
-                                         use_pretrained=args.use_pretrained)
+                                         use_pretrained=args.use_pretrained,
+                                         dataset_name=args.dataset_name)
         print('\noriginal model acc:\n', test_each_classes(ori_model, test_loader, num_classes))
 
         csv_forget = args.forget_id if args.forget_id is not None else forget_class
@@ -328,7 +331,8 @@ if __name__ == '__main__':
                                              args.pretrain_lr,
                                              args.pretrain_epoch,
                                              ckpt_path,
-                                             f"{args.dataset_name}_{model_name}_pretrain_model")
+                                             f"{args.dataset_name}_{model_name}_pretrain_model",
+                                             dataset_name=args.dataset_name)
             retrain_model.fc = torch.nn.Linear(retrain_model.fc.in_features, 10)
             retrain_model = retrain_model.to("cuda")
 
@@ -339,7 +343,8 @@ if __name__ == '__main__':
                                                 args.finetune_lr,
                                                 args.finetune_epoch,
                                                 ckpt_path,
-                                                save_desc)
+                                                save_desc,
+                                                model_name)
         else:
             retrain_model = train_save_model(train_remain_loader,
                                              test_remain_loader,
@@ -349,7 +354,8 @@ if __name__ == '__main__':
                                              args.pretrain_epoch,
                                              ckpt_path,
                                              save_desc,
-                                             use_pretrained=args.use_pretrained)
+                                             use_pretrained=args.use_pretrained,
+                                             dataset_name=args.dataset_name)
         print('\nretrain model acc:\n', test_each_classes(retrain_model, test_loader, num_classes))
         
         # --- write metrics row for RETRAIN (from-scratch) ---
