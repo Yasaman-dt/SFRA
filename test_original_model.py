@@ -193,6 +193,7 @@ DEFAULT_BATCH_SIZES = {
     "swin-t": 64,
     "vgg16": 128,
     "vit-s-16": 128,
+    "vit-b-16": 256,
 }
 
 DEFAULT_NUM_CLASSES = {
@@ -212,7 +213,7 @@ def main():
                         help="Number of classes per dataset (same order as --datasets). "
                              "If omitted, will use built-in defaults for known datasets.")
     parser.add_argument("--model-name", type=str, default="resnet18",
-                        choices=["resnet18", "vit-s-16", "swin-t", "vgg16"])
+                        choices=["resnet18", "vit-s-16", "vit-b-16", "swin-t", "vgg16"])
 
     # ---- Paths ----
     parser.add_argument("--checkpoint-folder", type=Path,
