@@ -747,6 +747,19 @@ if __name__ == '__main__':
                                             mask=args.salun_mask, early_stop_patience=patience)
 
 
+    elif args.method == "scrub":
+        unlearn_model = method.scrub(ori_model, train_forget_loader, num_classes,
+                                    unlearn_epoch=args.unlearn_epoch, unlearn_rate=args.unlearn_rate,
+                                    results_csv=results_csv, forget_class= csv_forget,
+                                    logger=logger, console_handler=console_handler,
+                                    loader_dict=loader_dict, experiment_path= experiment_path,
+                                    eval_opt=None, alpha=1.0, gamma=1.0, temperature=1.0, extra_min_epochs=0,           
+                                    retain_data=args.retain_data,
+                                    early_stop_patience=patience,
+                                    do_rewind=False,
+                                    val_forget_like_loader=None)
+
+
     elif args.method == "bad_teacher":
         good_teacher_model = copy.deepcopy(ori_model).to("cuda")
         bad_teacher_model = get_model(model_name, num_classes, use_pretrained=args.use_pretrained).to("cuda")
