@@ -753,7 +753,7 @@ if __name__ == '__main__':
                                     results_csv=results_csv, forget_class= csv_forget,
                                     logger=logger, console_handler=console_handler,
                                     loader_dict=loader_dict, experiment_path= experiment_path,
-                                    eval_opt=None, alpha=1.0, gamma=1.0, temperature=1.0, extra_min_epochs=0,           
+                                    alpha=1.0, gamma=1.0, temperature=1.0, extra_min_epochs=0,           
                                     retain_data=args.retain_data,
                                     early_stop_patience=patience,
                                     do_rewind=False,

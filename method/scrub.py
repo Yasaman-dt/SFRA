@@ -31,7 +31,7 @@ def scrub(
     logger, console_handler,
     loader_dict,                  # needs: "train_remain","test_forget","test_remain"
     experiment_path,
-    eval_opt=None,
+    eval_opt = eval_opt, 
     # ---- SCRUB knobs ----
     alpha=1.0,                    # weight on KL retain
     gamma=1.0,                    # weight on CE retain
