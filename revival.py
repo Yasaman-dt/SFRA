@@ -29,7 +29,7 @@ parser = argparse.ArgumentParser("Class unlearning revival")
 parser.add_argument('--method', type=str, default='original',
                     choices=['original','retrained','random_label','finetune','gradient_ascent',
                              'boundary_shrink','boundary_expand','l2ul_adv','l2ul_imp','fisher','wood_fisher','delete',
-                             'bad_teacher', 'salun'])
+                             'bad_teacher', 'salun', 'scrub'])
 # accept both --model and --model_name, store in model_name
 parser.add_argument('--model', '--model_name', dest='model_name', type=str, default='resnet18')
 parser.add_argument('--dataset', type=str, required=True)

@@ -16,4 +16,6 @@ from .bad_teacher import *
 
 from .l2ul import *
 
+from .scrub import *
+
 

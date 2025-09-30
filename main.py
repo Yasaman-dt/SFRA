@@ -30,7 +30,7 @@ if __name__ == '__main__':
                                  'boundary_shrink', 'boundary_expand', 
                                  "salun", "l2ul_adv", "l2ul_imp", "bad_teacher",
                                  "fisher", "wood_fisher",
-                                 "delete",  
+                                 "delete",  "scrub",
                                  "pass", "ablation"
                                  ], help='unlearning method')
     parser.add_argument('--dataset_name', type=str, default='cifar10', choices=['cifar10', "cifar100", "tiny_imagenet", "vggface"], help='dataset name')
