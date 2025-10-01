@@ -64,12 +64,10 @@ def neggrad_plus(
     accs_history = {k: [] for k in keys}
 
     # handy re-iterators for uneven loader lengths
-    def make_infinite(it):
+    def make_infinite(loader):
         while True:
-            for batch in it: yield batch
-
-    inf_remain = make_infinite(iter(train_remain_loader))
-    inf_forget = make_infinite(iter(train_forget_loader))
+            for batch in loader:
+                yield batch
 
     log_utils.enable_console_logging(logger, console_handler, False)
 
@@ -80,6 +78,9 @@ def neggrad_plus(
                 if isinstance(m, nn.BatchNorm2d):
                     m.eval()
 
+        inf_remain = make_infinite(train_remain_loader)
+        inf_forget = make_infinite(train_forget_loader)
+        
         # Iterate by the longer of the two loaders
         steps = max(len(train_remain_loader), len(train_forget_loader))
         for _ in range(steps):
