@@ -24,7 +24,7 @@ def neggrad_plus(
     loader_dict, experiment_path,
     eval_opt = eval_opt,
     # weighting / regularization
-    beta = 0.95,
+    beta = 0.90,
     with_l1: bool = False,
     no_l1_epochs: float = float("inf"),
     alpha: float = 0.0,
