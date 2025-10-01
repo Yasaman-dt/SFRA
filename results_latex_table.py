@@ -12,10 +12,10 @@ DATASETS = ["cifar10"]  # extend if needed
 # include ORIGINAL as a method
 methods = [
     "original", "retrained",
-    "random_label", "finetune", "gradient_ascent",
+    "random_label", "finetune", "gradient_ascent", "neggrad_plus",
     "boundary_shrink", "boundary_expand",
-    "l2ul_adv", "l2ul_imp", "fisher", "wood_fisher", "delete",
-    "bad_teacher", "salun",
+    "l2ul_adv", "l2ul_imp", "fisher", "wood_fisher", 
+    "scrub", "bad_teacher", "salun", "delete",
 ]
 
 
@@ -337,13 +337,12 @@ for c in metric_cols:
 # Order you prefer; any extra/unknown methods present in the CSV will be appended at the end.
 METHOD_ORDER = [
     "original", "retrained", "finetune", 
-    "gradient_ascent",
+    "gradient_ascent", "neggrad_plus"
     "random_label", 
     "boundary_shrink", "boundary_expand",
     "l2ul_adv", "l2ul_imp",
     "fisher", "wood_fisher",
-    "bad_teacher", "salun",
-    "delete",
+    "scrub", "bad_teacher", "salun", "delete",
 ]
 PHASE_ORDER = ["forget", "revival"]  # non-original methods get these two rows
 
@@ -450,18 +449,18 @@ method_name_and_ref = {
     "retrained": r"Retrained",
     "finetune": r"Finetune \cite{golatkar2020eternal}",
     "gradient_ascent": r"Negative Gradient \cite{golatkar2020eternal}",
-    "ngft": r"Negative Gradient+ \cite{kurmanji2023towards}",
+    "neggrad_plus": r"Negative Gradient+ \cite{kurmanji2023towards}",
     "random_label": r"Random Label \cite{hayase2020selective}",
     "boundary_shrink": r"Boundary Shrink \cite{chen2023boundary}",
     "boundary_expand": r"Boundary Expand \cite{chen2023boundary}",
-    "scrub": r"SCRUB \cite{kurmanji2023towards}",
     "l2ul_adv": r"Learn to Unlearn Adv \cite{cha2024learning}",
     "l2ul_imp": r"Learn to Unlearn Adv+IMP \cite{cha2024learning}",
     # "fisher": r"Fisher",
     # "wood_fisher": r"WoodFisher",
-    "delete": r"Delete \cite{zhou2025decoupled}",
+    "scrub": r"SCRUB \cite{kurmanji2023towards}",
     "bad_teacher" : r"Bad Teacher \cite{chundawat2023can}",
     "salun" : r"Saliency Unlearn \cite{fan2023salun}",
+    "delete": r"Delete \cite{zhou2025decoupled}",
 }
 
 
