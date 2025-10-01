@@ -27,7 +27,7 @@ import argparse
 
 parser = argparse.ArgumentParser("Class unlearning revival")
 parser.add_argument('--method', type=str, default='original',
-                    choices=['original','retrained','random_label','finetune','gradient_ascent',
+                    choices=['original','retrained','random_label','finetune','gradient_ascent','neggrad_plus',
                              'boundary_shrink','boundary_expand','l2ul_adv','l2ul_imp','fisher','wood_fisher','delete',
                              'bad_teacher', 'salun', 'scrub'])
 # accept both --model and --model_name, store in model_name

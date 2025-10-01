@@ -26,7 +26,7 @@ if __name__ == '__main__':
 
 
     parser.add_argument('--method', type=str, default="boundary_shrink",
-                        choices=['random_label', "finetune", "gradient_ascent", 
+                        choices=['random_label', "finetune", "gradient_ascent", "neggrad_plus",
                                  'boundary_shrink', 'boundary_expand', 
                                  "salun", "l2ul_adv", "l2ul_imp", "bad_teacher",
                                  "fisher", "wood_fisher",
@@ -715,6 +715,15 @@ if __name__ == '__main__':
                                                 logger=logger, console_handler=console_handler,
                                                 loader_dict=loader_dict, experiment_path= experiment_path, disable_bn = disable_bn,
                                                 early_stop_patience=patience)
+  
+    elif args.method == "neggrad_plus":
+        unlearn_model = method.neggrad_plus(ori_model, train_remain_loader, train_forget_loader,  
+                                            unlearn_epoch=args.unlearn_epoch, unlearn_rate=args.unlearn_rate,
+                                            results_csv=results_csv, forget_class= csv_forget,
+                                            logger=logger, console_handler=console_handler,
+                                            loader_dict=loader_dict, experiment_path= experiment_path,
+                                            disable_bn = disable_bn, early_stop_patience=patience)
+  
   
     elif args.method == 'boundary_shrink':
         unlearn_model = method.boundary_shrink(ori_model, train_forget_loader,
