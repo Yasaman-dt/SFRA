@@ -24,8 +24,7 @@ def neggrad_plus(
     loader_dict, experiment_path,
     eval_opt = eval_opt,
     # weighting / regularization
-    retain_weight: float = 1.0,
-    forget_weight: float = 1.0,
+    beta = 0.95,
     with_l1: bool = False,
     no_l1_epochs: float = float("inf"),
     alpha: float = 0.0,
@@ -39,6 +38,27 @@ def neggrad_plus(
     NegGrad+ : joint objective per step
         L = retain_weight * CE(x_r, y_r)  -  forget_weight * CE(x_f, y_f)  +  (optional L1)
     """
+    # number of batches per epoch from each loader
+    n_r = len(train_remain_loader)
+    n_f = len(train_forget_loader)
+
+    # batch sizes (works with standard DataLoader; fallbacks for custom samplers)
+    def _batch_size_of(loader):
+        if getattr(loader, "batch_size", None):
+            return loader.batch_size
+        bs = getattr(getattr(loader, "batch_sampler", None), "batch_size", None)
+        return bs if bs is not None else 1
+
+    Br = _batch_size_of(train_remain_loader)
+    Bf = _batch_size_of(train_forget_loader)
+
+    # total samples (prefer dataset length if available; otherwise estimate)
+    Nr = len(getattr(train_remain_loader, "dataset", [])) or n_r * Br
+    Nf = len(getattr(train_forget_loader, "dataset", [])) or n_f * Bf
+
+    retain_weight = beta / max(Nr, 1)
+    forget_weight = (1.0 - beta) / max(Nf, 1)
+    
     logger.info(f"[NegGrad+] epochs={unlearn_epoch}, lr={unlearn_rate}, "
                 f"w_r={retain_weight}, w_f={forget_weight}, L1={with_l1} (alpha={alpha})")
     logger.info(f"eval option {eval_opt}")
