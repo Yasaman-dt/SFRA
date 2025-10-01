@@ -9,6 +9,7 @@ from .fisher import *
 from .random_label import *
 from .finetune import *
 from .gradient_ascent import *
+from .neggrad_plus import *
 
 from .delete import *
 from .salun import *
