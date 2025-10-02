@@ -337,8 +337,7 @@ for c in metric_cols:
 # Order you prefer; any extra/unknown methods present in the CSV will be appended at the end.
 METHOD_ORDER = [
     "original", "retrained", "finetune", 
-    "gradient_ascent", "neggrad_plus"
-    "random_label", 
+    "gradient_ascent", "neggrad_plus", "random_label", 
     "boundary_shrink", "boundary_expand",
     "l2ul_adv", "l2ul_imp",
     "fisher", "wood_fisher",
@@ -460,7 +459,7 @@ method_name_and_ref = {
     "scrub": r"SCRUB \cite{kurmanji2023towards}",
     "bad_teacher" : r"Bad Teacher \cite{chundawat2023can}",
     "salun" : r"Saliency Unlearn \cite{fan2023salun}",
-    "delete": r"Delete \cite{zhou2025decoupled}",
+    "delete": r"DELETE \cite{zhou2025decoupled}",
 }
 
 
