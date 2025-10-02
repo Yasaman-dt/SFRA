@@ -33,7 +33,7 @@ def gradient_saliency_mask(model, forget_loader, threshold_ratio):
         # gradients[name] = 0 
         gradients[name] = torch.zeros_like(param)
 
-    for image, target in tqdm.tqdm(forget_loader, desc="生成mask"):
+    for image, target in tqdm.tqdm(forget_loader, desc="mask"):
         image = image.cuda()
         target = target.cuda()
 
