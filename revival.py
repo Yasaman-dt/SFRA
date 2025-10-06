@@ -663,18 +663,19 @@ for forget_class in forget_classes:
     best["key"] = _key_from_row(row0)
 
 
-    # # map your naming: remain == retain
-    # accs_curves["train_forget"].append(float(acc_train_fgt) / 100.0)
-    # accs_curves["test_forget"].append(float(acc_test_fgt) / 100.0)
-    # accs_curves["train_remain"].append(float(acc_train_retain) / 100.0)
-    # accs_curves["test_remain"].append(float(acc_test_retain) / 100.0)
+    # map your naming: remain == retain
+    accs_curves["train_forget"].append(float(acc_train_fgt) / 100.0)
+    accs_curves["test_forget"].append(float(acc_test_fgt) / 100.0)
+    accs_curves["train_remain"].append(float(acc_train_retain) / 100.0)
+    accs_curves["test_remain"].append(float(acc_test_retain) / 100.0)
 
-    # plot_unlearn_remain_acc_figure(
-    #     epoch=0,
-    #     accs_dict=accs_curves,
-    #     experiment_path=experiment_path,
-    #     plot_type="plot",  # or "scatter"
-    # )
+    epoch_for_plot = len(accs_curves["train_forget"])  
+    plot_unlearn_remain_acc_figure(
+        epoch=epoch_for_plot,
+        accs_dict=accs_curves,
+        experiment_path=experiment_path,
+        plot_type="plot",
+    )
     best_test_fgt = acc_test_fgt
     best_train_fgt = acc_train_fgt
     best_test_retain = acc_test_retain
@@ -779,9 +780,9 @@ for forget_class in forget_classes:
         accs_curves["test_remain"].append(float(acc_test_retain) / 100.0)
 
         # re-plot; epoch must equal the length of your y-series (1..N)
-        epoch_for_plot = len(accs_curves["train_forget"])
+        epoch_for_plot = len(accs_curves["train_forget"]) 
         plot_unlearn_remain_acc_figure(
-            epoch=epoch_for_plot,                      
+            epoch=epoch_for_plot,
             accs_dict=accs_curves,
             experiment_path=experiment_path,
             plot_type="plot",
