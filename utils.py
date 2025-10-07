@@ -467,7 +467,7 @@ def get_dataset(dataset_name, transform_train, transform_test, path=Path("~/data
 
         tinyimagenet_dir = os.path.join(path, 'TinyImageNet')
         train_dataset = datasets.ImageFolder(root=os.path.join(tinyimagenet_dir, 'train'), transform=transform_train)
-        test_dataset = TinyImageNet_load(tinyimagenet_dir, train=False, transform=transform_test)
+        test_dataset = datasets.ImageFolder(root=os.path.join(tinyimagenet_dir, 'val'), transform=transform_test)
         
     elif dataset_name == 'vggface':
         config_path = 'config/vggface_sample.yaml'
