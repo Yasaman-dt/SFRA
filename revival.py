@@ -512,7 +512,7 @@ for forget_class in forget_classes:
         forget_class=forget_class,
         device=device,
         per_class=total_per_class,
-        retain_top_k=choose_per_retain_class_for_fgt*9,
+        retain_top_k=choose_per_retain_class_for_fgt*(num_classes-1),
         per_retain_for_forget=choose_per_retain_class_for_fgt,   # 10 from each retain class → e.g., 9*10 = 90 total for CIFAR-10
         loader_batch_size=256,
     )
