@@ -19,30 +19,36 @@ import tqdm
 #     return criterion
 
 
-def optimizer_picker(optimization, param, lr, model_name):
+def optimizer_picker(optimization, param, lr, model_name, dataset_name):
     if optimization == 'adam':
         optimizer = optim.Adam(param, lr=lr)
+        
     elif optimization == 'adamw':
         optimizer = optim.AdamW(param, lr=lr, betas=(0.9, 0.999), weight_decay=5e-2) 
+        
     elif optimization == 'sgd': 
         if model_name == "vit-b-16":
             optimizer = optim.SGD(param, lr=0.1, weight_decay=5e-5)
+        if model_name == "resnet18" and dataset_name.casefold() == "tiny_imagenet":
+            optimizer = optim.SGD(param, lr=0.1, weight_decay=5e-5)
         else:
             optimizer = optim.SGD(param, lr=lr, momentum=0.9, weight_decay=5e-4)
+            
     else:
         raise ValueError("loss function not found")
+    
     return optimizer
 
 
-def train(model, data_loader, optimizer, epoch, model_name, tqdm_on=True):    
+def train(model, data_loader, optimizer, epoch, model_name, dataset_name, tqdm_on=True):    
     model.train()
     # running_loss = 0.0
     # correct = 0
     # total = 0
-    if model_name == "vit-b-16":
-        criterion = nn.CrossEntropyLoss(label_smoothing=0.4)
-    else:
-        criterion = nn.CrossEntropyLoss()
+    ds = (dataset_name or "").casefold()
+    use_smoothing = (model_name == "vit-b-16") or (model_name == "resnet18" and ds == "tiny_imagenet")
+    criterion = nn.CrossEntropyLoss(label_smoothing=0.4) if use_smoothing else nn.CrossEntropyLoss()
+
 
     # for step, (batch_x, batch_y) in enumerate(tqdm.tqdm(data_loader)):
     if tqdm_on:
@@ -112,12 +118,15 @@ def train_save_model(train_loader, test_loader, model_name, optim_name, learning
         print(f"Using {torch.cuda.device_count()} GPUs!")
         model = nn.DataParallel(model)
 
-    optimizer = optimizer_picker(optim_name, model.parameters(), lr=learning_rate, model_name=model_name)
+    optimizer = optimizer_picker(optim_name, model.parameters(), lr=learning_rate, model_name=model_name, dataset_name=dataset_name)
 
 
     if model_name=="vit-b-16" and dataset_name.casefold() in {"cifar10", "cifar100"}:
         scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs)
     else:
+        scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=25, gamma=0.1)  # 25 to match old recipe
+
+    if model_name=="resnet18" and dataset_name.casefold() in {"tiny_imagenet"}:
         scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=25, gamma=0.1)  # 25 to match old recipe
 
  
@@ -135,7 +144,7 @@ def train_save_model(train_loader, test_loader, model_name, optim_name, learning
     
     start_time = time.time()
     for epoch in range(num_epochs):
-        train(model=model, data_loader=train_loader, optimizer=optimizer, epoch=epoch, model_name=model_name)
+        train(model=model, data_loader=train_loader, optimizer=optimizer, epoch=epoch, model_name=model_name, dataset_name=dataset_name)
 
         train_loss, train_acc = test(model=model, data_loader=train_loader)
         print(f"Train Loss: {train_loss:.2f}, Train Accuracy: {train_acc:.2%}")
@@ -186,7 +195,7 @@ def train_save_model(train_loader, test_loader, model_name, optim_name, learning
 
 
 @timer
-def finetune_save_model(train_loader, test_loader, model, optim_name, learning_rate, num_epochs, path, description, model_name):
+def finetune_save_model(train_loader, test_loader, model, optim_name, learning_rate, num_epochs, path, description, model_name, dataset_name):
 
     optimizer = optimizer_picker(optim_name, model.parameters(), lr=learning_rate, model_name=model_name)
 
@@ -204,7 +213,7 @@ def finetune_save_model(train_loader, test_loader, model, optim_name, learning_r
     
     start_time = time.time()
     for epoch in tqdm.tqdm(range(num_epochs)):
-        train(model=model, data_loader=train_loader, optimizer=optimizer, epoch=epoch, tqdm_on=False)
+        train(model=model, data_loader=train_loader, optimizer=optimizer, epoch=epoch, tqdm_on=False, model_name=model_name, dataset_name=dataset_name)
 
         train_loss, train_acc = test(model=model, data_loader=train_loader)
         train_losses.append(train_loss)

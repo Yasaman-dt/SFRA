@@ -274,7 +274,8 @@ if __name__ == '__main__':
                                             args.finetune_epoch,
                                             ckpt_path,
                                             f"{args.dataset_name}_{model_name}_original_model",
-                                            model_name)
+                                            model_name,
+                                            dataset_name=args.dataset_name)
             
         else:
             ori_model = train_save_model(train_loader,
@@ -344,7 +345,8 @@ if __name__ == '__main__':
                                                 args.finetune_epoch,
                                                 ckpt_path,
                                                 save_desc,
-                                                model_name)
+                                                model_name,
+                                                dataset_name=args.dataset_name)
         else:
             retrain_model = train_save_model(train_remain_loader,
                                              test_remain_loader,
