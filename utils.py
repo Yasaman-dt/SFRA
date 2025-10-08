@@ -111,7 +111,7 @@ def gather_and_write_metrics_csv(
         use_loader = loader or fallback
         _, per_cls = _top1_and_per_class(model, use_loader, num_classes, device) if use_loader else (None, None)
         # The user asked for classes 0..9 explicitly; fill missing with None if num_classes < 10
-        for i in range(10):
+        for i in range(num_classes):
             val = None
             if per_cls is not None and i < len(per_cls):
                 val = per_cls[i]
@@ -142,7 +142,7 @@ def gather_and_write_metrics_csv(
 
     # Stable column order
     base_cols   = ["method", "forget_class", "train_retain_acc", "train_forget_acc", "test_retain_acc", "test_forget_acc"]
-    class_cols  = [f"train_class{i}_acc" for i in range(10)] + [f"test_class{i}_acc" for i in range(10)]
+    class_cols  = [f"train_class{i}_acc" for i in range(num_classes)] + [f"test_class{i}_acc" for i in range(num_classes)]
     mia_cols    = ["mia_correctness", "mia_confidence", "mia_entropy", "mia_m_entropy", "mia_prob"]
     field_order = base_cols + class_cols + mia_cols
 
