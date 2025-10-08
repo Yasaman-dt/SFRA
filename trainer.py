@@ -111,6 +111,14 @@ def train_save_model(train_loader, test_loader, model_name, optim_name, learning
     print(f"num_classes:{num_classes}")
 
     model = get_model(model_name, num_classes, use_pretrained)
+    
+    if model_name == "resnet18" and dataset_name.lower() == "tiny_imagenet":
+        import torch.nn as nn
+        model.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
+        model.maxpool = nn.Identity()
+        in_feats = model.fc.in_features
+        model.fc = nn.Sequential(nn.Dropout(0.4), nn.Linear(in_feats, num_classes))
+    
     model = model.to("cuda")
     print(f"Model {model_name} loaded")
 
