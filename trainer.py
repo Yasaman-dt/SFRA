@@ -103,6 +103,15 @@ def test(model, data_loader, extra_class=0):
     train_acc = correct / total    
     return train_loss, train_acc
 
+def _last_linear_in_features(head: nn.Module) -> int:
+    # direct Linear head
+    if isinstance(head, nn.Linear):
+        return head.in_features
+    # Sequential or custom head: walk modules in reverse to find the last Linear
+    for m in reversed(list(head.modules())):
+        if isinstance(m, nn.Linear):
+            return m.in_features
+    raise AttributeError("No nn.Linear layer found inside model.fc/classifier head.")
 
 @timer
 def train_save_model(train_loader, test_loader, model_name, optim_name, learning_rate, num_epochs, path, description, use_pretrained=False, dataset_name: str = None):
@@ -116,7 +125,7 @@ def train_save_model(train_loader, test_loader, model_name, optim_name, learning
         import torch.nn as nn
         model.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
         model.maxpool = nn.Identity()
-        in_feats = model.fc.in_features
+        in_feats = _last_linear_in_features(model.fc)
         model.fc = nn.Sequential(nn.Dropout(0.4), nn.Linear(in_feats, num_classes))
     
     model = model.to("cuda")
@@ -205,7 +214,7 @@ def train_save_model(train_loader, test_loader, model_name, optim_name, learning
 @timer
 def finetune_save_model(train_loader, test_loader, model, optim_name, learning_rate, num_epochs, path, description, model_name, dataset_name):
 
-    optimizer = optimizer_picker(optim_name, model.parameters(), lr=learning_rate, model_name=model_name)
+    optimizer = optimizer_picker(optim_name, model.parameters(), lr=learning_rate, model_name=model_name, dataset_name=dataset_name)
 
     best_acc = 0
 
