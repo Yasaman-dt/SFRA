@@ -201,7 +201,7 @@ DEFAULT_BATCH_SIZES = {
 DEFAULT_NUM_CLASSES = {
     "cifar10": 10,
     "cifar100": 100,
-    "TinyImageNet": 200,
+    "tiny_imagenet": 200,
 }
 
         
@@ -210,7 +210,7 @@ def main():
 
     # ---- What to run ----
     parser.add_argument("--datasets", nargs="+", default=["cifar10"],
-                        help="Datasets to run. Example: cifar10 cifar100 TinyImageNet")
+                        help="Datasets to run. Example: cifar10 cifar100 tiny_imagenet")
     parser.add_argument("--num-classes", type=int, nargs="+", default=None,
                         help="Number of classes per dataset (same order as --datasets). "
                              "If omitted, will use built-in defaults for known datasets.")
