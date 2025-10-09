@@ -29,7 +29,7 @@ def optimizer_picker(optimization, param, lr, model_name, dataset_name):
     elif optimization == 'sgd': 
         if model_name == "vit-b-16":
             optimizer = optim.SGD(param, lr=0.1, weight_decay=5e-5)
-        if model_name == "resnet18" and dataset_name.casefold() == "tiny_imagenet":
+        elif model_name == "resnet18" and dataset_name.casefold() == "tiny_imagenet":
             optimizer = optim.SGD(param, lr=0.1, weight_decay=5e-5)
         else:
             optimizer = optim.SGD(param, lr=lr, momentum=0.9, weight_decay=5e-4)
