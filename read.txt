@@ -1,31 +1,33 @@
 conda activate /projets/Zdehghani/torch_env
 
 Train the ORIGINAL model from scratch:
-CUDA_VISIBLE_DEVICES=2 python main.py  --method pass  --dataset_name cifar10  --model_name vit-b-16  --train_from_scratch   --use_pretrained  --batch_size 256 
+CUDA_VISIBLE_DEVICES=2 python main.py  --method pass  --dataset_name tiny_imagenet  --model_name vit-b-16  --train_from_scratch   --use_pretrained
 
 
 Retrain-from-scratch baseline without the forget class:
+CUDA_VISIBLE_DEVICES=1 python main.py  --classes "0,1,2,3,4,5,6,7,8,9"   --method pass  --dataset_name cifar10  	--model_name resnet18    --retrain_from_scratch		--use_pretrained
+CUDA_VISIBLE_DEVICES=1 python main.py  --classes "0,20,40,60,80"   	 --method pass  --dataset_name cifar100  	--model_name vit-b-16    --retrain_from_scratch  	--use_pretrained
+CUDA_VISIBLE_DEVICES=2 python main.py  --classes "160"   	 --method pass  --dataset_name tiny_imagenet  	--model_name resnet18    --retrain_from_scratch		--use_pretrained
 
-CUDA_VISIBLE_DEVICES=2 python main.py --method pass   --dataset_name cifar10   --model_name vit-b-16   --retrain_from_scratch   --forget_class 1
-
-CUDA_VISIBLE_DEVICES=2 python main.py  --classes "0,1,2,3,4,5,6,7,8,9"   --method pass  --dataset_name cifar10  --model_name resnet18    --retrain_from_scratch
 
 
 Run unlearning method to forget a class: 
-CUDA_VISIBLE_DEVICES=2 python main.py  --dataset_name cifar10  --classes "0,1,2,3,4,5,6,7,8,9" --model_name swin-t  --method l2ul_adv --unlearn_rate 1e-5  --description lr_1e-5  --unlearn_epoch 300
+CUDA_VISIBLE_DEVICES=2 python main.py  --dataset_name cifar10  		--classes "0,1,2,3,4,5,6,7,8,9" --model_name resnet18  --method neggrad_plus    --unlearn_rate 5e-1  --description lr_5e-1
+CUDA_VISIBLE_DEVICES=3 python main.py  --dataset_name cifar100 		--classes "0,20,40,60,80" 	--model_name resnet18  --method delete    --unlearn_rate 1e-3  --description lr_1e-3
+CUDA_VISIBLE_DEVICES=1 python main.py  --dataset_name tiny_imagenet  	--classes "0,40,80,120,160" 	--model_name resnet18  --method gradient_ascent    --unlearn_rate 5e-5  --description lr_5e-5
 
 
 wood_fisher, salun, bad_teacher:
-CUDA_VISIBLE_DEVICES=2 python main.py  --dataset_name cifar10  --classes "1,2,3,4,5,6,7,8,9" --model_name vit-s-16  --retain_data True --method bad_teacher  --unlearn_rate 1e-4  --description lr_1e-4
+CUDA_VISIBLE_DEVICES=2 python main.py  --dataset_name cifar10  		--classes "0,1,2,3,4,5,6,7,8,9" --model_name resnet18  --retain_data True --method bad_teacher  --unlearn_rate 1e-5  --description lr_1e-5
+CUDA_VISIBLE_DEVICES=2 python main.py  --dataset_name cifar100  	--classes "80" 	--model_name resnet18  --retain_data True --method bad_teacher  --unlearn_rate 1e-3  --description lr_1e-3
+CUDA_VISIBLE_DEVICES=3 python main.py  --dataset_name tiny_imagenet  	--classes "0,40,80,120,160" 	--model_name vgg16  --retain_data True --method salun  --unlearn_rate 1e-5  --description lr_1e-5
 
 
+CUDA_VISIBLE_DEVICES=2 python test_original_model.py --datasets cifar10 	--model-name resnet18	--forget-classes 0 1 2 3 4 5 6 7 8 9
+CUDA_VISIBLE_DEVICES=0 python test_original_model.py --datasets cifar100 	--model-name resnet18	--forget-classes 0 20 40 60 80
+CUDA_VISIBLE_DEVICES=2 python test_original_model.py --datasets tiny_imagenet 	--model-name resnet18  	--forget-classes 0 40 80 120 160
 
-CUDA_VISIBLE_DEVICES=2 python test_original_model.py --datasets cifar10 --model-name resnet18
 
-
-model_name:  resnet18, vit-s-16, vit-b-16,swin-t, vgg16
-
-method: random_label, finetune, gradient_ascent, boundary_shrink, boundary_expand, l2ul_adv, l2ul_imp, delete, fisher, wood_fisher,  bad_teacher, salun, scrub, neggrad_plus
 
 
 # Unlearn on CIFAR10
@@ -46,10 +48,22 @@ python main.py  --method neggrad_plus    --unlearn_rate 1e-1  --description lr_1
 for s in $(screen -ls | grep Detached | awk '{print $1}'); do screen -S "$s" -X quit; done
 
 
-CUDA_VISIBLE_DEVICES=2 python revival_resnet18.py  --method scrub --model_name resnet18 --dataset cifar10 --lr 1e-3  --epochs 200  --forget 0  --cpr 500 --tpr 50000
-
-CUDA_VISIBLE_DEVICES=1 python revival.py  --method retrained --model_name vit-b-16 --dataset cifar10  --epochs 200  --forget 0,1,2,3,4,5,6,7,8,9  --cpr 500 --tpr 50000
-
-
+CUDA_VISIBLE_DEVICES=2 python revival.py  				--method bad_teacher  --model_name resnet18 	--dataset cifar10 --lr 5e-1  --epochs 200  --forget 0,1,2,3,4,5,6,7,8,9  --cpr 500 --tpr 500000
+CUDA_VISIBLE_DEVICES=3 python revival_resnet18_beforelastcnv.py  	--method bad_teacher  --model_name resnet18 	--dataset cifar10 --lr 1e-3  --epochs 200  --forget 0,1,2,3,4,5,6,7,8,9  --cpr 500 --tpr 500000
+CUDA_VISIBLE_DEVICES=3 python revival_vgg16_beforelastcnv.py  		--method bad_teacher  --model_name resnet18 	--dataset cifar10 --lr 1e-4  --epochs 200  --forget 0,1,2,3,4,5,6,7,8,9  --cpr 500 --tpr 500000
 
 
+CUDA_VISIBLE_DEVICES=0 python revival.py 	--method neggrad_plus  --model_name vit-b-16 	--dataset cifar10 		--lr 5e-1  	--epochs 200  --forget 2,4  	--cpr 500 --tpr 500000
+CUDA_VISIBLE_DEVICES=2 python revival.py 	--method gradient_ascent  --model_name resnet18 	--dataset cifar100 		--lr 5e-5  	--epochs 200  --forget 0  		--cpr 55 --tpr 50000
+CUDA_VISIBLE_DEVICES=2 python revival.py 	--method bad_teacher  --model_name resnet18 	--dataset tiny_imagenet 	--lr 5e-1  	--epochs 200  --forget 0,40,80,120,160  	--cpr 500 --tpr 500000
+
+
+CUDA_VISIBLE_DEVICES=2 python revival.py  --method retrained --model_name resnet18 --dataset cifar10 	 --epochs 200  --forget 0,1,2,3,4,5,6,7,8,9  	--cpr 500 --tpr 500000
+CUDA_VISIBLE_DEVICES=0 python revival.py  --method retrained --model_name vgg16 --dataset cifar100 	 --epochs 200  --forget 0  		--cpr 55 --tpr 500000
+CUDA_VISIBLE_DEVICES=2 python revival.py  --method retrained --model_name vgg16 --dataset tiny_imagenet  --epochs 200  --forget 0,40,80,120,160  	--cpr 500 --tpr 500000
+
+CUDA_VISIBLE_DEVICES=1 python eval_unlearned_model.py   --dataset_name tiny_imagenet  --model_name resnet18   --method original   --forget_id 0   --unlearn_rate 0.1  --exps_dir ~/classification/exps   --batch_size 256   --num_workers 8
+
+
+model_name:  resnet18, vit-s-16, vit-b-16, swin-t, vgg16
+method: random_label, finetune, gradient_ascent, boundary_shrink, boundary_expand, l2ul_adv, l2ul_imp, delete, fisher, wood_fisher,  bad_teacher, salun, scrub, neggrad_plus
