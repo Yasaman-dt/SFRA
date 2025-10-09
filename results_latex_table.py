@@ -7,7 +7,7 @@ from typing import Optional, List
 # ----------------- Config -----------------
 base_dir = Path("C:/Users/AT56170/Desktop/Codes/Machine Unlearning - Classification/class_unlearning/results/")
 
-DATASETS = ["cifar10", "cifar100"]
+DATASETS = ["cifar10", "cifar100", "tiny_imagenet"]
 
 # include ORIGINAL as a method
 methods = [
@@ -588,5 +588,5 @@ def render_table_for(ds: str, mdl: str, df_src: pd.DataFrame):
 # ---- choose the models you want, and the dataset (here: cifar10) ----
    
 from itertools import product
-for ds, mdl in product(["cifar10", "cifar100"], MODELS):
+for ds, mdl in product(["cifar10", "cifar100", "tiny_imagenet"], MODELS):
     render_table_for(ds, mdl, df_all)
