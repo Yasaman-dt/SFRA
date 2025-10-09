@@ -53,12 +53,19 @@ def _reset_classifier(model, num_classes: int):
     return model
 
 
-def get_model(model_name, num_classes, use_pretrained):
+def get_model(model_name, dataset_name, num_classes, use_pretrained):
     if model_name == 'resnet18':
         w = models.ResNet18_Weights.IMAGENET1K_V1 if use_pretrained else None
         model = models.resnet18(weights=w)
-        model = _reset_classifier(model, num_classes)
-        
+        if dataset_name == "tiny_imagenet":
+            model.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
+            model.maxpool = nn.Identity()
+            in_feats = model.fc.in_features
+            model.fc = nn.Sequential(nn.Dropout(0.4), nn.Linear(in_feats, num_classes))
+        else:
+            model.fc = nn.Linear(model.fc.in_features, num_classes)
+        return model
+
     elif model_name == 'resnet50':
         w = models.ResNet50_Weights.IMAGENET1K_V1 if use_pretrained else None
         model = models.resnet50(weights=w)
@@ -99,10 +106,10 @@ def get_model(model_name, num_classes, use_pretrained):
     
     return model
 
-def load_model(model_path, model_name, num_classes):
+def load_model(model_path, model_name, dataset_name, num_classes):
     model_ckpt = torch.load( model_path , map_location="cuda")
     if isinstance(model_ckpt, dict):  
-        model = get_model(model_name, num_classes, use_pretrained=False)
+        model = get_model(model_name, dataset_name, num_classes, use_pretrained=False)
         model_ckpt = {k.replace('module.', ''): v for k, v in model_ckpt.items()}
         model.load_state_dict(model_ckpt)
     else:
