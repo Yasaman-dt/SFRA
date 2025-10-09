@@ -594,7 +594,7 @@ if __name__ == '__main__':
         original_model_path = ckpt_path / f'{args.dataset_name}_{model_name}_original_model.pth'
     note_print(f"load original model from {original_model_path}")
 
-    ori_model = load_model(original_model_path, model_name, num_classes)
+    ori_model = load_model(original_model_path, model_name, args.dataset_name, num_classes)
 
     _, Aor = test(ori_model, test_remain_loader)   # (loss, acc)
 
@@ -631,7 +631,7 @@ if __name__ == '__main__':
 
     note_print(f"load retrain model from {retrain_model_path}")
 
-    retrain_model = load_model(retrain_model_path, model_name, num_classes)
+    retrain_model = load_model(retrain_model_path, model_name, args.dataset_name, num_classes)
 
     if not args.debug:
         _, acc = test(retrain_model, train_forget_loader)
