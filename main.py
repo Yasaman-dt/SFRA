@@ -773,7 +773,7 @@ if __name__ == '__main__':
 
     elif args.method == "bad_teacher":
         good_teacher_model = copy.deepcopy(ori_model).to("cuda")
-        bad_teacher_model = get_model(model_name, num_classes, use_pretrained=args.use_pretrained).to("cuda")
+        bad_teacher_model = get_model(model_name, args.dataset_name, num_classes, use_pretrained=args.use_pretrained).to("cuda")
 
         filtered_remain_index = random.sample(train_remain_index, int(0.3*len(train_remain_index))) if args.retain_data else []
         
