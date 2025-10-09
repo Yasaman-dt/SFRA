@@ -1,8 +1,8 @@
-pretrain_epoch: 150
+pretrain_epoch: 50
 pretrain_lr: 0.1
 batch_size: 256
 
-unlearn_epoch: 150
+unlearn_epoch: 50
 unlearn_rate: 5e-5
 
 permutation_map: [126, 162, 16, 87, 88, 17, 78, 93, 127, 14,
