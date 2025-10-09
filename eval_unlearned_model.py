@@ -47,7 +47,7 @@ def main():
         base = str(Path(args.exps_dir).expanduser())
         ckpt = checkpoint_for(args.method, args.dataset_name, args.model_name, args.forget_id, args.unlearn_rate, base)
 
-    model = load_model(ckpt, args.model_name, num_classes).to(device).eval()
+    model = load_model(ckpt, args.model_name, args.dataset_name, num_classes).to(device).eval()
 
     # ---- CSV path (matches your main.py convention) ----
     out_csv = Path("results") / args.method / \
