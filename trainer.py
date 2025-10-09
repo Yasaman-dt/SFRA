@@ -110,7 +110,7 @@ def train_save_model(train_loader, test_loader, model_name, optim_name, learning
     num_classes = max(train_loader.dataset.targets) + 1  # if args.num_classes is None else args.num_classes
     print(f"num_classes:{num_classes}")
 
-    model = get_model(model_name, num_classes, use_pretrained)
+    model = get_model(model_name, dataset_name, num_classes, use_pretrained)
     
     if model_name == "resnet18" and dataset_name.lower() == "tiny_imagenet":
         import torch.nn as nn

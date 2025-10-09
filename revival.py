@@ -430,7 +430,7 @@ for forget_class in forget_classes:
     }
 
     ckpt = checkpoint_for(method, dataset_name, model_name, forget_class, lr, DIR)
-    model = load_model(ckpt, model_name, num_classes).to(device).eval()
+    model = load_model(ckpt, model_name, dataset_name, num_classes).to(device).eval()
 
     # --- transforms & datasets ---
     wo_dataaug = False

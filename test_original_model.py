@@ -119,7 +119,7 @@ def run_for_dataset(
 
     # ---- Load model once ----
     ckpt_path = resolve_checkpoint(dataset_name, model_name, checkpoint_folder, fallback_dir)
-    model = load_model(str(ckpt_path), model_name, num_classes)
+    model = load_model(str(ckpt_path), model_name, dataset_name, num_classes)
     model.to(device).eval()
 
     # ---- Build base datasets/loaders ONCE ----
