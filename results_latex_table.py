@@ -7,7 +7,7 @@ from typing import Optional, List
 # ----------------- Config -----------------
 base_dir = Path("C:/Users/AT56170/Desktop/Codes/Machine Unlearning - Classification/class_unlearning/results/")
 
-DATASETS = ["cifar10"]  # extend if needed
+DATASETS = ["cifar10", "cifar100"]
 
 # include ORIGINAL as a method
 methods = [
@@ -185,6 +185,7 @@ all_rows = []
 per_method_info = []
 
 for ds in DATASETS:
+    
     for mdl in MODELS:
         for mth in methods:
             if mth == "original":
@@ -428,7 +429,6 @@ def apply_multirow(table_df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-
 def wrap_with_resizebox(latex_src: str, caption: str, label: str,
                         star: bool = True, width: str = r"\textwidth") -> str:
     env = "table*" if star else "table"
@@ -452,7 +452,7 @@ method_name_and_ref = {
     "random_label": r"Random Label \cite{hayase2020selective}",
     "boundary_shrink": r"Boundary Shrink \cite{chen2023boundary}",
     "boundary_expand": r"Boundary Expand \cite{chen2023boundary}",
-    "l2ul_adv": r"Learn to Unlearn Adv \cite{cha2024learning}",
+    "l2ul_adv": r"Learn to Unlearn \cite{cha2024learning}",
     "l2ul_imp": r"Learn to Unlearn Adv+IMP \cite{cha2024learning}",
     # "fisher": r"Fisher",
     # "wood_fisher": r"WoodFisher",
@@ -586,11 +586,7 @@ def render_table_for(ds: str, mdl: str, df_src: pd.DataFrame):
     return out
 
 # ---- choose the models you want, and the dataset (here: cifar10) ----
-models_to_render = MODELS
-dataset_to_render = "cifar10"  # change/loop if you have more datasets
-
-
-for mdl in MODELS:
-    render_table_for(dataset_to_render, mdl, df_all)
-    
    
+from itertools import product
+for ds, mdl in product(["cifar10", "cifar100"], MODELS):
+    render_table_for(ds, mdl, df_all)
