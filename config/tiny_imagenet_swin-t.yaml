@@ -1,4 +1,4 @@
-pretrain_epoch: 50
+pretrain_epoch: 100
 pretrain_lr: 0.1
 batch_size: 256
 
