@@ -29,6 +29,10 @@ def optimizer_picker(optimization, param, lr, model_name, dataset_name):
     elif optimization == 'sgd': 
         if model_name == "vit-b-16":
             optimizer = optim.SGD(param, lr=0.1, weight_decay=5e-5)
+        elif model_name == "swin-t" and dataset_name.casefold() == "cifar100":
+            optimizer = optim.SGD(param, lr=0.1, weight_decay=5e-5)
+        elif model_name == "swin-t" and dataset_name.casefold() == "tiny_imagenet":
+            optimizer = optim.SGD(param, lr=0.1, weight_decay=5e-5)
         elif model_name == "resnet18" and dataset_name.casefold() == "tiny_imagenet":
             optimizer = optim.SGD(param, lr=0.1, weight_decay=5e-5)
         else:
@@ -46,7 +50,7 @@ def train(model, data_loader, optimizer, epoch, model_name, dataset_name, tqdm_o
     # correct = 0
     # total = 0
     ds = (dataset_name or "").casefold()
-    use_smoothing = (model_name == "vit-b-16") or (model_name == "resnet18" and ds == "tiny_imagenet")
+    use_smoothing = (model_name == "vit-b-16") or  (model_name == "swin-t" and ds == "cifar100") or  (model_name == "swin-t" and ds == "tiny_imagenet") or (model_name == "resnet18" and ds == "tiny_imagenet")
     criterion = nn.CrossEntropyLoss(label_smoothing=0.4) if use_smoothing else nn.CrossEntropyLoss()
 
 
@@ -142,6 +146,12 @@ def train_save_model(train_loader, test_loader, model_name, optim_name, learning
         scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs)
     else:
         scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=25, gamma=0.1)  # 25 to match old recipe
+
+    if model_name=="swin-t" and dataset_name.casefold() in {"cifar100"}:
+        scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs)
+    else:
+        scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=25, gamma=0.1)  # 25 to match old recipe
+
 
     if model_name=="resnet18" and dataset_name.casefold() in {"tiny_imagenet"}:
         scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=25, gamma=0.1)  # 25 to match old recipe

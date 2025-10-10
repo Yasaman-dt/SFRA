@@ -376,7 +376,9 @@ def get_transforms(dataset_name, model_name, wo_dataaug):
                                     else transforms.Resize((224,224))  
                                     
     is_vit_b_16 = model_name.startswith("vit-b-16")
-    if dataset_name in ["cifar10", "cifar100"]:
+    is_swin_t = model_name.startswith("swin-t")
+    
+    if dataset_name == "cifar10": 
         if is_vit_b_16:
             transform_train = transforms.Compose([
                 transforms.Resize(224, interpolation=transforms.InterpolationMode.BICUBIC, antialias=True),
@@ -403,7 +405,38 @@ def get_transforms(dataset_name, model_name, wo_dataaug):
                 transforms.ToTensor(),
                 transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616)),
             ])
-            
+
+
+    if dataset_name == "cifar100": 
+        if is_vit_b_16 or is_swin_t:
+            transform_train = transforms.Compose([
+                transforms.Resize(224, interpolation=transforms.InterpolationMode.BICUBIC, antialias=True),
+                transforms.RandomHorizontalFlip(),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=mean[dataset_name], std=std[dataset_name]),
+            ])
+            transform_test = transforms.Compose([
+                transforms.Resize(224, interpolation=transforms.InterpolationMode.BICUBIC, antialias=True),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=mean[dataset_name], std=std[dataset_name]),
+            ])
+
+        else:
+            transform_train = transforms.Compose([
+                transforms.RandomHorizontalFlip(),
+                transforms.RandomCrop(32, padding=4),
+                resize_transform,
+                transforms.ToTensor(),          
+                transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616)),
+            ])
+            transform_test = transforms.Compose([
+                resize_transform,
+                transforms.ToTensor(),
+                transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616)),
+            ])
+
+
+
 
     elif dataset_name == "vggface": 
         transform_train = transforms.Compose([
