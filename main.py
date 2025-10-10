@@ -292,8 +292,7 @@ if __name__ == '__main__':
 
         csv_forget = args.forget_id if args.forget_id is not None else forget_class
 
-        if args.forget_id is not None:
-            results_csv = ckpt_path / f"{args.dataset_name}_{model_name}_original_model_metrics.csv"
+        results_csv = ckpt_path / f"{args.dataset_name}_{model_name}_original_model_metrics.csv"
 
         gather_and_write_metrics_csv(
             csv_path=str(results_csv),
