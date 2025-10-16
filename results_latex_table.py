@@ -807,7 +807,7 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
         ds_names = _latex_dataset_name(datasets[0])
     else:
         ds_names = ", ".join(_latex_dataset_name(d) for d in datasets[:-1]) + f", and {_latex_dataset_name(datasets[-1])}"
-    caption = f"Unlearning results (train \\& test) on {ds_names} for {mdl_latex} (mean$\\pm$std)."
+    caption = f"Unlearning results on {ds_names} for {mdl_latex} (mean$\\pm$std)."
     label   = f"tab:{slugify(mdl_latex)}_joint_all_datasets_train_test"
     latex = wrap_with_resizebox(latex, caption, label, star=True, width=r"\textwidth")
 
