@@ -593,52 +593,97 @@ for ds, mdl in product(["cifar10", "cifar100", "tiny_imagenet"], MODELS):
     
 def add_group_vertical_bars(latex_src: str, datasets: List[str]) -> str:
     """
-    Turn \multicolumn{4}{c}{<DS>} into \multicolumn{4}{|c|}{<DS>}
-    for each dataset header, so group columns are boxed by vertical rules.
-    Robust to spaces and math/text in the DS label.
+    Ensure vertical rules continue through the dataset \multicolumn headers.
+    Works even if the header text is wrapped, e.g. {\textbf{CIFAR-10}}.
+
+    Policy:
+      - first dataset:  c|   (right bar only)
+      - middle datasets: |c| (left and right bars)
+      - last dataset:   |c   (left bar only)
     """
     out = latex_src
-    for ds in datasets:
+    n = len(datasets)
+    for i, ds in enumerate(datasets):
         dsl = _latex_dataset_name(ds)
-        # match: \multicolumn{4}{c}{<dsl>}  ->  \multicolumn{4}{|c|}{<dsl>}
-        pattern = rf"(\\multicolumn\{{4\}}\{{)c(\}}\{{\s*{re.escape(dsl)}\s*\}})"
-        out = re.sub(pattern, r"\1|c|\2", out)
+        # Match: \multicolumn{4}{<center>}{ ... dsl ... }
+        # Capture group(1) = "\multicolumn{4}{"
+        #         group(2) = the closing "}{...dsl...}"
+        pat = rf"(\\multicolumn\{{4\}}\{{)(?:\|?c\|?)(\}}\{{[^}}]*{re.escape(dsl)}[^}}]*\}})"
+
+        if i == 0:
+            spec = "c"       # first group: only RIGHT bar
+        elif i == n - 1:
+            spec = "c"       # last group: only LEFT bar
+        else:
+            spec = "|c|"      # middle groups: LEFT and RIGHT bars
+
+        out = re.sub(pat, rf"\1{spec}\2", out)
     return out
 
-def center_method_phase_headers(latex_src: str) -> str:
-    """
-    Replace the leading blanks on the first header row with \multirow{2}{*}{Method}
-    and \multirow{2}{*}{Phase}, and blank out the second-row duplicates so the text
-    appears vertically centered across the two header rows.
-    Requires \\usepackage{multirow}.
+
+def center_method_phase_headers(latex_src: str, dataset_labels: List[str]) -> str:
+    r"""
+    Rebuild header row 1 so it is:
+    \multirow{2}{*}{Method} & \multirow{2}{*}{Phase} &
+        \multicolumn{4}{c}{<DS1>} & \multicolumn{4}{c}{<DS2>} & ...
+    Then blank the Method/Phase cells on header row 2.
     """
     lines = latex_src.splitlines()
-    # find the first header block (right after the first \toprule)
-    try:
-        i_top = next(i for i, ln in enumerate(lines) if r"\toprule" in ln)
-    except StopIteration:
-        return latex_src  # nothing to do
-
-    # pandas typically emits:
-    #   lines[i_top+1]: " &  & \multicolumn{4}{c}{...} & ..."
-    #   lines[i_top+2]: " Method & Phase & A... & ..."
-    #   lines[i_top+3]: "\midrule"
-    if i_top + 2 >= len(lines):
+    if not lines:
         return latex_src
 
-    # Put multirow cells on the FIRST header row
-    lines[i_top + 1] = re.sub(
-        r"^\s*&\s*&",
-        r" \multirow{2}{*}{Method} & \multirow{2}{*}{Phase} &",
-        lines[i_top + 1]
+    # find header1: the first line with any \multicolumn{4}
+    h1 = None
+    for i, L in enumerate(lines):
+        if r"\multicolumn{4}" in L:
+            h1 = i
+            break
+    if h1 is None:
+        return latex_src
+
+    # header2 is the next non-empty line with '& ... \\'
+    h2 = None
+    for j in range(h1 + 1, min(h1 + 8, len(lines))):
+        Lj = lines[j].strip()
+        if "&" in Lj and Lj.endswith(r"\\"):
+            h2 = j
+            break
+    if h2 is None:
+        return latex_src
+
+    # --- rebuild header row 1 exactly from dataset_labels ---
+    group_bits = [rf"\multicolumn{{4}}{{c}}{{\textbf{{{ds}}}}}" for ds in dataset_labels]
+    new_h1 = (
+        r"\multirow{2}{*}{Method} & \multirow{2}{*}{Phase} & "
+        + " & ".join(group_bits)
+        + r" \\"
     )
-    # Remove the repeated labels from the SECOND header row
-    lines[i_top + 2] = re.sub(
-        r"^\s*Method\s*&\s*Phase\s*&",
-        r"  &  & ",
-        lines[i_top + 2]
-    )
+    lines[h1] = new_h1
+
+    # --- blank "Method & Phase" in header row 2 ---
+    # split & keep trailing \\ intact
+    def _split_cells(line: str):
+        trail = ""
+        if line.rstrip().endswith(r"\\"):
+            k = line.rfind(r"\\")
+            body, trail = line[:k], line[k:]
+        else:
+            body, trail = line, ""
+        cells = [c.strip() for c in body.split("&")]
+        return cells, trail
+
+    def _join_cells(cells, trail):
+        return " & ".join(cells) + trail
+
+    h2_cells, h2_trail = _split_cells(lines[h2])
+    while len(h2_cells) < 2:
+        h2_cells.append("")
+    h2_cells[0] = ""   # under the multirow
+    h2_cells[1] = ""
+    lines[h2] = _join_cells(h2_cells, h2_trail)
+
     return "\n".join(lines)
+
 
 
 def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[str]) -> Optional[Path]:
@@ -693,7 +738,7 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
     # Labels for grouped headers (4 per dataset)
     top_labels = []
     for ds in datasets:
-        dsl = _latex_dataset_name(ds)
+        dsl = _latex_dataset_name(ds)          # plain
         top_labels += [
             (dsl, r"$\mathcal{A}^{\text{train}}_{r}$"),
             (dsl, r"$\mathcal{A}^{\text{train}}_{f}$"),
@@ -748,10 +793,14 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
         column_format=column_format,
     )
 
-
-    # Optional: post-process rules
+    dataset_labels = [_latex_dataset_name(d) for d in datasets]
+    latex = center_method_phase_headers(latex, dataset_labels)
+    
+    # Now add the vertical boxing for each dataset group
+    latex = add_group_vertical_bars(latex, datasets)
+    
     latex = add_midrules_between_methods(latex)
-
+            
     # Wrap in table env
     mdl_latex = _latex_model_name(mdl)
     if len(datasets) == 1:
@@ -760,7 +809,8 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
         ds_names = ", ".join(_latex_dataset_name(d) for d in datasets[:-1]) + f", and {_latex_dataset_name(datasets[-1])}"
     caption = f"Unlearning results (train \\& test) on {ds_names} for {mdl_latex} (mean$\\pm$std)."
     label   = f"tab:{slugify(mdl_latex)}_joint_all_datasets_train_test"
-    latex   = wrap_with_resizebox(latex, caption, label, star=True, width=r"\textwidth")
+    latex = wrap_with_resizebox(latex, caption, label, star=True, width=r"\textwidth")
+
 
     out = base_dir / f"latex_table_{slugify(mdl)}.tex"
     with open(out, "w", encoding="utf-8") as f:
