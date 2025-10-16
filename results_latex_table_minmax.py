@@ -24,6 +24,26 @@ MODELS   = ["resnet18", "vit-s-16", "vit-b-16", "swin-t", "vgg16"]
 
 KNOWN_METHODS = set(methods)
 
+# ---- Table output choices ----
+SHOW_TRAIN_METRICS = False  # set True to keep train_* columns, False to drop them
+
+# Columns to compute from CSV regardless (we still need them for aggregation)
+ALL_METRIC_COLS = ["train_retain_acc","train_forget_acc","test_retain_acc","test_forget_acc"]
+
+# Columns to actually display in LaTeX
+if SHOW_TRAIN_METRICS:
+    OUT_METRIC_COLS = ["train_retain_acc","train_forget_acc","test_retain_acc","test_forget_acc"]
+else:
+    OUT_METRIC_COLS = ["test_retain_acc","test_forget_acc"]
+
+# Pretty labels for displayed columns only
+COL_LABELS = {
+    "train_retain_acc": r"$\mathcal{A}^{\text{train}}_{r}$",
+    "train_forget_acc": r"$\mathcal{A}^{\text{train}}_{f}$",
+    "test_retain_acc":  r"$\mathcal{A}^{t}_{r}$",
+    "test_forget_acc":  r"$\mathcal{A}^{t}_{f}$",
+}
+
 
 def slugify(s: Optional[str]) -> str:
     if s is None:
@@ -57,7 +77,7 @@ def parse_filename(path: Path):
     if "revival" in name:
         phase = "revival"
     elif "forget" in name:
-        phase = "forget"
+        phase = "unlearned"
     elif ("original" in toks) or (mth == "original"):
         phase = "original"
     else:
@@ -249,7 +269,7 @@ for ds in DATASETS:
             if forget_path is not None:
                 try:
                     df_f = load_forget_csv(forget_path,  ds_hint=ds, mdl_hint=mdl, mth_hint=mth)
-                    df_f["phase"] = "forget"
+                    df_f["phase"] = "unlearned"
                     # normalize meta
                     df_f["dataset"] = ds
                     df_f["model"]   = mdl
@@ -291,7 +311,7 @@ if all_rows:
     global_merged = base_dir / "z_standardized_selected_all_methods.csv"
     merged.to_csv(global_merged, index=False)
 
-    (merged[merged["phase"] == "forget"]
+    (merged[merged["phase"] == "unlearned"]
         .to_csv(base_dir / "z_standardized_forget_all_methods.csv", index=False))
     (merged[merged["phase"] == "revival"]
         .to_csv(base_dir / "z_standardized_revival_all_methods.csv", index=False))
@@ -306,7 +326,7 @@ if all_rows:
         out_merged = base_dir / f"z_standardized_selected_all_methods_{ds_tag}_{mdl_tag}.csv"
         df_i.to_csv(out_merged, index=False)
 
-        for ph in ["forget", "revival", "original"]:
+        for ph in ["unlearned", "revival", "original"]:
             df_ph = df_i[df_i["phase"] == ph]
             if not df_ph.empty:
                 out_ph = base_dir / f"z_standardized_{ph}_all_methods_{ds_tag}_{mdl_tag}.csv"
@@ -330,10 +350,8 @@ else:
 merged_path = base_dir / "z_standardized_selected_all_methods.csv"
 df_all = pd.read_csv(merged_path)
 
-metric_cols = ["train_retain_acc","train_forget_acc","test_retain_acc","test_forget_acc"]
-for c in metric_cols:
+for c in ALL_METRIC_COLS:
     df_all[c] = pd.to_numeric(df_all.get(c), errors="coerce")
-    
     
 
 # Order you prefer; any extra/unknown methods present in the CSV will be appended at the end.
@@ -345,7 +363,7 @@ METHOD_ORDER = [
     "fisher", "wood_fisher",
     "scrub", "bad_teacher", "salun", "delete",
 ]
-PHASE_ORDER = ["forget", "revival"]  # non-original methods get these two rows
+PHASE_ORDER = ["unlearned", "revival"]  # non-original methods get these two rows
 
 def fmt_mu_sigma(mu, sigma):
     if pd.isna(mu) and pd.isna(sigma):
@@ -422,8 +440,8 @@ def apply_multirow(table_df: pd.DataFrame) -> pd.DataFrame:
     for label in df["Method"].unique():
         sub = df[df["Method"] == label]
         # Only multirow when we truly have both phases
-        if len(sub) == 2 and set(sub["Phase"]) == {"Forget", "Revival"}:
-            idx_forget  = sub.index[sub["Phase"] == "Forget"][0]
+        if len(sub) == 2 and set(sub["Phase"]) == {"Unlearned", "Revival"}:
+            idx_forget  = sub.index[sub["Phase"] == "Unlearned"][0]
             idx_revival = sub.index[sub["Phase"] == "Revival"][0]
             df.loc[idx_forget,  "Method"] = rf"\multirow{{2}}{{*}}{{{label}}}"
             df.loc[idx_revival, "Method"] = ""  # empty cell under the multirow
@@ -518,9 +536,10 @@ def render_table_for(ds: str, mdl: str, df_src: pd.DataFrame):
         print(f"[WARN] No rows for dataset={ds}, model={mdl}")
         return None
 
-    g = df.groupby(["method","phase"], dropna=False)[metric_cols].agg(["mean","std","min","max"])
+    # aggregate ALL metrics; we'll only display OUT_METRIC_COLS
+    g = df.groupby(["method","phase"], dropna=False)[ALL_METRIC_COLS].agg(["mean","std","min","max"])
 
-    # Keep your preferred ordering, then append any extras found in the data.
+    # method ordering (yours + extras found)
     present = [m for m in METHOD_ORDER if m in df["method"].unique()]
     extras  = sorted(set(df["method"].unique()) - set(present))
     method_list = present + extras
@@ -530,70 +549,66 @@ def render_table_for(ds: str, mdl: str, df_src: pd.DataFrame):
         if m == "original":
             phase = "original"
             row = {"Method": m, "Phase": phase.title()}
-            for col in metric_cols:
-                mu = g.loc[(m, phase), (col, "mean")] if (m, phase) in g.index else np.nan
-                sd = g.loc[(m, phase), (col, "std")]  if (m, phase) in g.index else np.nan
+            for col in OUT_METRIC_COLS:
+                if (m, phase) in g.index:
+                    mu = g.loc[(m, phase), (col, "mean")]
+                    sd = g.loc[(m, phase), (col, "std")]
+                else:
+                    mu, sd = np.nan, np.nan
                 row[col] = fmt_mu_sigma(mu, sd)
             rows.append(row)
-    else:
-        for phase in PHASE_ORDER:
-            row = {"Method": m, "Phase": phase.title()}
-            if (m, phase) in g.index:
-                for col in metric_cols:
-                    if phase == "revival" and col in ("train_forget_acc", "test_forget_acc"):
-                        vmin = g.loc[(m, phase), (col, "min")]
-                        vmax = g.loc[(m, phase), (col, "max")]
-                        row[col] = fmt_min_max(vmin, vmax)
-                    else:
-                        mu = g.loc[(m, phase), (col, "mean")]
-                        sd = g.loc[(m, phase), (col, "std")]
-                        row[col] = fmt_mu_sigma(mu, sd)
-            else:
-                for col in metric_cols:
-                    row[col] = "-"
-            rows.append(row)
+        else:
+            for phase in PHASE_ORDER:  # "forget", "revival"
+                row = {"Method": m, "Phase": phase.title()}
+                if (m, phase) in g.index:
+                    for col in OUT_METRIC_COLS:
+                        # Keep (min,max) formatting for revival forget-accuracy columns if present
+                        if phase == "revival" and col in ("train_forget_acc", "test_forget_acc"):
+                            vmin = g.loc[(m, phase), (col, "min")]
+                            vmax = g.loc[(m, phase), (col, "max")]
+                            row[col] = fmt_min_max(vmin, vmax)
+                        else:
+                            mu = g.loc[(m, phase), (col, "mean")]
+                            sd = g.loc[(m, phase), (col, "std")]
+                            row[col] = fmt_mu_sigma(mu, sd)
+                else:
+                    for col in OUT_METRIC_COLS:
+                        row[col] = "-"
+                rows.append(row)
 
-    table_df = pd.DataFrame(
-        rows, columns=["Method","Phase"] + metric_cols
-        ).rename(columns={
-            "train_retain_acc": r"$\mathcal{A}^{\text{train}}_{r}$",
-            "train_forget_acc": r"$\mathcal{A}^{\text{train}}_{f}$",
-            "test_retain_acc":  r"$\mathcal{A}^{\text{test}}_{r}$",
-            "test_forget_acc":  r"$\mathcal{A}^{\text{test}}_{f}$",
-        })
+    table_df = pd.DataFrame(rows, columns=["Method","Phase"] + OUT_METRIC_COLS) \
+                 .rename(columns={c: COL_LABELS[c] for c in OUT_METRIC_COLS})
 
-            
     table_df["Method"] = table_df["Method"].map(_method_label)
-
     table_df = apply_multirow(table_df)
 
-    # Escape LaTeX specials in text columns
-    for col in ["Method", "Phase"]:
-        table_df[col] = (
-            table_df[col].astype(str)
-            .str.replace("_", r"\_", regex=False)
-            .str.replace("&", r"\&", regex=False)
-            .str.replace("%", r"\%", regex=False)
-        )
+    # escape LaTeX in text columns
+    for col in ["Method","Phase"]:
+        table_df[col] = (table_df[col].astype(str)
+                         .str.replace("_", r"\_", regex=False)
+                         .str.replace("&", r"\&", regex=False)
+                         .str.replace("%", r"\%", regex=False))
 
-    latex = table_df.to_latex(
-        index=False, escape=False, column_format="c|c|cccc",
-        caption=None,
-        label=None,
-    )
+    # dynamic column format: Method | Phase | (one 'c' per displayed metric)
+    column_format = "c|c|" + ("c" * len(OUT_METRIC_COLS))
+    latex = table_df.to_latex(index=False, escape=False, column_format=column_format)
     latex = add_midrules_between_methods(latex)
 
     mdl_latex = _latex_model_name(mdl)
     ds_latex  = _latex_dataset_name(ds)
 
-    cap = (f"{ds_latex} / {mdl_latex} — Unlearning results "
-           f"(mean$\\pm$std; Revival rows show $({{\\min}},{{\\max}})$ for "
-           f"$\\mathcal{{A}}^{{\\text{{train}}}}_{{f}}$ and $\\mathcal{{A}}^{{\\text{{test}}}}_{{f}}$)")
+    if SHOW_TRAIN_METRICS:
+        cap = (f"{ds_latex} / {mdl_latex} — Unlearning results "
+               f"(mean$\\pm$std; Revival rows show $({{\\min}},{{\\max}})$ for "
+               f"$\\mathcal{{A}}^{{\\text{{train}}}}_{{f}}$ and $\\mathcal{{A}}^{{t}}_{{f}}$)")
+    else:
+        cap = (f"{ds_latex} / {mdl_latex} — Unlearning results "
+               f"(mean$\\pm$std; Revival rows show $({{\\min}},{{\\max}})$ for "
+               f"$\\mathcal{{A}}^{{t}}_{{f}}$)")
+
     lab = f"tab:{slugify(ds_latex)}_{slugify(mdl_latex)}_ALL"
     latex = wrap_with_resizebox(latex, cap, lab, star=True, width=r"\textwidth")
 
-
-    # Make a safe filename (avoid weird chars)
     safe_mdl = re.sub(r'[^A-Za-z0-9\-]+', "_", mdl)
     safe_ds  = slugify(ds_latex)
     out = base_dir / f"latex_table_{safe_ds}_{safe_mdl}.tex"
@@ -601,6 +616,7 @@ def render_table_for(ds: str, mdl: str, df_src: pd.DataFrame):
         f.write(latex)
     print(f"[OK] wrote: {out}")
     return out
+
 
 # ---- choose the models you want, and the dataset (here: cifar10) ----
    
@@ -611,49 +627,40 @@ for ds, mdl in product(["cifar10", "cifar100", "tiny_imagenet"], MODELS):
     
 def add_group_vertical_bars(latex_src: str, datasets: List[str]) -> str:
     """
-    Ensure vertical rules continue through the dataset \multicolumn headers.
-    Works even if the header text is wrapped, e.g. {\textbf{CIFAR-10}}.
-
-    Policy:
-      - first dataset:  c|   (right bar only)
-      - middle datasets: |c| (left and right bars)
-      - last dataset:   |c   (left bar only)
+    Ensure vertical rules continue through the dataset \\multicolumn headers.
+    Works even if the header text is wrapped.
     """
     out = latex_src
-    n = len(datasets)
+    ncols = len(OUT_METRIC_COLS)
     for i, ds in enumerate(datasets):
         dsl = _latex_dataset_name(ds)
-        # Match: \multicolumn{4}{<center>}{ ... dsl ... }
-        # Capture group(1) = "\multicolumn{4}{"
-        #         group(2) = the closing "}{...dsl...}"
-        pat = rf"(\\multicolumn\{{4\}}\{{)(?:\|?c\|?)(\}}\{{[^}}]*{re.escape(dsl)}[^}}]*\}})"
-
+        # Match: \multicolumn{ncols}{<center>}{ ... dsl ... }
+        pat = rf"(\\multicolumn\{{{ncols}\}}\{{)(?:\|?c\|?)(\}}\{{[^}}]*{re.escape(dsl)}[^}}]*\}})"
         if i == 0:
-            spec = "c"       # first group: only RIGHT bar
-        elif i == n - 1:
-            spec = "c"       # last group: only LEFT bar
+            spec = "c"       # first group: right bar only (pandas will add inter-column bars)
+        elif i == len(datasets) - 1:
+            spec = "c"       # last group: left bar only
         else:
-            spec = "|c|"      # middle groups: LEFT and RIGHT bars
-
+            spec = "|c|"     # middle groups: left and right bars
         out = re.sub(pat, rf"\1{spec}\2", out)
     return out
 
 
 def center_method_phase_headers(latex_src: str, dataset_labels: List[str]) -> str:
     r"""
-    Rebuild header row 1 so it is:
+    Rebuild header row 1 to use dynamic ncols per dataset:
     \multirow{2}{*}{Method} & \multirow{2}{*}{Phase} &
-        \multicolumn{4}{c}{<DS1>} & \multicolumn{4}{c}{<DS2>} & ...
+        \multicolumn{ncols}{c}{<DS1>} & ...
     Then blank the Method/Phase cells on header row 2.
     """
     lines = latex_src.splitlines()
     if not lines:
         return latex_src
 
-    # find header1: the first line with any \multicolumn{4}
+    # find header1: first line with any \multicolumn{
     h1 = None
     for i, L in enumerate(lines):
-        if r"\multicolumn{4}" in L:
+        if r"\multicolumn{" in L:
             h1 = i
             break
     if h1 is None:
@@ -669,8 +676,8 @@ def center_method_phase_headers(latex_src: str, dataset_labels: List[str]) -> st
     if h2 is None:
         return latex_src
 
-    # --- rebuild header row 1 exactly from dataset_labels ---
-    group_bits = [rf"\multicolumn{{4}}{{c}}{{\textbf{{{ds}}}}}" for ds in dataset_labels]
+    ncols = len(OUT_METRIC_COLS)
+    group_bits = [rf"\multicolumn{{{ncols}}}{{c}}{{\textbf{{{ds}}}}}" for ds in dataset_labels]
     new_h1 = (
         r"\multirow{2}{*}{Method} & \multirow{2}{*}{Phase} & "
         + " & ".join(group_bits)
@@ -678,8 +685,7 @@ def center_method_phase_headers(latex_src: str, dataset_labels: List[str]) -> st
     )
     lines[h1] = new_h1
 
-    # --- blank "Method & Phase" in header row 2 ---
-    # split & keep trailing \\ intact
+    # blank the "Method & Phase" cells on header row 2
     def _split_cells(line: str):
         trail = ""
         if line.rstrip().endswith(r"\\"):
@@ -704,34 +710,35 @@ def center_method_phase_headers(latex_src: str, dataset_labels: List[str]) -> st
 
 
 
+
 def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[str]) -> Optional[Path]:
-    # Filter rows for this model and the requested datasets
     df = df_src[df_src["model"] == mdl].copy()
     if df.empty:
         print(f"[WARN] No rows for model={mdl}")
         return None
     df = df[df["dataset"].isin(datasets)]
 
-    # ---- include TRAIN + TEST metrics ----
-    metric_cols = ["train_retain_acc", "train_forget_acc", "test_retain_acc", "test_forget_acc"]
-    for c in metric_cols:
-        df[c] = pd.to_numeric(df.get(c), errors="coerce")
+    # aggregate ALL, display OUT only
+    g = df.groupby(["dataset","method","phase"], dropna=False)[ALL_METRIC_COLS].agg(["mean","std","min","max"])
 
-    # Aggregate mean/std per (dataset, method, phase)
-    g = df.groupby(["dataset", "method", "phase"], dropna=False)[metric_cols].agg(["mean","std","min","max"])
+    # dataset group headers (one per displayed metric)
+    top_labels = []
+    for ds in datasets:
+        dsl = _latex_dataset_name(ds)
+        for c in OUT_METRIC_COLS:
+            top_labels.append((dsl, COL_LABELS[c]))
 
-    # Method ordering (yours + any extras found)
+    # method ordering
     present = [m for m in METHOD_ORDER if m in df["method"].unique()]
     extras  = sorted(set(df["method"].unique()) - set(present))
     method_list = present + extras
 
-    # Build logical rows (Original is single row; others have Forget/Revival)
     rows = []
     for m in method_list:
         if m == "original":
             row = {"Method": m, "Phase": "Original"}
             for ds in datasets:
-                for col in metric_cols:
+                for col in OUT_METRIC_COLS:
                     if (ds, m, "original") in g.index:
                         mu = g.loc[(ds, m, "original"), (col, "mean")]
                         sd = g.loc[(ds, m, "original"), (col, "std")]
@@ -740,12 +747,12 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
                     row[(ds, col)] = fmt_mu_sigma(mu, sd)
             rows.append(row)
         else:
-            for ph in PHASE_ORDER:  # "forget", "revival"
+            for ph in PHASE_ORDER:
                 row = {"Method": m, "Phase": ph.title()}
                 for ds in datasets:
                     if (ds, m, ph) in g.index:
-                        for col in metric_cols:
-                            if ph == "revival" and col in ("train_forget_acc", "test_forget_acc"):
+                        for col in OUT_METRIC_COLS:
+                            if ph == "revival" and col in ("train_forget_acc","test_forget_acc"):
                                 vmin = g.loc[(ds, m, ph), (col, "min")]
                                 vmax = g.loc[(ds, m, ph), (col, "max")]
                                 row[(ds, col)] = fmt_min_max(vmin, vmax)
@@ -754,22 +761,11 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
                                 sd = g.loc[(ds, m, ph), (col, "std")]
                                 row[(ds, col)] = fmt_mu_sigma(mu, sd)
                     else:
-                        for col in metric_cols:
+                        for col in OUT_METRIC_COLS:
                             row[(ds, col)] = "-"
                 rows.append(row)
 
-    # Labels for grouped headers (4 per dataset)
-    top_labels = []
-    for ds in datasets:
-        dsl = _latex_dataset_name(ds)          # plain
-        top_labels += [
-            (dsl, r"$\mathcal{A}^{\text{train}}_{r}$"),
-            (dsl, r"$\mathcal{A}^{\text{train}}_{f}$"),
-            (dsl, r"$\mathcal{A}^{\text{test}}_{r}$"),
-            (dsl, r"$\mathcal{A}^{\text{test}}_{f}$"),
-        ]
-
-    # Convert rows -> flat records with tuple keys for dataset columns
+    # flatten to records with tuple keys
     def get_val(r, ds_key, tag):
         return r.get((ds_key, tag), "-")
 
@@ -778,70 +774,61 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
         rec = {"Method": r["Method"], "Phase": r["Phase"]}
         for ds_key in datasets:
             dsl = _latex_dataset_name(ds_key)
-            rec[(dsl, r"$\mathcal{A}^{\text{train}}_{r}$")] = get_val(r, ds_key, "train_retain_acc")
-            rec[(dsl, r"$\mathcal{A}^{\text{train}}_{f}$")] = get_val(r, ds_key, "train_forget_acc")
-            rec[(dsl, r"$\mathcal{A}^{\text{test}}_{r}$")]  = get_val(r, ds_key, "test_retain_acc")
-            rec[(dsl, r"$\mathcal{A}^{\text{test}}_{f}$")] = get_val(r, ds_key, "test_forget_acc")
+            for c in OUT_METRIC_COLS:
+                rec[(dsl, COL_LABELS[c])] = get_val(r, ds_key, c)
         table_records.append(rec)
 
     table_df = pd.DataFrame(table_records)
 
-    # Display mapping + multirow
     table_df["Method"] = table_df["Method"].map(_method_label)
     table_df = apply_multirow(table_df)
 
-    # Escape LaTeX specials in text columns
-    for col in ["Method", "Phase"]:
-        table_df[col] = (
-            table_df[col].astype(str)
-            .str.replace("_", r"\_", regex=False)
-            .str.replace("&", r"\&", regex=False)
-            .str.replace("%", r"\%", regex=False)
-        )
+    for col in ["Method","Phase"]:
+        table_df[col] = (table_df[col].astype(str)
+                         .str.replace("_", r"\_", regex=False)
+                         .str.replace("&", r"\&", regex=False)
+                         .str.replace("%", r"\%", regex=False))
 
-    # ---- Make columns a proper MultiIndex ----
     table_df = table_df.rename(columns={"Method": ("", "Method"), "Phase": ("", "Phase")})
     ordered_cols = [("", "Method"), ("", "Phase")] + top_labels
     table_df = table_df[ordered_cols]
     table_df.columns = pd.MultiIndex.from_tuples(table_df.columns)
 
-    # Column format: Method|Phase| then **4** columns per dataset
-    column_format = "c|c|" + ("cccc|" * len(datasets)).rstrip("|")
+    cols_per_dataset = len(OUT_METRIC_COLS)
+    column_format = "c|c|" + ("{}|".format("c"*cols_per_dataset) * len(datasets)).rstrip("|")
 
-    latex = table_df.to_latex(
-        index=False,
-        escape=False,
-        multicolumn=True,
-        multicolumn_format="c",
-        column_format=column_format,
-    )
+    latex = table_df.to_latex(index=False, escape=False, multicolumn=True, multicolumn_format="c",
+                              column_format=column_format)
 
     dataset_labels = [_latex_dataset_name(d) for d in datasets]
     latex = center_method_phase_headers(latex, dataset_labels)
-    
-    # Now add the vertical boxing for each dataset group
     latex = add_group_vertical_bars(latex, datasets)
-    
     latex = add_midrules_between_methods(latex)
-            
-    # Wrap in table env
+
     mdl_latex = _latex_model_name(mdl)
     if len(datasets) == 1:
         ds_names = _latex_dataset_name(datasets[0])
     else:
         ds_names = ", ".join(_latex_dataset_name(d) for d in datasets[:-1]) + f", and {_latex_dataset_name(datasets[-1])}"
-    caption = (f"Unlearning results on {ds_names} for {mdl_latex} "
-               f"(mean$\\pm$std; Revival rows report $({{\\min}},{{\\max}})$ for "
-               f"$\\mathcal{{A}}^{{\\text{{train}}}}_{{f}}$ and $\\mathcal{{A}}^{{\\text{{test}}}}_{{f}}$).")
+
+    if SHOW_TRAIN_METRICS:
+        caption = (f"Unlearning results on {ds_names} for {mdl_latex} "
+                   f"(mean$\\pm$std; Revival rows report $({{\\min}},{{\\max}})$ for "
+                   f"$\\mathcal{{A}}^{{\\text{{train}}}}_{{f}}$ and $\\mathcal{{A}}^{{t}}_{{f}}$).")
+    else:
+        caption = (f"Unlearning results on {ds_names} for {mdl_latex} "
+                   f"(mean$\\pm$std; Revival rows report $({{\\min}},{{\\max}})$ for "
+                   f"$\\mathcal{{A}}^{{\\text{{t}}}}_{{f}}$).")
+
     label   = f"tab:{slugify(mdl_latex)}_joint_all_datasets_train_test"
     latex = wrap_with_resizebox(latex, caption, label, star=True, width=r"\textwidth")
-
 
     out = base_dir / f"latex_table_{slugify(mdl)}.tex"
     with open(out, "w", encoding="utf-8") as f:
         f.write(latex)
     print(f"[OK] wrote: {out}")
     return out
+
 
 for mdl in MODELS:
     render_joint_table_for_model(mdl, df_all, DATASETS)
