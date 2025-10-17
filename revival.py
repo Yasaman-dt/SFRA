@@ -505,6 +505,19 @@ for forget_class in forget_classes:
     test_ret_emb_loader  = make_emb_loader(test_ret_feats,  test_ret_labels)
 
 
+    def retain_k_multiplier(dataset_name: str, num_classes: int) -> int:
+        d = dataset_name.strip().lower().replace("-", "").replace("_", "")
+        mapping = {
+            "cifar10": 9,
+            "cifar100": 9,
+            "tinyimagenet": 18,
+        }
+        return mapping.get(d, 18 if num_classes == 200 else 9)
+
+
+    retain_mult = retain_k_multiplier(dataset_name, num_classes)
+    retain_top_k = choose_per_retain_class_for_fgt * retain_mult
+
     # ---- run it ----
     synth = build_synthetic_embeddings_and_splits(
         model=model,
@@ -512,7 +525,7 @@ for forget_class in forget_classes:
         forget_class=forget_class,
         device=device,
         per_class=total_per_class,
-        retain_top_k=choose_per_retain_class_for_fgt*9,
+        retain_top_k=retain_top_k,
         per_retain_for_forget=choose_per_retain_class_for_fgt,   # 10 from each retain class → e.g., 9*10 = 90 total for CIFAR-10
         loader_batch_size=256,
     )
