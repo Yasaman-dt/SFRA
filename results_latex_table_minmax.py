@@ -487,7 +487,9 @@ df_all = pd.read_csv(merged_path)
 for c in ALL_METRIC_COLS:
     df_all[c] = pd.to_numeric(df_all.get(c), errors="coerce")
     
-
+if "RS2" in df_all.columns:
+    df_all["RS2"] = pd.to_numeric(df_all["RS2"], errors="coerce")
+    
 # Order you prefer; any extra/unknown methods present in the CSV will be appended at the end.
 METHOD_ORDER = [
     "original", "retrained", "finetune", 
@@ -563,22 +565,34 @@ def add_midrules_between_methods(latex_src: str) -> str:
 
 
 def apply_multirow(table_df: pd.DataFrame) -> pd.DataFrame:
-    r"""
-    Make the 'Method' cell span the number of rows present for that method.
-    Typically 1 (Original) or 3 (Unlearned, RS2, Revival).
-    """
     df = table_df.copy()
-    for label in df["Method"].unique():
-        sub = df[df["Method"] == label].sort_index()
-        phases = list(sub["Phase"])
+
+    # detect column key for Method
+    method_key = "Method"
+    if isinstance(df.columns, pd.MultiIndex):
+        if ("","Method") in df.columns:
+            method_key = ("","Method")
+        else:
+            raise KeyError("Method column not found (neither 'Method' nor ('','Method')).")
+
+    phase_key = "Phase"
+    if isinstance(df.columns, pd.MultiIndex):
+        if ("","Phase") in df.columns:
+            phase_key = ("","Phase")
+        else:
+            raise KeyError("Phase column not found (neither 'Phase' nor ('','Phase')).")
+
+    for label in df[method_key].unique():
+        sub = df[df[method_key] == label].sort_index()
+        phases = list(sub[phase_key])
         span = len(sub)
-        if span >= 2 and phases[0] in ("Unlearned", "Original"):
-            # put multirow on the first row only
+        if span >= 2 and (len(phases) > 0 and phases[0] in ("Unlearned", "Original")):
             first_idx = sub.index[0]
-            df.loc[first_idx, "Method"] = rf"\multirow{{{span}}}{{*}}{{{label}}}"
+            df.loc[first_idx, method_key] = rf"\multirow{{{span}}}{{*}}{{{label}}}"
             for idx in sub.index[1:]:
-                df.loc[idx, "Method"] = ""
+                df.loc[idx, method_key] = ""
     return df
+
 
 def fmt_rs(mu, sigma):
     if pd.isna(mu):
@@ -743,7 +757,6 @@ def render_table_for(ds: str, mdl: str, df_src: pd.DataFrame):
                  .rename(columns={c: COL_LABELS[c] for c in OUT_METRIC_COLS})
 
     table_df["Method"] = table_df["Method"].map(_method_label)
-    table_df = apply_multirow(table_df)
 
     # escape LaTeX in text columns
     for col in ["Method","Phase"]:
@@ -865,106 +878,138 @@ def center_method_phase_headers(latex_src: str, dataset_labels: List[str]) -> st
 
     return "\n".join(lines)
 
-
 def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[str]) -> Optional[Path]:
     df = df_src[df_src["model"] == mdl].copy()
     if df.empty:
         print(f"[WARN] No rows for model={mdl}")
         return None
-    df = df[df["dataset"].isin(datasets)]
 
+    # keep only the requested datasets
+    df = df[df["dataset"].isin(datasets)].copy()
+
+    # make sure RS2 (if present) is numeric so we can aggregate it
+    if "RS2" in df.columns:
+        df["RS2"] = pd.to_numeric(df["RS2"], errors="coerce")
+
+    # aggregate ALL_METRIC_COLS and RS2 (if present)
     agg_cols = ALL_METRIC_COLS.copy()
     if "RS2" in df.columns:
-        agg_cols = agg_cols + ["RS2"]
+        agg_cols.append("RS2")
 
-    g = df.groupby(["dataset","method","phase"], dropna=False)[agg_cols].agg(["mean","std","min","max"])
+    # group by dataset,method,phase
+    g = df.groupby(["dataset", "method", "phase"], dropna=False)[agg_cols].agg(["mean", "std", "min", "max"])
 
-    # dataset group headers: RS + displayed metrics
-    top_labels = []
-    for ds in datasets:
-        dsl = _latex_dataset_name(ds)
-        top_labels.append((dsl, "RS"))
-        for c in OUT_METRIC_COLS:
-            top_labels.append((dsl, COL_LABELS[c]))
-
+    # build rows (two per non-original method; one for original)
     present = [m for m in METHOD_ORDER if m in df["method"].unique()]
     extras  = sorted(set(df["method"].unique()) - set(present))
     method_list = present + extras
-
+    
     rows = []
     for m in method_list:
+        pretty = _method_label(m)
+    
         if m == "original":
-            row = {"Method": m, "Phase": "Original"}
+            # one row; RS is '-' for all datasets
+            row = {"Method": pretty, "Phase": "Original"}
             for ds in datasets:
-                dsl = _latex_dataset_name(ds)                     # <-- use label as key
-                row[(dsl, "RS")] = "-"                            # RS is '-' for Original
-                for col in OUT_METRIC_COLS:
-                    if (ds, m, "original") in g.index:            # <-- still use raw ds for lookup
+                dsl = _latex_dataset_name(ds)
+                row[(dsl, "RS")] = "-"
+                if (ds, m, "original") in g.index:
+                    for col in OUT_METRIC_COLS:
                         mu = g.loc[(ds, m, "original"), (col, "mean")]
                         sd = g.loc[(ds, m, "original"), (col, "std")]
-                    else:
-                        mu, sd = np.nan, np.nan
-                    row[(dsl, COL_LABELS[col])] = fmt_mu_sigma(mu, sd)
+                        row[(dsl, COL_LABELS[col])] = fmt_mu_sigma(mu, sd)
+                else:
+                    for col in OUT_METRIC_COLS:
+                        row[(dsl, COL_LABELS[col])] = "-"
             rows.append(row)
-        else:
-            for ph in PHASE_ORDER:
-                row = {"Method": m, "Phase": ph.title()}
-                for ds in datasets:
-                    dsl = _latex_dataset_name(ds)                 # <-- label key
-                    # RS per dataset: only for Revival rows, else '-'
-                    if "RS2" in g.columns.get_level_values(0).unique() and ph == "revival" and (ds, m, ph) in g.index:
-                        rs_mu = g.loc[(ds, m, ph), ("RS2","mean")]
-                        rs_sd = g.loc[(ds, m, ph), ("RS2","std")]
-                        row[(dsl, "RS")] = fmt_rs(rs_mu, rs_sd)
+            continue
+    
+        # -------- two rows: Unlearned + Revival --------
+        # Put the method name once here with multirow=2
+        row_un = {"Method": rf"\multirow{{2}}{{*}}{{{pretty}}}", "Phase": "Unlearned"}
+        for ds in datasets:
+            dsl = _latex_dataset_name(ds)
+    
+            # RS shown once (multirow=2) in the Unlearned row
+            if "RS2" in g.columns.get_level_values(0).unique() and ((ds, m, "revival") in g.index):
+                rs_mu = g.loc[(ds, m, "revival"), ("RS2", "mean")]
+                rs_sd = g.loc[(ds, m, "revival"), ("RS2", "std")]
+                rs_text = fmt_rs(rs_mu, rs_sd)
+            else:
+                rs_text = "-"
+            row_un[(dsl, "RS")] = rf"\multirow{{2}}{{*}}{{{rs_text}}}"
+    
+            # Unlearned metrics: mean±std
+            if (ds, m, "unlearned") in g.index:
+                for col in OUT_METRIC_COLS:
+                    mu = g.loc[(ds, m, "unlearned"), (col, "mean")]
+                    sd = g.loc[(ds, m, "unlearned"), (col, "std")]
+                    row_un[(dsl, COL_LABELS[col])] = fmt_mu_sigma(mu, sd)
+            else:
+                for col in OUT_METRIC_COLS:
+                    row_un[(dsl, COL_LABELS[col])] = "-"
+    
+        rows.append(row_un)
+    
+        # Revival row: leave Method blank to complete the multirow
+        row_rev = {"Method": "", "Phase": "Revival"}
+        for ds in datasets:
+            dsl = _latex_dataset_name(ds)
+            row_rev[(dsl, "RS")] = ""  # RS multirow continues above
+            if (ds, m, "revival") in g.index:
+                for col in OUT_METRIC_COLS:
+                    if col in ("train_forget_acc", "test_forget_acc"):
+                        vmin = g.loc[(ds, m, "revival"), (col, "min")]
+                        vmax = g.loc[(ds, m, "revival"), (col, "max")]
+                        row_rev[(dsl, COL_LABELS[col])] = fmt_min_max(vmin, vmax)
                     else:
-                        row[(dsl, "RS")] = "-"
+                        mu = g.loc[(ds, m, "revival"), (col, "mean")]
+                        sd = g.loc[(ds, m, "revival"), (col, "std")]
+                        row_rev[(dsl, COL_LABELS[col])] = fmt_mu_sigma(mu, sd)
+            else:
+                for col in OUT_METRIC_COLS:
+                    row_rev[(dsl, COL_LABELS[col])] = "-"
+    
+        rows.append(row_rev)
 
-                    if (ds, m, ph) in g.index:
-                        for col in OUT_METRIC_COLS:
-                            if ph == "revival" and col in ("train_forget_acc","test_forget_acc"):
-                                vmin = g.loc[(ds, m, ph), (col, "min")]
-                                vmax = g.loc[(ds, m, ph), (col, "max")]
-                                row[(dsl, COL_LABELS[col])] = fmt_min_max(vmin, vmax)
-                            else:
-                                mu = g.loc[(ds, m, ph), (col, "mean")]
-                                sd = g.loc[(ds, m, ph), (col, "std")]
-                                row[(dsl, COL_LABELS[col])] = fmt_mu_sigma(mu, sd)
-                    else:
-                        for col in OUT_METRIC_COLS:
-                            row[(dsl, COL_LABELS[col])] = "-"
-                rows.append(row)
-
-    # flatten to a DataFrame
-    table_df = pd.DataFrame(rows)
-    table_df["Method"] = table_df["Method"].map(_method_label)
-    table_df = apply_multirow(table_df)
-
-    for col in ["Method","Phase"]:
-        table_df[col] = (table_df[col].astype(str)
-                         .str.replace("_", r"\_", regex=False)
-                         .str.replace("&", r"\&", regex=False)
-                         .str.replace("%", r"\%", regex=False))
-
-    # order columns: Method | Phase | [ per-dataset: RS + metrics ]
+    # ---------- build final DataFrame with MultiIndex columns ----------
     dataset_labels = [_latex_dataset_name(d) for d in datasets]
+
+    # order: Method | Phase | [ per-dataset: RS, metrics... ]
     ordered_cols = [("","Method"), ("","Phase")]
     for dsl in dataset_labels:
         for c in OUT_METRIC_COLS:
             ordered_cols.append((dsl, COL_LABELS[c]))
         ordered_cols.append((dsl, "RS"))
-        
-    # to MultiIndex and select in order
-    table_df = table_df.rename(columns={"Method": ("","Method"), "Phase": ("","Phase")})
-    table_df = table_df[ordered_cols]
-    table_df.columns = pd.MultiIndex.from_tuples(table_df.columns)
 
-    # column format: add one 'c' for RS per dataset
-    cols_per_dataset = 1 + len(OUT_METRIC_COLS)
+    table_df = pd.DataFrame(rows)
+
+    # map pretty method names while it's still single-index
+    table_df["Method"] = table_df["Method"].map(_method_label)
+
+
+    # Now convert to MultiIndex and reorder
+    table_df = table_df.rename(columns={"Method": ("","Method"), "Phase": ("","Phase")})
+    table_df.columns = pd.MultiIndex.from_tuples(table_df.columns)
+    table_df = table_df[ordered_cols]
+
+
+    # Escape only text columns
+    for col in [("","Method"), ("","Phase")]:
+        table_df[col] = (table_df[col].astype(str)
+                         .str.replace("_", r"\_", regex=False)
+                         .str.replace("&", r"\&", regex=False)
+                         .str.replace("%", r"\%", regex=False))
+
+    # column format: Method | Phase | (RS + metrics)*per-dataset
+    cols_per_dataset = 1 + len(OUT_METRIC_COLS)  # RS + metrics
     column_format = "c|c|" + ("{}|".format("c"*cols_per_dataset) * len(datasets)).rstrip("|")
 
-    latex = table_df.to_latex(index=False, escape=False, multicolumn=True, multicolumn_format="c",
-                              column_format=column_format)
+    latex = table_df.to_latex(index=False, escape=False, multicolumn=True,
+                              multicolumn_format="c", column_format=column_format)
 
+    # keep your header/vertical rule cosmetics
     latex = center_method_phase_headers(latex, dataset_labels)
     latex = add_group_vertical_bars(latex, datasets)
     latex = add_midrules_between_methods(latex)
@@ -977,8 +1022,8 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
 
     caption = (f"Unlearning results on {ds_names} for {mdl_latex} "
                f"(mean$\\pm$std; Revival rows report $({{\\min}},{{\\max}})$ for "
-               f"$\\mathcal{{A}}^t_f$.)")
-    label   = f"tab:{slugify(mdl_latex)}_joint_all_datasets_train_test"
+               f"$\\mathcal{{A}}^t_f$; RS is shown once between the two rows).")
+    label   = f"tab:{slugify(mdl_latex)}_all_datasets"
 
     latex = wrap_with_resizebox(latex, caption, label, star=True, width=r"\textwidth")
 
@@ -987,6 +1032,7 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
         f.write(latex)
     print(f"[OK] wrote: {out}")
     return out
+
 
 
 
