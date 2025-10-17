@@ -44,11 +44,124 @@ COL_LABELS = {
     "test_forget_acc":  r"$\mathcal{A}^{t}_{f}$",
 }
 
+# Keep only these forget classes for TinyImageNet
+FORGET_CLASS_FILTERS = {
+    "tiny_imagenet": {40, 80, 120, 160}
+}
 
+def _apply_forget_filter(df: pd.DataFrame, dataset: str) -> pd.DataFrame:
+    """
+    If a filter is defined for this dataset, keep only rows whose forget_class
+    is in the allowed set. Works whether forget_class is str or numeric.
+    """
+    allowed = FORGET_CLASS_FILTERS.get(dataset)
+    if not allowed or "forget_class" not in df.columns:
+        return df
+
+    # Robust to strings like "40" or numbers; ignores NaN gracefully.
+    fc_num = pd.to_numeric(df["forget_class"], errors="coerce").astype("Int64")
+    return df[fc_num.isin(list(allowed))].copy()
+
+
+def compute_rs_for_revival1(df_rev: pd.DataFrame, df_un: Optional[pd.DataFrame]) -> pd.DataFrame:
+    """
+    Adds RS to revival rows by merging in unlearned (forget) test metrics.
+
+    RS = 1 - |A^un_t_r - A^re_t_r| / |A^un_t_f - A^re_t_f|
+
+    A^un_t_r, A^un_t_f come from the 'unlearned' (forget) file
+    A^re_t_r, A^re_t_f come from the 'revival' file
+    """
+    if df_rev is None or df_rev.empty or df_un is None or df_un.empty:
+        if df_rev is None:
+            return df_rev
+        out = df_rev.copy()
+        out["RS1"] = pd.NA
+        return out
+
+    # keep only keys + needed metrics from unlearned
+    un_keep = ["forget_class","dataset","model","method","test_retain_acc","test_forget_acc"]
+    un = df_un[un_keep].copy().rename(columns={
+        "test_retain_acc": "test_retain_acc_un",
+        "test_forget_acc": "test_forget_acc_un",
+    })
+
+    keys = ["forget_class","dataset","model","method"]
+    m = df_rev.merge(un, on=keys, how="left")
+
+    # cast to numeric (works whether your accs are 0–1 or 0–100; ratio cancels scale)
+    A_re_t_r = pd.to_numeric(m["test_retain_acc"], errors="coerce")
+    A_re_t_f = pd.to_numeric(m["test_forget_acc"], errors="coerce")
+    A_un_t_r = pd.to_numeric(m["test_retain_acc_un"], errors="coerce")
+    A_un_t_f = pd.to_numeric(m["test_forget_acc_un"], errors="coerce")
+
+    num = (A_un_t_r - A_re_t_r).abs()
+    den = (A_un_t_f - A_re_t_f).abs()
+
+    # Safe division:
+    # - If den==0 and num==0 -> RS = 1 (identical changes)
+    # - If den==0 and num>0  -> RS = NaN (undefined)
+    # else RS = 1 - num/den
+    den_zero = (den == 0) | den.isna()
+    rs = np.where(den_zero & (num.fillna(0) == 0), 1.0,
+          np.where(den_zero, np.nan, 1 - (num / den)))
+
+    m["RS1"] = rs
+    return m
+
+from typing import Optional
+import pandas as pd
+import numpy as np
 def slugify(s: Optional[str]) -> str:
+    """Safe tag for filenames/labels: keep letters/numbers/dashes; replace the rest with '_'."""
     if s is None:
         return "unknown"
-    return re.sub(r'[^A-Za-z0-9\-]+', "_", s)
+    return re.sub(r'[^A-Za-z0-9\-]+', "_", str(s))
+
+def compute_rs_for_revival2(df_rev: pd.DataFrame, df_un: Optional[pd.DataFrame]) -> pd.DataFrame:
+    if df_rev is None or df_rev.empty:
+        return df_rev
+    if df_un is None or df_un.empty:
+        out = df_rev.copy()
+        out["RS2"] = pd.NA
+        return out
+
+    keys = ["forget_class", "dataset", "model", "method"]
+    need_un = keys + ["test_retain_acc", "test_forget_acc"]
+    missing_un = [c for c in need_un if c not in df_un.columns]
+    if missing_un:
+        raise KeyError(f"Unlearned dataframe missing columns: {missing_un}")
+
+    # If RS1 already added *_un columns, reuse them; otherwise merge safely
+    have_un_cols = {"test_retain_acc_un", "test_forget_acc_un"}.issubset(df_rev.columns)
+    if have_un_cols:
+        out = df_rev.copy()
+    else:
+        # avoid _x/_y by dropping any stale *_un first, then merging
+        out = df_rev.drop(columns=["test_retain_acc_un", "test_forget_acc_un"], errors="ignore")
+        un_small = df_un[need_un].rename(columns={
+            "test_retain_acc": "test_retain_acc_un",
+            "test_forget_acc": "test_forget_acc_un"
+        })
+        out = out.merge(un_small, on=keys, how="left")
+
+    req_cols = ["test_retain_acc", "test_forget_acc",
+                "test_retain_acc_un", "test_forget_acc_un"]
+    missing_after = [c for c in req_cols if c not in out.columns]
+    if missing_after:
+        raise KeyError(f"After merge, missing required columns: {missing_after}")
+
+    for c in req_cols:
+        out[c] = pd.to_numeric(out[c], errors="coerce")
+
+    max_val = pd.concat([out[c] for c in req_cols], axis=0).max(skipna=True)
+    S = 100.0 if (pd.notna(max_val) and max_val > 1.5) else 1.0
+
+    d_retain = (out["test_retain_acc_un"] - out["test_retain_acc"]).abs() / S
+    d_forget = (out["test_forget_acc_un"] - out["test_forget_acc"]).abs() / S
+    out["RS2"] = ((1.0 - d_retain) * d_forget).clip(lower=0.0, upper=1.0)
+    return out
+
 
 
 def parse_filename(path: Path):
@@ -208,6 +321,7 @@ for ds in DATASETS:
     
     for mdl in MODELS:
         for mth in methods:
+            df_f = None
             if mth == "original":
                 # Search in /original then base_dir for this dataset+model
                 original_search_dirs = [base_dir / "original", base_dir]
@@ -274,6 +388,10 @@ for ds in DATASETS:
                     df_f["dataset"] = ds
                     df_f["model"]   = mdl
                     df_f["method"]  = mth
+                    df_f["forget_class"] = df_f["forget_class"].astype(str)
+
+                    df_f = _apply_forget_filter(df_f, ds)
+                    
                     all_rows.append(df_f)
 
                     out_forget = method_dir / f"z_standardized_forget_selected_{mth}_{slugify(ds)}_{slugify(mdl)}.csv"
@@ -289,6 +407,22 @@ for ds in DATASETS:
                     df_r["dataset"] = ds
                     df_r["model"]   = mdl
                     df_r["method"]  = mth
+
+                    df_r["forget_class"] = df_r["forget_class"].astype(str)
+
+                    if df_f is None or df_f.empty:
+                        df_r["RS1"] = pd.NA
+                        df_r["RS2"] = pd.NA
+                    else:
+                        df_r = compute_rs_for_revival1(df_r, df_f)
+                        df_r = compute_rs_for_revival2(df_r, df_f)
+                        
+
+                    df_r = _apply_forget_filter(df_r, ds)
+
+                    if "RS2" not in df_r.columns:
+                        raise RuntimeError("RS2 not found in df_r columns. Columns are: " + ", ".join(df_r.columns))
+
                     all_rows.append(df_r)
 
                     out_revival = method_dir / f"z_standardized_revival_selected_{mth}_{slugify(ds)}_{slugify(mdl)}.csv"
@@ -430,22 +564,53 @@ def add_midrules_between_methods(latex_src: str) -> str:
 
 def apply_multirow(table_df: pd.DataFrame) -> pd.DataFrame:
     r"""
-    Turn pairs (Method, Phase=Forget/Revival) into a single visible Method cell
-    using \multirow{2}{*}{...} on the 'Forget' row and an empty cell on 'Revival'.
-    Requires \usepackage{multirow} in your LaTeX preamble.
+    Make the 'Method' cell span the number of rows present for that method.
+    Typically 1 (Original) or 3 (Unlearned, RS2, Revival).
     """
     df = table_df.copy()
-
-    # Work per "display label" (after mapping) so citations, etc., are preserved
     for label in df["Method"].unique():
-        sub = df[df["Method"] == label]
-        # Only multirow when we truly have both phases
-        if len(sub) == 2 and set(sub["Phase"]) == {"Unlearned", "Revival"}:
-            idx_forget  = sub.index[sub["Phase"] == "Unlearned"][0]
-            idx_revival = sub.index[sub["Phase"] == "Revival"][0]
-            df.loc[idx_forget,  "Method"] = rf"\multirow{{2}}{{*}}{{{label}}}"
-            df.loc[idx_revival, "Method"] = ""  # empty cell under the multirow
+        sub = df[df["Method"] == label].sort_index()
+        phases = list(sub["Phase"])
+        span = len(sub)
+        if span >= 2 and phases[0] in ("Unlearned", "Original"):
+            # put multirow on the first row only
+            first_idx = sub.index[0]
+            df.loc[first_idx, "Method"] = rf"\multirow{{{span}}}{{*}}{{{label}}}"
+            for idx in sub.index[1:]:
+                df.loc[idx, "Method"] = ""
     return df
+
+def fmt_rs(mu, sigma):
+    if pd.isna(mu):
+        return "-"
+    sigma = 0.0 if pd.isna(sigma) else float(sigma)
+    return rf"${float(mu):.3f}\,\text{{\scriptsize\,±\,{sigma:.3f}}}$"
+
+
+def inject_rs2_multicolumn(latex_src: str, n_metric_cols: int) -> str:
+    """
+    Find lines with '& RS2 &' and replace all metric cells with one
+    \multicolumn{n}{c}{<RS2 text>} cell.
+    Assumes the RS2 text was placed in the *first* metric column and the
+    other metric columns contain '-' or ''.
+    """
+    out_lines = []
+    for line in latex_src.splitlines():
+        if "& RS2 &" in line and r"\\" in line:
+            # split cells (keep trailing \\)
+            body, trail = line.rsplit(r"\\", 1)
+            cells = [c.strip() for c in body.split("&")]
+            # cells: [Method, Phase, m1, m2, ... mK]
+            if len(cells) >= 2 + n_metric_cols:
+                method_cell = cells[0]
+                phase_cell  = cells[1]
+                rs_text     = cells[2]  # first metric cell carries RS text
+                new_line = f"{method_cell} & {phase_cell} & " \
+                           f"\\multicolumn{{{n_metric_cols}}}{{c}}{{{rs_text}}} \\\\{trail}"
+                out_lines.append(new_line)
+                continue
+        out_lines.append(line)
+    return "\n".join(out_lines)
 
 
 def wrap_with_resizebox(latex_src: str, caption: str, label: str,
@@ -506,8 +671,6 @@ def _latex_dataset_name(ds: str) -> str:
     if m:
         return f"{m.group(1).upper()}-{m.group(2)}"
     return ds.replace("_", " ").title()
-
-
 
 def _normalize_key(s: str) -> str:
     return s.replace("-", "_").lower().strip()
@@ -628,20 +791,19 @@ for ds, mdl in product(["cifar10", "cifar100", "tiny_imagenet"], MODELS):
 def add_group_vertical_bars(latex_src: str, datasets: List[str]) -> str:
     """
     Ensure vertical rules continue through the dataset \\multicolumn headers.
-    Works even if the header text is wrapped.
+    Works even if the header text is wrapped. (Joint table: RS + metrics per dataset)
     """
     out = latex_src
-    ncols = len(OUT_METRIC_COLS)
+    ncols = 1 + len(OUT_METRIC_COLS)  # RS + metrics  <<< CHANGED
     for i, ds in enumerate(datasets):
         dsl = _latex_dataset_name(ds)
-        # Match: \multicolumn{ncols}{<center>}{ ... dsl ... }
         pat = rf"(\\multicolumn\{{{ncols}\}}\{{)(?:\|?c\|?)(\}}\{{[^}}]*{re.escape(dsl)}[^}}]*\}})"
         if i == 0:
-            spec = "c"       # first group: right bar only (pandas will add inter-column bars)
+            spec = "c"
         elif i == len(datasets) - 1:
-            spec = "c"       # last group: left bar only
+            spec = "c"
         else:
-            spec = "|c|"     # middle groups: left and right bars
+            spec = "|c|"
         out = re.sub(pat, rf"\1{spec}\2", out)
     return out
 
@@ -649,20 +811,15 @@ def add_group_vertical_bars(latex_src: str, datasets: List[str]) -> str:
 def center_method_phase_headers(latex_src: str, dataset_labels: List[str]) -> str:
     r"""
     Rebuild header row 1 to use dynamic ncols per dataset:
-    \multirow{2}{*}{Method} & \multirow{2}{*}{Phase} &
-        \multicolumn{ncols}{c}{<DS1>} & ...
+    RS + displayed metrics for each dataset group.
     Then blank the Method/Phase cells on header row 2.
     """
     lines = latex_src.splitlines()
     if not lines:
         return latex_src
 
-    # find header1: first line with any \multicolumn{
-    h1 = None
-    for i, L in enumerate(lines):
-        if r"\multicolumn{" in L:
-            h1 = i
-            break
+    # find first header line with \multicolumn{
+    h1 = next((i for i, L in enumerate(lines) if r"\multicolumn{" in L), None)
     if h1 is None:
         return latex_src
 
@@ -676,7 +833,7 @@ def center_method_phase_headers(latex_src: str, dataset_labels: List[str]) -> st
     if h2 is None:
         return latex_src
 
-    ncols = len(OUT_METRIC_COLS)
+    ncols = 1 + len(OUT_METRIC_COLS)  # RS + metrics  <<< CHANGED
     group_bits = [rf"\multicolumn{{{ncols}}}{{c}}{{\textbf{{{ds}}}}}" for ds in dataset_labels]
     new_h1 = (
         r"\multirow{2}{*}{Method} & \multirow{2}{*}{Phase} & "
@@ -685,7 +842,7 @@ def center_method_phase_headers(latex_src: str, dataset_labels: List[str]) -> st
     )
     lines[h1] = new_h1
 
-    # blank the "Method & Phase" cells on header row 2
+    # blank "Method & Phase" under the multirow on header row 2
     def _split_cells(line: str):
         trail = ""
         if line.rstrip().endswith(r"\\"):
@@ -709,8 +866,6 @@ def center_method_phase_headers(latex_src: str, dataset_labels: List[str]) -> st
     return "\n".join(lines)
 
 
-
-
 def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[str]) -> Optional[Path]:
     df = df_src[df_src["model"] == mdl].copy()
     if df.empty:
@@ -718,17 +873,20 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
         return None
     df = df[df["dataset"].isin(datasets)]
 
-    # aggregate ALL, display OUT only
-    g = df.groupby(["dataset","method","phase"], dropna=False)[ALL_METRIC_COLS].agg(["mean","std","min","max"])
+    agg_cols = ALL_METRIC_COLS.copy()
+    if "RS2" in df.columns:
+        agg_cols = agg_cols + ["RS2"]
 
-    # dataset group headers (one per displayed metric)
+    g = df.groupby(["dataset","method","phase"], dropna=False)[agg_cols].agg(["mean","std","min","max"])
+
+    # dataset group headers: RS + displayed metrics
     top_labels = []
     for ds in datasets:
         dsl = _latex_dataset_name(ds)
+        top_labels.append((dsl, "RS"))
         for c in OUT_METRIC_COLS:
             top_labels.append((dsl, COL_LABELS[c]))
 
-    # method ordering
     present = [m for m in METHOD_ORDER if m in df["method"].unique()]
     extras  = sorted(set(df["method"].unique()) - set(present))
     method_list = present + extras
@@ -738,48 +896,46 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
         if m == "original":
             row = {"Method": m, "Phase": "Original"}
             for ds in datasets:
+                dsl = _latex_dataset_name(ds)                     # <-- use label as key
+                row[(dsl, "RS")] = "-"                            # RS is '-' for Original
                 for col in OUT_METRIC_COLS:
-                    if (ds, m, "original") in g.index:
+                    if (ds, m, "original") in g.index:            # <-- still use raw ds for lookup
                         mu = g.loc[(ds, m, "original"), (col, "mean")]
                         sd = g.loc[(ds, m, "original"), (col, "std")]
                     else:
                         mu, sd = np.nan, np.nan
-                    row[(ds, col)] = fmt_mu_sigma(mu, sd)
+                    row[(dsl, COL_LABELS[col])] = fmt_mu_sigma(mu, sd)
             rows.append(row)
         else:
             for ph in PHASE_ORDER:
                 row = {"Method": m, "Phase": ph.title()}
                 for ds in datasets:
+                    dsl = _latex_dataset_name(ds)                 # <-- label key
+                    # RS per dataset: only for Revival rows, else '-'
+                    if "RS2" in g.columns.get_level_values(0).unique() and ph == "revival" and (ds, m, ph) in g.index:
+                        rs_mu = g.loc[(ds, m, ph), ("RS2","mean")]
+                        rs_sd = g.loc[(ds, m, ph), ("RS2","std")]
+                        row[(dsl, "RS")] = fmt_rs(rs_mu, rs_sd)
+                    else:
+                        row[(dsl, "RS")] = "-"
+
                     if (ds, m, ph) in g.index:
                         for col in OUT_METRIC_COLS:
                             if ph == "revival" and col in ("train_forget_acc","test_forget_acc"):
                                 vmin = g.loc[(ds, m, ph), (col, "min")]
                                 vmax = g.loc[(ds, m, ph), (col, "max")]
-                                row[(ds, col)] = fmt_min_max(vmin, vmax)
+                                row[(dsl, COL_LABELS[col])] = fmt_min_max(vmin, vmax)
                             else:
                                 mu = g.loc[(ds, m, ph), (col, "mean")]
                                 sd = g.loc[(ds, m, ph), (col, "std")]
-                                row[(ds, col)] = fmt_mu_sigma(mu, sd)
+                                row[(dsl, COL_LABELS[col])] = fmt_mu_sigma(mu, sd)
                     else:
                         for col in OUT_METRIC_COLS:
-                            row[(ds, col)] = "-"
+                            row[(dsl, COL_LABELS[col])] = "-"
                 rows.append(row)
 
-    # flatten to records with tuple keys
-    def get_val(r, ds_key, tag):
-        return r.get((ds_key, tag), "-")
-
-    table_records = []
-    for r in rows:
-        rec = {"Method": r["Method"], "Phase": r["Phase"]}
-        for ds_key in datasets:
-            dsl = _latex_dataset_name(ds_key)
-            for c in OUT_METRIC_COLS:
-                rec[(dsl, COL_LABELS[c])] = get_val(r, ds_key, c)
-        table_records.append(rec)
-
-    table_df = pd.DataFrame(table_records)
-
+    # flatten to a DataFrame
+    table_df = pd.DataFrame(rows)
     table_df["Method"] = table_df["Method"].map(_method_label)
     table_df = apply_multirow(table_df)
 
@@ -789,18 +945,26 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
                          .str.replace("&", r"\&", regex=False)
                          .str.replace("%", r"\%", regex=False))
 
-    table_df = table_df.rename(columns={"Method": ("", "Method"), "Phase": ("", "Phase")})
-    ordered_cols = [("", "Method"), ("", "Phase")] + top_labels
+    # order columns: Method | Phase | [ per-dataset: RS + metrics ]
+    dataset_labels = [_latex_dataset_name(d) for d in datasets]
+    ordered_cols = [("","Method"), ("","Phase")]
+    for dsl in dataset_labels:
+        for c in OUT_METRIC_COLS:
+            ordered_cols.append((dsl, COL_LABELS[c]))
+        ordered_cols.append((dsl, "RS"))
+        
+    # to MultiIndex and select in order
+    table_df = table_df.rename(columns={"Method": ("","Method"), "Phase": ("","Phase")})
     table_df = table_df[ordered_cols]
     table_df.columns = pd.MultiIndex.from_tuples(table_df.columns)
 
-    cols_per_dataset = len(OUT_METRIC_COLS)
+    # column format: add one 'c' for RS per dataset
+    cols_per_dataset = 1 + len(OUT_METRIC_COLS)
     column_format = "c|c|" + ("{}|".format("c"*cols_per_dataset) * len(datasets)).rstrip("|")
 
     latex = table_df.to_latex(index=False, escape=False, multicolumn=True, multicolumn_format="c",
                               column_format=column_format)
 
-    dataset_labels = [_latex_dataset_name(d) for d in datasets]
     latex = center_method_phase_headers(latex, dataset_labels)
     latex = add_group_vertical_bars(latex, datasets)
     latex = add_midrules_between_methods(latex)
@@ -811,16 +975,11 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
     else:
         ds_names = ", ".join(_latex_dataset_name(d) for d in datasets[:-1]) + f", and {_latex_dataset_name(datasets[-1])}"
 
-    if SHOW_TRAIN_METRICS:
-        caption = (f"Unlearning results on {ds_names} for {mdl_latex} "
-                   f"(mean$\\pm$std; Revival rows report $({{\\min}},{{\\max}})$ for "
-                   f"$\\mathcal{{A}}^{{\\text{{train}}}}_{{f}}$ and $\\mathcal{{A}}^{{t}}_{{f}}$).")
-    else:
-        caption = (f"Unlearning results on {ds_names} for {mdl_latex} "
-                   f"(mean$\\pm$std; Revival rows report $({{\\min}},{{\\max}})$ for "
-                   f"$\\mathcal{{A}}^{{\\text{{t}}}}_{{f}}$).")
-
+    caption = (f"Unlearning results on {ds_names} for {mdl_latex} "
+               f"(mean$\\pm$std; Revival rows report $({{\\min}},{{\\max}})$ for "
+               f"$\\mathcal{{A}}^t_f$.)")
     label   = f"tab:{slugify(mdl_latex)}_joint_all_datasets_train_test"
+
     latex = wrap_with_resizebox(latex, caption, label, star=True, width=r"\textwidth")
 
     out = base_dir / f"latex_table_{slugify(mdl)}.tex"
@@ -828,6 +987,8 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
         f.write(latex)
     print(f"[OK] wrote: {out}")
     return out
+
+
 
 
 for mdl in MODELS:
