@@ -1022,7 +1022,7 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
 
     caption = (f"Unlearning results on {ds_names} for {mdl_latex} "
                f"(mean$\\pm$std; Revival rows report $({{\\min}},{{\\max}})$ for "
-               f"$\\mathcal{{A}}^t_f$; RS is shown once between the two rows).")
+               f"$\\mathcal{{A}}^t_f$).")
     label   = f"tab:{slugify(mdl_latex)}_all_datasets"
 
     latex = wrap_with_resizebox(latex, caption, label, star=True, width=r"\textwidth")
@@ -1032,9 +1032,6 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
         f.write(latex)
     print(f"[OK] wrote: {out}")
     return out
-
-
-
 
 
 for mdl in MODELS:
