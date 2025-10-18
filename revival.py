@@ -67,7 +67,7 @@ choose_per_retain_class_for_fgt = args.cpr
 
 
 # set num_classes from dataset
-NUM_CLASSES = {'cifar10': 10, 'cifar100': 100, 'tinyimagenet': 200, 'imagenet': 1000}
+NUM_CLASSES = {'cifar10': 10, 'cifar100': 100, 'tiny_imagenet': 200, 'imagenet': 1000}
 try:
     num_classes = NUM_CLASSES[dataset_name.lower()]
 except KeyError:
@@ -510,7 +510,7 @@ for forget_class in forget_classes:
         mapping = {
             "cifar10": 9,
             "cifar100": 9,
-            "tinyimagenet": 18,
+            "tiny_imagenet": 18,
         }
         return mapping.get(d, 18 if num_classes == 200 else 9)
 
