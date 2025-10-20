@@ -101,6 +101,7 @@ def run_for_dataset(
     wo_dataaug: bool,
     device: str,
     forget_classes: list[int] | None,
+     forget_set: list[int] | None = None,
 ):
     out_csv_dir.mkdir(parents=True, exist_ok=True)
     original_dir = out_csv_dir / "original"
@@ -139,17 +140,29 @@ def run_for_dataset(
         num_workers=num_workers, pin_memory=True, generator=g
     )
 
-    # ---- Loop over forget classes ----
-    classes_to_run = forget_classes if forget_classes is not None else list(range(num_classes))
-    for forget_class in classes_to_run:
-        # Only the splits depend on forget_class
+    if forget_set:
+        # validate & sanitize
+        fs = sorted(set(int(c) for c in forget_set))
+        bad = [c for c in fs if c < 0 or c >= num_classes]
+        if bad:
+            raise ValueError(f"--forget-set contains invalid class ids {bad} for num_classes={num_classes}")
+        sets_to_run = [fs]
+
+    else:
+        # ---- Loop over forget classes ----
+        classes_to_run = forget_classes if forget_classes is not None else list(range(num_classes))
+        sets_to_run = [[int(c)] for c in classes_to_run]
+        
+        
+    for forget_indices in sets_to_run:
+        # Build the retain/forget splits **for the union** of these classes
         (
             train_forget_loader, train_retain_loader,
             test_forget_loader,  test_retain_loader,
             repair_class_loader, train_forget_index, train_retain_index,
             test_forget_index,  test_retain_index
         ) = get_unlearn_loader(
-            trainset, testset, [forget_class],
+            trainset, testset, forget_indices,   # <--- IMPORTANT: a LIST of class ids
             batch_size, float("inf"), num_workers
         )
 
@@ -157,7 +170,7 @@ def run_for_dataset(
         train_accuracy, train_per_class = _top1_and_per_class(model, train_eval_loader, num_classes, device)
         test_accuracy,  test_per_class  = _top1_and_per_class(model, test_loader,     num_classes, device)
 
-        # ---- Metrics (splits) ----
+        # ---- Metrics on splits (union forget vs complement retain) ----
         train_retain_acc = accuracy(model, train_retain_loader, device)
         train_fgt_acc    = accuracy(model, train_forget_loader, device)
         test_retain_acc  = accuracy(model, test_retain_loader, device)
@@ -165,8 +178,13 @@ def run_for_dataset(
 
         AUS = 1.0 / (1.0 + (test_fgt_acc / 100.0))
 
+        # Record the union explicitly
+        forget_tag = ",".join(map(str, forget_indices))
+
         row = {
-            "forget_class": forget_class, "method": "original",
+            "forget_classes": forget_tag,                # NEW (string like "1,3,7")
+            "num_forget_classes": len(forget_indices),   # NEW
+            "method": "original",
             "dataset": dataset_name, "model": model_name,
             "train_acc": train_accuracy, "test_acc": test_accuracy,
             "train_retain_acc": train_retain_acc, "train_forget_acc": train_fgt_acc,
@@ -183,7 +201,7 @@ def run_for_dataset(
         )
 
         print(
-            f"[{dataset_name} | {model_name} | forget={forget_class}] "
+            f"[{dataset_name} | {model_name} | forget={forget_tag}] "
             f"Train {train_accuracy:.2f} | Test {test_accuracy:.2f} | "
             f"Retain Train {train_retain_acc:.2f} | Retain Test {test_retain_acc:.2f} | "
             f"Forget Train {train_fgt_acc:.2f} | Forget Test {test_fgt_acc:.2f} | AUS {AUS:.3f}"
@@ -216,6 +234,12 @@ def main():
                              "If omitted, will use built-in defaults for known datasets.")
     parser.add_argument("--model-name", type=str, default="resnet18",
                         choices=["resnet18", "vit-s-16", "vit-b-16", "swin-t", "vgg16"])
+
+    parser.add_argument(
+        "--forget-set", type=int, nargs="*", default=None,
+        help="Treat ALL listed classes as a single forget set (evaluated together). "
+            "Example: --forget-set 1 3 7"
+    )
 
     # ---- Paths ----
     parser.add_argument("--checkpoint-folder", type=Path,
