@@ -68,28 +68,61 @@ def _mia_summary_for_forget(model, train_forget_loader, test_forget_loader, devi
 
     return member_means
 
-
-def checkpoint_for(method, dataset_name, model_name, forget_class, lr, base_dir):
-    # Matches your revival.py behavior
+def _build_tags(forget_spec):
+    """
+    Accepts int or list of ints. Returns:
+      retrain_tag:  'forgetcls{ID}' if single, else 'forget{K}'
+      dir_tag:      same rule, used for directory names
+    """
+    if isinstance(forget_spec, int):
+        ids = [forget_spec]
+    else:
+        ids = sorted(set(int(x) for x in forget_spec))
+    if len(ids) == 1:
+        return f"forgetcls{ids[0]}", f"forgetcls{ids[0]}"
+    else:
+        k = len(ids)
+        return f"forget{k}", f"forget{k}"
+    
+def checkpoint_for(method, dataset_name, model_name, forget_spec, lr, base_dir):
+    retrain_tag, dir_tag = _build_tags(forget_spec)
     if method == 'original':
         return f"{base_dir}/test_pretrained_model/{dataset_name}_{model_name}_original_model.pth"
     elif method == 'retrained':
-        return f"{base_dir}/test_pretrained_model/{dataset_name}_{model_name}_retrain_forgetcls{forget_class}_model.pth"
+        # single: ..._retrain_forgetcls{ID}_model.pth
+        # multi : ..._retrain_forget{K}_model.pth
+        return f"{base_dir}/test_pretrained_model/{dataset_name}_{model_name}_retrain_{retrain_tag}_model.pth"
     else:
-        return f"{base_dir}/{dataset_name}_{model_name}_forgetcls{forget_class}/{method}/lr{lr}/ckpt_best_by_aus.pth"
+        if lr is None:
+            raise ValueError("--unlearn_rate is required (or pass --ckpt_path).")
+        # single: ..._forgetcls{ID}/{method}/lr{lr}/ckpt_best_by_aus.pth
+        # multi : ..._forget{K}/{method}/lr{lr}/ckpt_best_by_aus.pth
+        return f"{base_dir}/{dataset_name}_{model_name}_{dir_tag}/{method}/lr{lr}/ckpt_best_by_aus.pth"
+
 
 def main():
     p = argparse.ArgumentParser("Eval-only for an unlearned checkpoint")
     p.add_argument('--dataset_name', required=True, choices=['cifar10','cifar100','tiny_imagenet','vggface'])
     p.add_argument('--model_name',   required=True, choices=['resnet18','vgg16','vit-s-16','swin-t','vit-b-16'])
-    p.add_argument('--method',       required=True)           # e.g., neggrad_plus
-    p.add_argument('--forget_id',    type=int, required=True) # single class ID (one-vs-all)
-    p.add_argument('--unlearn_rate', type=float, required=True)
+    p.add_argument('--method',       required=True)          
+    p.add_argument('--forget_id', type=int, required=False, help="Single class ID (one-vs-all). Use --forget_set for multi.")
+    p.add_argument('--forget_set', type=int, nargs='+', default=None, help="Union of classes to forget, e.g. --forget_set 1 3 7")    
+            
+    
+    p.add_argument('--unlearn_rate', type=float, default=None, help="Required for non-original/non-retrained unless --ckpt_path is provided.")
     p.add_argument('--exps_dir',     type=str, default="~/classification/exps")
     p.add_argument('--batch_size',   type=int, default=256)
     p.add_argument('--num_workers',  type=int, default=8)
     p.add_argument('--ckpt_path',    type=str, default=None, help="(optional) direct path to .pth")
+    
     args = p.parse_args()
+
+    if args.forget_set is None and args.forget_id is None:
+        p.error("Provide either --forget_id or --forget_set.")
+
+    if args.method not in ['original', 'retrained'] and args.ckpt_path is None and args.unlearn_rate is None:
+        p.error("--unlearn_rate is required for this method unless you pass --ckpt_path.")
+        
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -99,23 +132,35 @@ def main():
     train_loader, test_loader = get_dataloader(trainset, testset, batch_size=args.batch_size, num_workers=args.num_workers)
 
     num_classes = max(train_loader.dataset.targets) + 1  # your trainer does the same
-    forget_class_index = [args.forget_id]  # one-vs-all split
-    train_forget_loader, train_remain_loader, test_forget_loader, test_remain_loader, _, \
-    train_forget_index, train_remain_index, test_forget_index, test_remain_index = \
-        get_unlearn_loader(trainset, testset, forget_class_index, args.batch_size, float("inf"), args.num_workers)  # one-vs-all
+    
+    if args.forget_set:
+        forget_indices = sorted(set(int(c) for c in args.forget_set))  # e.g., [1,3,7]
+    else:
+        forget_indices = [args.forget_id]  # one-vs-all fallback
+        
+    (train_forget_loader, train_remain_loader, test_forget_loader, test_remain_loader, _, 
+    train_forget_index, train_remain_index, test_forget_index, test_remain_index) = get_unlearn_loader(
+        trainset, testset, forget_indices, args.batch_size, float("inf"), args.num_workers
+    )
 
     # ---- load unlearned checkpoint ----
     if args.ckpt_path:
         ckpt = args.ckpt_path
     else:
         base = str(Path(args.exps_dir).expanduser())
-        ckpt = checkpoint_for(args.method, args.dataset_name, args.model_name, args.forget_id, args.unlearn_rate, base)
+        ckpt = checkpoint_for(args.method, args.dataset_name, args.model_name, forget_indices, args.unlearn_rate, base)
 
+    print(f"[INFO] Using checkpoint: {ckpt}")
     model = load_model(ckpt, args.model_name, args.dataset_name, num_classes).to(device).eval()
 
-    # ---- CSV path (matches your main.py convention) ----
-    out_csv = Path("results") / args.method / \
-        f"{args.dataset_name}_{args.model_name}_unlearned_{args.method}_forget1_model_metrics_lr{args.unlearn_rate}.csv"
+
+    forget_count = len(set(forget_indices))   # e.g., 3 for [1,3,7]
+
+    # (optional) zero-pad for nicer sorting: f"{forget_count:02d}"
+    out_csv = Path("results") / args.method / (
+        f"{args.dataset_name}_{args.model_name}_unlearned_"
+        f"{args.method}_forget{forget_count}_model_metrics_lr{args.unlearn_rate}.csv"
+    )
     out_csv.parent.mkdir(parents=True, exist_ok=True)
 
     mia_dict = _mia_summary_for_forget(model, train_forget_loader, test_forget_loader, device)
@@ -125,7 +170,7 @@ def main():
         csv_path=str(out_csv),
         model=model,
         method=args.method,
-        forget_class=args.forget_id,
+        forget_class=forget_indices,
         train_retain_loader=train_remain_loader,
         train_forget_loader=train_forget_loader,
         test_retain_loader=test_remain_loader,
