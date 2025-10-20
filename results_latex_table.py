@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Optional, List
 
 # ----------------- Config -----------------
-base_dir = Path("C:/Users/AT56170/Desktop/Codes/Machine Unlearning - Classification/class_unlearning/results/")
+base_dir = Path("C:/Users/AT56170/Desktop/Codes/Machine Unlearning - Classification/class_unlearning/results_single_class/")
 
 DATASETS = ["cifar10", "cifar100", "tiny_imagenet"]
 
@@ -57,7 +57,7 @@ def parse_filename(path: Path):
     if "revival" in name:
         phase = "revival"
     elif "forget" in name:
-        phase = "forget"
+        phase = "unlearned"
     elif ("original" in toks) or (mth == "original"):
         phase = "original"
     else:
@@ -249,7 +249,7 @@ for ds in DATASETS:
             if forget_path is not None:
                 try:
                     df_f = load_forget_csv(forget_path,  ds_hint=ds, mdl_hint=mdl, mth_hint=mth)
-                    df_f["phase"] = "forget"
+                    df_f["phase"] = "unlearned"
                     # normalize meta
                     df_f["dataset"] = ds
                     df_f["model"]   = mdl
@@ -291,7 +291,7 @@ if all_rows:
     global_merged = base_dir / "z_standardized_selected_all_methods.csv"
     merged.to_csv(global_merged, index=False)
 
-    (merged[merged["phase"] == "forget"]
+    (merged[merged["phase"] == "unlearned"]
         .to_csv(base_dir / "z_standardized_forget_all_methods.csv", index=False))
     (merged[merged["phase"] == "revival"]
         .to_csv(base_dir / "z_standardized_revival_all_methods.csv", index=False))
@@ -343,7 +343,7 @@ METHOD_ORDER = [
     "fisher", "wood_fisher",
     "scrub", "bad_teacher", "salun", "delete",
 ]
-PHASE_ORDER = ["forget", "revival"]  # non-original methods get these two rows
+PHASE_ORDER = ["unlearned", "revival"]  # non-original methods get these two rows
 
 def fmt_mu_sigma(mu, sigma):
     if pd.isna(mu) and pd.isna(sigma):
@@ -409,22 +409,16 @@ def add_midrules_between_methods(latex_src: str) -> str:
 
 
 def apply_multirow(table_df: pd.DataFrame) -> pd.DataFrame:
-    r"""
-    Turn pairs (Method, Phase=Forget/Revival) into a single visible Method cell
-    using \multirow{2}{*}{...} on the 'Forget' row and an empty cell on 'Revival'.
-    Requires \usepackage{multirow} in your LaTeX preamble.
+    """
+    Collapse repeated 'Method' cells into a single \multirow spanning its block.
+    Assumes rows for each method are already consecutive (as in your builder).
     """
     df = table_df.copy()
-
-    # Work per "display label" (after mapping) so citations, etc., are preserved
-    for label in df["Method"].unique():
-        sub = df[df["Method"] == label]
-        # Only multirow when we truly have both phases
-        if len(sub) == 2 and set(sub["Phase"]) == {"Forget", "Revival"}:
-            idx_forget  = sub.index[sub["Phase"] == "Forget"][0]
-            idx_revival = sub.index[sub["Phase"] == "Revival"][0]
-            df.loc[idx_forget,  "Method"] = rf"\multirow{{2}}{{*}}{{{label}}}"
-            df.loc[idx_revival, "Method"] = ""  # empty cell under the multirow
+    for label, block in df.groupby("Method", sort=False):
+        idxs = list(block.index)
+        if len(idxs) >= 2:
+            df.at[idxs[0], "Method"] = rf"\multirow{{{len(idxs)}}}{{*}}{{{label}}}"
+            df.loc[idxs[1:], "Method"] = ""   # blank the following cells
     return df
 
 
