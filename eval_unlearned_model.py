@@ -5,6 +5,70 @@ import torch
 from utils import get_transforms, get_dataset, get_dataloader, get_unlearn_loader, gather_and_write_metrics_csv
 from trainer import load_model
 
+import torch.nn.functional as F
+
+@torch.inference_mode()
+def _collect_stats(model, loader, device):
+    """Return per-example tensors: max_confidence, entropy, m_entropy, correctness."""
+    confs, ents, ments, corrs = [], [], [], []
+    for x, y in loader:
+        x, y = x.to(device, non_blocking=True), y.to(device, non_blocking=True)
+        logits = model(x)
+        probs = F.softmax(logits, dim=1)
+
+        max_conf, preds = probs.max(dim=1)
+        correctness = (preds == y).float()
+
+        # Shannon entropy over predicted distribution
+        entropy = -(probs.clamp_min(1e-12) * probs.clamp_min(1e-12).log()).sum(dim=1)
+
+        # "modified entropy" = negative log prob of the true label
+        true_p = probs.gather(1, y.unsqueeze(1)).squeeze(1).clamp_min(1e-12)
+        m_entropy = -true_p.log()
+
+        confs.append(max_conf.detach())
+        ents.append(entropy.detach())
+        ments.append(m_entropy.detach())
+        corrs.append(correctness.detach())
+
+    return (
+        torch.cat(confs),     # [N]
+        torch.cat(ents),      # [N]
+        torch.cat(ments),     # [N]
+        torch.cat(corrs),     # [N]
+    )
+
+def _mia_summary_for_forget(model, train_forget_loader, test_forget_loader, device):
+    """
+    Summarize MIA using the forget splits:
+      - Report member (train_forget) means for CSV columns (correctness/confidence/entropy/m_entropy)
+      - Compute a simple threshold attack accuracy using max-confidence.
+    """
+    m_conf, m_ent, m_ment, m_corr = _collect_stats(model, train_forget_loader, device)
+    nm_conf, nm_ent, nm_ment, nm_corr = _collect_stats(model, test_forget_loader, device)
+
+    # member means (what we’ll store in CSV individual columns)
+    member_means = {
+        "correctness": float(m_corr.mean().item()),
+        "confidence":  float(m_conf.mean().item()),
+        "entropy":     float(m_ent.mean().item()),
+        "m_entropy":   float(m_ment.mean().item()),
+    }
+
+    # Simple threshold attack on confidence: label 1=member (train_forget), 0=non-member (test_forget)
+    all_conf = torch.cat([m_conf, nm_conf])
+    labels   = torch.cat([torch.ones_like(m_conf), torch.zeros_like(nm_conf)])
+
+    # threshold = midpoint of group means
+    thr = 0.5 * (m_conf.mean() + nm_conf.mean())
+    preds = (all_conf >= thr).float()
+    attack_acc = float((preds == labels).float().mean().item())
+
+    member_means["prob"] = attack_acc  # goes to 'mia_prob' in CSV via utils
+
+    return member_means
+
+
 def checkpoint_for(method, dataset_name, model_name, forget_class, lr, base_dir):
     # Matches your revival.py behavior
     if method == 'original':
@@ -54,6 +118,8 @@ def main():
         f"{args.dataset_name}_{args.model_name}_unlearned_{args.method}_forget1_model_metrics_lr{args.unlearn_rate}.csv"
     out_csv.parent.mkdir(parents=True, exist_ok=True)
 
+    mia_dict = _mia_summary_for_forget(model, train_forget_loader, test_forget_loader, device)
+
     # ---- write metrics CSV (overall + per-class + MIA placeholders) ----
     gather_and_write_metrics_csv(
         csv_path=str(out_csv),
@@ -66,7 +132,7 @@ def main():
         test_forget_loader=test_forget_loader,
         train_full_loader=train_loader,
         test_full_loader=test_loader,
-        mia_result=None,  # you can plug your MIA dict here later if needed
+        mia_result=mia_dict,   
     )
 
     print(f"[OK] Wrote {out_csv}")
