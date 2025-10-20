@@ -299,11 +299,12 @@ def main():
             checkpoint_folder=args.checkpoint_folder,
             fallback_dir=args.fallback_dir,
             out_csv_dir=args.out_csv_dir,
-            batch_size=batch_size,               # ✅ use resolved batch_size
+            batch_size=batch_size,               
             num_workers=args.num_workers,
             wo_dataaug=args.wo_dataaug,
             device=device,
             forget_classes=args.forget_classes,
+            forget_set=args.forget_set,
         )
 
 
