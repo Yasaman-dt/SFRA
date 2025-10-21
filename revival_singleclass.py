@@ -55,6 +55,9 @@ parser.add_argument(
 parser.add_argument(
     '--cpr', type=int, default=100)
 
+parser.add_argument('--rs_patience', type=int, default=30)
+parser.add_argument('--rs_directional', action='store_true')
+
 args = parser.parse_args()
 
 method       = args.method
@@ -109,6 +112,7 @@ COLUMNS = [
     "syn_total", "syn_retain", "syn_forget",
     "all_train", "all_test",
     "train_fgt", "train_retain", "test_fgt", "test_retain",
+    "RS",
 ]
 
 def append_best_for_class(forget_class: int, best_row: dict):
@@ -141,7 +145,7 @@ def append_best_for_class(forget_class: int, best_row: dict):
         "syn_train_loss", "syn_train_acc",
         "syn_total", "syn_retain", "syn_forget",
         "all_train", "all_test",
-        "train_fgt", "train_retain", "test_fgt", "test_retain",
+        "train_fgt", "train_retain", "test_fgt", "test_retain", "RS",
     ]
 
     # after df = pd.DataFrame([row], columns=COLUMNS)
@@ -411,6 +415,18 @@ def _parse_forget_arg(s: str, num_classes: int):
         raise ValueError(f"No valid classes parsed from --forget='{s}'. "
                          f"Valid range is 0..{num_classes-1} or 'all'.")
     return sorted(selected)
+
+
+def revival_score(A_r_tr, A_f_tr, A_r_tu, A_f_tu, directional=False):
+    # retain should stay close to A_r_tu; forget should improve over A_f_tu
+    retain_term = 1.0 - abs(A_r_tr - A_r_tu) / 100.0
+    forget_delta = (A_f_tr - A_f_tu) / 100.0
+    forget_term = max(0.0, forget_delta) if directional else abs(forget_delta)
+    # clamp to [0,1]
+    retain_term = float(np.clip(retain_term, 0.0, 1.0))
+    forget_term = float(np.clip(forget_term, 0.0, 1.0))
+    return retain_term * forget_term
+
 
 forget_classes = _parse_forget_arg(args.forget, num_classes)
 
@@ -694,6 +710,25 @@ for forget_class in forget_classes:
     best_test_retain = acc_test_retain
     best_train_retain = acc_train_retain
     best_row = None
+    
+    best_rs = -1.0
+    best_rs_epoch = 0
+    no_improve = 0
+    patience = int(args.rs_patience)
+    save_best_fc = None
+
+    A_r_tu = float(acc_test_retain)
+    A_f_tu = float(acc_test_fgt)
+
+    A_r_tr = float(acc_test_retain)
+    A_f_tr = float(acc_test_fgt)
+
+    rs0 = revival_score(A_r_tr, A_f_tr, A_r_tu, A_f_tu, directional=args.rs_directional)
+    metrics_history[-1]["rs"] = float(rs0)
+    print(f"[Epoch 00] RS={rs0:.4f}")
+    row0["rs"] = float(rs0)
+        
+    
     # 3) Train only the FC for a few epochs; evaluate on real loaders each epoch
     for epoch in range(1, epochs + 1):
         fc.train()
@@ -780,6 +815,34 @@ for forget_class in forget_classes:
             "test_fgt": float(acc_test_fgt),
             "test_retain": float(acc_test_retain),
         }
+        
+        # after you computed acc_* for this epoch:
+        A_r_tr = float(acc_test_retain)
+        A_f_tr = float(acc_test_fgt)
+
+
+        rs = revival_score(A_r_tr, A_f_tr, A_r_tu, A_f_tu, directional=args.rs_directional)
+        metrics_history[-1]["rs"] = float(rs)
+        print(f"[Epoch {epoch:02d}] RS={rs:.4f}")
+
+        if rs > best_rs:
+            best_rs = rs
+            best_rs_epoch = epoch
+            no_improve = 0
+            save_best_fc = deepcopy(fc.state_dict())   # optional: keep best-RS FC
+        else:
+            no_improve += 1
+            if no_improve >= patience:
+                print(f"[EarlyStop] RS plateaued for {patience} epochs. "
+                    f"Best RS={best_rs:.4f} @ epoch {best_rs_epoch}.")
+                if save_best_fc is not None:
+                    fc.load_state_dict(save_best_fc)
+                break
+        
+        
+        metrics_history[-1]["rs"] = float(rs)
+        row["rs"] = float(rs)
+        
         key = _key_from_row(row)
         if key > best["key"]:
             best["key"] = key
