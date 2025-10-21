@@ -36,6 +36,8 @@ if __name__ == '__main__':
     parser.add_argument('--dataset_name', type=str, default='cifar10', choices=['cifar10', "cifar100", "tiny_imagenet", "vggface"], help='dataset name')
     parser.add_argument('--model_name', type=str, default='resnet18',  choices=['resnet18', "vgg16", "vit-s-16", "swin-t", "vit-b-16"], help='model name')
     parser.add_argument('--exps_dir', type=str, default="~/classification/exps", help='experiments directory')
+    parser.add_argument('--patience', type=int, default=30, help='Early stopping patience (in epochs)')
+    
     ##########################################################################################################
 
     parser.add_argument('--classes', type=str, default=None,
@@ -690,7 +692,7 @@ if __name__ == '__main__':
 
     csv_forget = args.forget_id if args.forget_id is not None else forget_class
 
-    patience = 30
+    patience = args.patience
 
     if args.method == "random_label":
         unlearn_model = method.random_label(ori_model, train_forget_loader, num_classes,
