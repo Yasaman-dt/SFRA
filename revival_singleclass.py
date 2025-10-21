@@ -55,7 +55,7 @@ parser.add_argument(
 parser.add_argument(
     '--cpr', type=int, default=100)
 
-parser.add_argument('--rs_patience', type=int, default=30)
+parser.add_argument('--rs_patience', type=int, default=200)
 parser.add_argument('--rs_directional', action='store_true')
 
 args = parser.parse_args()
