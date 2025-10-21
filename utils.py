@@ -407,7 +407,7 @@ def get_transforms(dataset_name, model_name, wo_dataaug):
             ])
 
 
-    if dataset_name == "cifar100": 
+    elif dataset_name == "cifar100": 
         if is_vit_b_16 or is_swin_t:
             transform_train = transforms.Compose([
                 transforms.Resize(224, interpolation=transforms.InterpolationMode.BICUBIC, antialias=True),
