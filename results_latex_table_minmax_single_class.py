@@ -38,10 +38,10 @@ else:
 
 # Pretty labels for displayed columns only
 COL_LABELS = {
-    "train_retain_acc": r"$\mathcal{A}^{\text{train}}_{r}$",
-    "train_forget_acc": r"$\mathcal{A}^{\text{train}}_{f}$",
-    "test_retain_acc":  r"$\mathcal{A}^{t}_{r}$",
-    "test_forget_acc":  r"$\mathcal{A}^{t}_{f}$",
+    "train_retain_acc": r"$\mathcal{A}^{\text{train}}_{r}(\%)$",
+    "train_forget_acc": r"$\mathcal{A}^{\text{train}}_{f}(\%)$",
+    "test_retain_acc":  r"$\mathcal{A}^{t}_{r}(\%)$",
+    "test_forget_acc":  r"$\mathcal{A}^{t}_{f}(\%)$",
 }
 
 # Keep only these forget classes for TinyImageNet
@@ -1015,7 +1015,7 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
 
     latex = wrap_with_resizebox(latex, caption, label, star=True, width=r"\textwidth")
 
-    out = base_dir / f"latex_table_{slugify(mdl)}.tex"
+    out = base_dir / f"latex_table_{slugify(mdl)}_single_class.tex"
     with open(out, "w", encoding="utf-8") as f:
         f.write(latex)
     print(f"[OK] wrote: {out}")

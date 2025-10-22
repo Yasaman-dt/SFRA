@@ -38,11 +38,13 @@ else:
 
 # Pretty labels for displayed columns only
 COL_LABELS = {
-    "train_retain_acc": r"$\mathcal{A}^{\text{train}}_{r}$",
-    "train_forget_acc": r"$\mathcal{A}^{\text{train}}_{f}$",
-    "test_retain_acc":  r"$\mathcal{A}^{t}_{r}$",
-    "test_forget_acc":  r"$\mathcal{A}^{t}_{f}$",
+    "train_retain_acc": r"$\mathcal{A}^{\text{train}}_{r}(\%)$",
+    "train_forget_acc": r"$\mathcal{A}^{\text{train}}_{f}(\%)$",
+    "test_retain_acc":  r"$\mathcal{A}^{t}_{r}(\%)$",
+    "test_forget_acc":  r"$\mathcal{A}^{t}_{f}(\%)$",
 }
+
+RS_LABEL = r"$\mathrm{RS}$"
 
 # Keep only these forget classes for TinyImageNet
 FORGET_CLASS_FILTERS = {
@@ -612,7 +614,7 @@ def inject_rs2_multicolumn(latex_src: str, n_metric_cols: int) -> str:
 
 
 def wrap_with_resizebox(latex_src: str, caption: str, label: str,
-                        star: bool = True, width: str = r"\textwidth") -> str:
+                        star: bool = True, width: str = r"\columnwidth") -> str:
     env = "table*" if star else "table"
     return (
         f"\\begin{{{env}}}[t]\n"
@@ -671,7 +673,11 @@ def _latex_dataset_name(ds: str) -> str:
     return ds.replace("_", " ").title()
 
 def _normalize_key(s: str) -> str:
+    if s is None or (isinstance(s, float) and pd.isna(s)):
+        return ""
+    s = str(s)
     return s.replace("-", "_").lower().strip()
+
 
 def _method_label(raw: str) -> str:
     v = method_name_and_ref.get(_normalize_key(raw))
@@ -681,15 +687,15 @@ def _method_label(raw: str) -> str:
         return v[0]  # take first element if tuple provided
     return v
 
-def fmt_min_max(vmin, vmax):
-    if pd.isna(vmin) and pd.isna(vmax):
+def fmt_mu(mu):
+    if pd.isna(mu):
         return "-"
-    vmin = float(vmin) if not pd.isna(vmin) else np.nan
-    vmax = float(vmax) if not pd.isna(vmax) else np.nan
-    if pd.isna(vmin) or pd.isna(vmax):
+    return rf"${float(mu):.2f}$"
+
+def fmt_rs(mu):
+    if pd.isna(mu):
         return "-"
-    # prints as (min,max)
-    return rf"$({vmin:.2f},{vmax:.2f})$"
+    return rf"${float(mu):.3f}$"
 
 def render_table_for(ds: str, mdl: str, df_src: pd.DataFrame):
     df = df_src[(df_src["dataset"] == ds) & (df_src["model"] == mdl)].copy()
@@ -698,8 +704,12 @@ def render_table_for(ds: str, mdl: str, df_src: pd.DataFrame):
         return None
 
     # aggregate ALL metrics; we'll only display OUT_METRIC_COLS
-    g = df.groupby(["method","phase"], dropna=False)[ALL_METRIC_COLS].agg(["mean","std","min","max"])
-
+    agg_cols = ALL_METRIC_COLS.copy()
+    has_rs = "RS2" in df.columns
+    if has_rs:
+        agg_cols = agg_cols + ["RS2"]
+    g = df.groupby(["method","phase"], dropna=False)[agg_cols].agg(["mean"])
+    
     # method ordering (yours + extras found)
     present = [m for m in METHOD_ORDER if m in df["method"].unique()]
     extras  = sorted(set(df["method"].unique()) - set(present))
@@ -713,31 +723,48 @@ def render_table_for(ds: str, mdl: str, df_src: pd.DataFrame):
             for col in OUT_METRIC_COLS:
                 if (m, phase) in g.index:
                     mu = g.loc[(m, phase), (col, "mean")]
-                    sd = g.loc[(m, phase), (col, "std")]
                 else:
-                    mu, sd = np.nan, np.nan
-                row[col] = fmt_mu_sigma(mu, sd)
+                    mu= np.nan
+                row[col] = fmt_mu(mu)
+            # RS column: "-" for Original
+            row[RS_LABEL] = "-"
             rows.append(row)
         else:
-            for phase in PHASE_ORDER:  # "forget", "revival"
-                row = {"Method": m, "Phase": phase.title()}
-                if (m, phase) in g.index:
-                    for col in OUT_METRIC_COLS:
-                        # Keep (min,max) formatting for revival forget-accuracy columns if present
-                        if phase == "revival" and col in ("train_forget_acc", "test_forget_acc"):
-                            vmin = g.loc[(m, phase), (col, "min")]
-                            vmax = g.loc[(m, phase), (col, "max")]
-                            row[col] = fmt_min_max(vmin, vmax)
-                        else:
-                            mu = g.loc[(m, phase), (col, "mean")]
-                            sd = g.loc[(m, phase), (col, "std")]
-                            row[col] = fmt_mu_sigma(mu, sd)
-                else:
-                    for col in OUT_METRIC_COLS:
-                        row[col] = "-"
-                rows.append(row)
+            # --- Unlearned row (RS shown here) ---
+            row_un = {"Method": m, "Phase": "Unlearned"}
+            if (m, "unlearned") in g.index:
+                for col in OUT_METRIC_COLS:
+                    mu = g.loc[(m, "unlearned"), (col, "mean")]
+                    row_un[col] = fmt_mu(mu)
+            else:
+                for col in OUT_METRIC_COLS:
+                    row_un[col] = "-"
+    
+            # RS from the revival group (mean±std); place in Unlearned row as a column
+            if has_rs and (m, "revival") in g.index:
+                rs_mu = g.loc[(m, "revival"), ("RS2", "mean")]
+                rs_text = fmt_rs(rs_mu)
+            else:
+                rs_text = "-"
+            
+            # Put the multirow RS in the Unlearned row; leave empty in the Revival row
+            row_un[RS_LABEL] = rf"\multirow{{2}}{{*}}{{{rs_text}}}"
+            rows.append(row_un)
+    
+            # --- Revival row (leave RS blank to keep table compact) ---
+            row_re = {"Method": m, "Phase": "Revival"}
+            if (m, "revival") in g.index:
+                for col in OUT_METRIC_COLS:
+                    mu = g.loc[(m, "revival"), (col, "mean")]
+                    row_re[col] = fmt_mu(mu)
+            else:
+                for col in OUT_METRIC_COLS:
+                    row_re[col] = "-"
+            row_re[RS_LABEL] = ""  # second row of the multirow
+            rows.append(row_re)
 
-    table_df = pd.DataFrame(rows, columns=["Method","Phase"] + OUT_METRIC_COLS) \
+
+    table_df = pd.DataFrame(rows, columns=["Method","Phase"] + OUT_METRIC_COLS + [RS_LABEL]) \
                  .rename(columns={c: COL_LABELS[c] for c in OUT_METRIC_COLS})
 
 
@@ -754,8 +781,10 @@ def render_table_for(ds: str, mdl: str, df_src: pd.DataFrame):
                          .str.replace("%", r"\%", regex=False))
 
     # dynamic column format: Method | Phase | (one 'c' per displayed metric)
-    column_format = "c|c|" + ("c" * len(OUT_METRIC_COLS))
+    column_format = "c|c|" + ("c" * (len(OUT_METRIC_COLS) + 1))  # +1 for RS
     latex = table_df.to_latex(index=False, escape=False, column_format=column_format)
+    #latex = inject_rs2_multicolumn(latex, n_metric_cols=len(OUT_METRIC_COLS))
+
     latex = add_midrules_between_methods(latex)
 
     mdl_latex = _latex_model_name(mdl)
@@ -767,7 +796,7 @@ def render_table_for(ds: str, mdl: str, df_src: pd.DataFrame):
         cap = (f"Revival results of multi-class unlearning on {ds_latex} for {mdl_latex} ")
 
     lab = f"tab:{slugify(ds_latex)}_{slugify(mdl_latex)}_ALL"
-    latex = wrap_with_resizebox(latex, cap, lab, star=True, width=r"\textwidth")
+    latex = wrap_with_resizebox(latex, cap, lab, star=True, width=r"\columnwidth")
 
     safe_mdl = re.sub(r'[^A-Za-z0-9\-]+', "_", mdl)
     safe_ds  = slugify(ds_latex)
