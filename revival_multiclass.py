@@ -120,7 +120,7 @@ COLUMNS_SINGLE = [
 ]
 
 COLUMNS_MULTI = [
-    "forget",       # e.g., "2,7" or "multi_2_7"
+    "forget_class",       # e.g., "2,7" or "multi_2_7"
     "dataset", "model", "method", "lr",
     "epochs_total", "tpr", "cpr",
     "epoch", "syn_train_loss", "syn_train_acc",
@@ -171,7 +171,8 @@ def append_best_for_class(forget_class: int, best_row: dict):
         mode="a",
         header=header_needed,
         index=False,
-        float_format="%.3f"
+        float_format="%.3f",
+        sep=";",
     )
 
     print(f"[AGG] Appended best row for class {forget_class} -> {AGG_CSV_PATH}")
@@ -611,7 +612,7 @@ def append_best_for_multi(forget_classes: list[int], best_row: dict):
         return
     forget_str = ",".join(str(c) for c in forget_classes)
     row = {
-        "forget": forget_str,
+        "forget_class": forget_str,
         "dataset": dataset_name,
         "model": model_name,
         "method": method,
