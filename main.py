@@ -36,7 +36,7 @@ if __name__ == '__main__':
     parser.add_argument('--dataset_name', type=str, default='cifar10', choices=['cifar10', "cifar100", "tiny_imagenet", "vggface"], help='dataset name')
     parser.add_argument('--model_name', type=str, default='resnet18',  choices=['resnet18', "vgg16", "vit-s-16", "swin-t", "vit-b-16"], help='model name')
     parser.add_argument('--exps_dir', type=str, default="~/classification/exps", help='experiments directory')
-    parser.add_argument('--patience', type=int, default=30, help='Early stopping patience (in epochs)')
+    parser.add_argument('--patience', type=int, default=10, help='Early stopping patience (in epochs)')
     
     ##########################################################################################################
 
@@ -224,14 +224,16 @@ if __name__ == '__main__':
     #     forget_class_index = permutation_map[:forget_class]
     
     if args.forget_id is not None:
-        forget_class_index = [args.forget_id]      # one-vs-all
-        forget_class = 1                           # keep single-class logic elsewhere working
+        forget_ids   = [args.forget_id]
+        forget_count = 1
+        forget_class_index = forget_ids
         note_print(f"forget class index: {forget_class_index} (via --forget_id)")
-        csv_forget = args.forget_id if args.forget_id is not None else forget_class
     else:
         permutation_map = getattr(config, "permutation_map")
         forget_class_index = permutation_map[:forget_class]
-        note_print(f"forget class index: {forget_class_index} (via permutation_map)")    
+        forget_ids   = list(forget_class_index)
+        forget_count = len(forget_ids)
+        note_print(f"forget class index: {forget_class_index} (via permutation_map)")
     
     # permutation_map = getattr(config, "permutation_map")
     # forget_class_index = permutation_map[:forget_class]
@@ -974,7 +976,7 @@ if __name__ == '__main__':
     #         csv_path=str(results_csv_retrain_scratch),
     #         model=retrain_model,
     #         method="retrained",
-    #         forget_class=csv_forget,
+    #         forget_class=forget_ids,
     #         train_retain_loader=train_remain_loader,
     #         train_forget_loader=train_forget_loader,
     #         test_retain_loader=test_remain_loader,
@@ -989,7 +991,7 @@ if __name__ == '__main__':
             csv_path=str(results_csv_unlearn),
             model=unlearn_model,
             method=args.method,
-            forget_class=csv_forget,
+            forget_class=forget_ids,
             train_retain_loader=train_remain_loader,
             train_forget_loader=train_forget_loader,
             test_retain_loader=test_remain_loader,

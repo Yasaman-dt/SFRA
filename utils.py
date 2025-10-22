@@ -66,12 +66,11 @@ def _top1_and_per_class(model, loader, num_classes, device):
     nz = cls_total > 0
     per_class[nz] = (cls_correct[nz].float() / cls_total[nz].float()) * 100.0
     return round(overall, 3), [round(x, 3) for x in per_class.tolist()]
-
 def gather_and_write_metrics_csv(
     csv_path,
     model,
     method,                 # e.g. "retrain" or an unlearning method name
-    forget_class,           # int or list; will be stringified
+    forget_class,           # int | list/tuple/set[int] | str
     *,
     # overall retain/forget splits
     train_retain_loader=None,
@@ -91,10 +90,31 @@ def gather_and_write_metrics_csv(
     )
     num_classes = _infer_num_classes(model, probe_loader)
 
+    if isinstance(forget_class, (list, tuple, set)):
+        fc_list = sorted(list(forget_class))
+        fc_count = len(fc_list)
+        fc_field = json.dumps(fc_list)         
+    else:
+        # keep previous behavior if int or str is passed
+        fc_list = None
+        # if it's an int-like value, count=that if you used to pass the count;
+        # otherwise default to 1 when a single class id is passed as int/str digit.
+        if isinstance(forget_class, int):
+            # Ambiguity: previously this could be "count". Keep it as count.
+            fc_count = int(forget_class)
+        elif isinstance(forget_class, str) and forget_class.isdigit():
+            # treat as single id → count=1
+            fc_count = 1
+        else:
+            fc_count = None
+        fc_field = forget_class
+
     row = {
         "method": str(method),
-        "forget_class": json.dumps(forget_class) if not isinstance(forget_class, (str, int)) else forget_class,
+        "forget": fc_count,         
+        "forget_class": fc_field,    
     }
+    # ----------------------------------------------------------
 
     # Overall retain/forget accuracies
     def _overall(loader):
@@ -110,7 +130,6 @@ def gather_and_write_metrics_csv(
     def _classwise(prefix, loader, fallback):
         use_loader = loader or fallback
         _, per_cls = _top1_and_per_class(model, use_loader, num_classes, device) if use_loader else (None, None)
-        # The user asked for classes 0..9 explicitly; fill missing with None if num_classes < 10
         for i in range(num_classes):
             val = None
             if per_cls is not None and i < len(per_cls):
@@ -140,8 +159,9 @@ def gather_and_write_metrics_csv(
         row["mia_m_entropy"]   = None
         row["mia_prob"]        = None
 
-    # Stable column order
-    base_cols   = ["method", "forget_class", "train_retain_acc", "train_forget_acc", "test_retain_acc", "test_forget_acc"]
+    # Stable column order (CHANGED: insert "forget" before "forget_class")
+    base_cols   = ["method", "forget", "forget_class",
+                   "train_retain_acc", "train_forget_acc", "test_retain_acc", "test_forget_acc"]
     class_cols  = [f"train_class{i}_acc" for i in range(num_classes)] + [f"test_class{i}_acc" for i in range(num_classes)]
     mia_cols    = ["mia_correctness", "mia_confidence", "mia_entropy", "mia_m_entropy", "mia_prob"]
     field_order = base_cols + class_cols + mia_cols
@@ -152,12 +172,12 @@ def gather_and_write_metrics_csv(
         w = csv.DictWriter(f, fieldnames=field_order)
         if write_header:
             w.writeheader()
-        # ensure all keys exist
         for k in field_order:
             row.setdefault(k, None)
         w.writerow(row)
 
-    return row  # handy for logging/printing
+    return row
+
 
 def note_print(*args, **kwargs):
 
