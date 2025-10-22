@@ -93,7 +93,7 @@ def gather_and_write_metrics_csv(
     if isinstance(forget_class, (list, tuple, set)):
         fc_list = sorted(list(forget_class))
         fc_count = len(fc_list)
-        fc_field = json.dumps(fc_list)         
+        fc_field = ",".join(str(int(v)) for v in fc_list)
     else:
         # keep previous behavior if int or str is passed
         fc_list = None
