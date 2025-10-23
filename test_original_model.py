@@ -182,8 +182,8 @@ def run_for_dataset(
         forget_tag = ",".join(map(str, forget_indices))
 
         row = {
-            "forget_classes": forget_tag,                # NEW (string like "1,3,7")
-            "num_forget_classes": len(forget_indices),   # NEW
+            "forget_classes": forget_tag,                
+            "forget": len(forget_indices),   
             "method": "original",
             "dataset": dataset_name, "model": model_name,
             "train_acc": train_accuracy, "test_acc": test_accuracy,
