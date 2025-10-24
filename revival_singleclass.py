@@ -58,6 +58,11 @@ parser.add_argument(
 parser.add_argument('--rs_patience', type=int, default=200)
 parser.add_argument('--rs_directional', action='store_true')
 
+parser.add_argument(
+    '--retain_floor_frac', type=float, default=0.9,
+    help='Minimum allowed fraction of baseline test_retain accuracy (epoch-0).'
+)
+
 
 args = parser.parse_args()
 
@@ -746,11 +751,16 @@ for forget_class in forget_classes:
     A_r_tr = float(acc_test_retain)
     A_f_tr = float(acc_test_fgt)
 
+
     rs0 = revival_score(A_r_tr, A_f_tr, A_r_tu, A_f_tu, directional=args.rs_directional)
     metrics_history[-1]["rs"] = float(rs0)
     print(f"[Epoch 00] RS={rs0:.4f}")
     row0["rs"] = float(rs0)
+
         
+    retain_floor = args.retain_floor_frac * A_r_tu
+    print(f"[Constraint] test_retain must be >= {retain_floor:.2f} "
+        f"({args.retain_floor_frac:.0%} of baseline {A_r_tu:.2f}).")        
     
     # 3) Train only the FC for a few epochs; evaluate on real loaders each epoch
     for epoch in range(1, epochs + 1):
@@ -848,11 +858,11 @@ for forget_class in forget_classes:
         metrics_history[-1]["rs"] = float(rs)
         print(f"[Epoch {epoch:02d}] RS={rs:.4f}")
 
-        if rs > best_rs:
+        if (acc_test_retain >= retain_floor) and (rs > best_rs):
             best_rs = rs
             best_rs_epoch = epoch
             no_improve = 0
-            save_best_fc = deepcopy(fc.state_dict())   # optional: keep best-RS FC
+            save_best_fc = deepcopy(fc.state_dict())
         else:
             no_improve += 1
             if no_improve >= patience:
@@ -861,13 +871,14 @@ for forget_class in forget_classes:
                 if save_best_fc is not None:
                     fc.load_state_dict(save_best_fc)
                 break
+
         
         
         metrics_history[-1]["rs"] = float(rs)
         row["rs"] = float(rs)
         
         key = _key_from_row(row)
-        if key > best["key"]:
+        if (row["test_retain"] >= retain_floor) and (key > best["key"]):
             best["key"] = key
             best["row"] = row.copy()
 
