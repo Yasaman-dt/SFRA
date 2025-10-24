@@ -58,6 +58,7 @@ parser.add_argument(
 parser.add_argument('--rs_patience', type=int, default=200)
 parser.add_argument('--rs_directional', action='store_true')
 
+
 args = parser.parse_args()
 
 method       = args.method
@@ -108,6 +109,7 @@ os.makedirs(AGG_CSV_DIR, exist_ok=True)
 COLUMNS = [
     "forget_class", "dataset", "model", "method", "lr",
     "epochs_total", "tpr", "cpr",
+    "retain_per_class", "total_retain", "total_forget",
     "epoch", "syn_train_loss", "syn_train_acc",
     "syn_total", "syn_retain", "syn_forget",
     "all_train", "all_test",
@@ -115,10 +117,13 @@ COLUMNS = [
     "RS",
 ]
 
-def append_best_for_class(forget_class: int, best_row: dict):
-    """
-    Append exactly ONE row per class with a fixed schema.
-    """
+def append_best_for_class(
+    forget_class: int,
+    best_row: dict,
+    retain_per_class: int,
+    total_retain: int,
+    total_forget: int,
+):
     if best_row is None:
         print(f"[AGG] No best row to append for class {forget_class}.")
         return
@@ -129,37 +134,31 @@ def append_best_for_class(forget_class: int, best_row: dict):
         "model": model_name,
         "method": method,
         "lr": lr,
-        "epochs_total": epochs,                         
-        "tpr": total_per_class,                          
-        "cpr": choose_per_retain_class_for_fgt,    
-        **best_row,  # expects keys like epoch, syn_* , all_*, train_*, test_*
+        "epochs_total": epochs,
+        "tpr": total_per_class,
+        "cpr": choose_per_retain_class_for_fgt,
+        "retain_per_class": int(retain_per_class),
+        "total_retain": int(total_retain),
+        "total_forget": int(total_forget),
+        **best_row,
     }
 
-    # Enforce column order; missing keys become NaN
     df = pd.DataFrame([row], columns=COLUMNS)
-
     header_needed = not os.path.exists(AGG_CSV_PATH)
 
     METRIC_COLS = [
         "epochs_total", "tpr", "cpr",
+        "retain_per_class", "total_retain", "total_forget",
         "syn_train_loss", "syn_train_acc",
         "syn_total", "syn_retain", "syn_forget",
         "all_train", "all_test",
         "train_fgt", "train_retain", "test_fgt", "test_retain", "RS",
     ]
-
-    # after df = pd.DataFrame([row], columns=COLUMNS)
     df[METRIC_COLS] = df[METRIC_COLS].apply(pd.to_numeric, errors="coerce").round(3)
 
-    df.to_csv(
-        AGG_CSV_PATH,
-        mode="a",
-        header=header_needed,
-        index=False,
-        float_format="%.3f"
-    )
-
+    df.to_csv(AGG_CSV_PATH, mode="a", header=header_needed, index=False, float_format="%.3f")
     print(f"[AGG] Appended best row for class {forget_class} -> {AGG_CSV_PATH}")
+
 
 
 def checkpoint_for(method, dataset_name, model_name, forget_class, lr, base_dir):
@@ -295,59 +294,72 @@ def build_synthetic_embeddings_and_splits(
 
     retain_classes = [c for c in range(num_classes) if c != forget_class]
 
-    # -------- Retain split: EXACT per_class samples predicted as their class, then top-K by confidence --------
+    # NEW: keep per-class counts
     retain_feats_list, retain_labels_list = [], []
-    for c in retain_classes:
-        feats_c, probs_c = _sample_predicted_as_class(
-            W=W, b=b, emb_dim=emb_dim, target_class=c,
-            per_class_strict=per_class, batch=4096, device=device
-        )
-        # sort by model confidence for class c (desc), then take top-K
-        conf_sorted, idx_sorted = torch.sort(probs_c, descending=True)
-        topk = idx_sorted[:retain_top_k]
-        retain_feats_list.append(feats_c.index_select(0, topk))
-        retain_labels_list.append(torch.full((retain_top_k,), c, device=device, dtype=torch.long))
-
-    retain_feats  = torch.cat(retain_feats_list, dim=0)
-    retain_labels = torch.cat(retain_labels_list, dim=0)
-
-    # -------- Forget split (unchanged, pick bottom-K of retain confidence, relabel as forget_class) --------
-    # If you want forgets to be strictly "not predicted as their own class", keep your old logic.
-    # Below: for each retain class, resample the SAME 1000 pool and take the *lowest* confidences.
+    retain_kept_per_class = {}     # {class_id: kept_top}
     forget_feats_list = []
+    forget_kept_per_class = {}     # {class_id: kept_bottom}
+
+    # -------- Retain split --------
     for c in retain_classes:
         feats_c, probs_c = _sample_predicted_as_class(
             W=W, b=b, emb_dim=emb_dim, target_class=c,
             per_class_strict=per_class, batch=4096, device=device
         )
-        # take the smallest confidences for class c
-        _, idx_sorted_asc = torch.sort(probs_c, descending=False)
-        lowk = idx_sorted_asc[:per_retain_for_forget]
-        forget_feats_list.append(feats_c.index_select(0, lowk))
+        _, idx_sorted = torch.sort(probs_c, descending=True)
+        topk_idx = idx_sorted[:retain_top_k]
+        kept_top = topk_idx.numel()
+        retain_kept_per_class[int(c)] = int(kept_top)
 
-    forget_feats  = torch.cat(forget_feats_list, dim=0)
+        retain_feats_list.append(feats_c.index_select(0, topk_idx))
+        retain_labels_list.append(torch.full((kept_top,), c, device=device, dtype=torch.long))
+
+    retain_feats  = torch.cat(retain_feats_list, dim=0) if retain_feats_list else torch.empty(0, emb_dim, device=device)
+    retain_labels = torch.cat(retain_labels_list, dim=0) if retain_labels_list else torch.empty(0, dtype=torch.long, device=device)
+
+    # -------- Forget split --------
+    for c in retain_classes:
+        feats_c, probs_c = _sample_predicted_as_class(
+            W=W, b=b, emb_dim=emb_dim, target_class=c,
+            per_class_strict=per_class, batch=4096, device=device
+        )
+        _, idx_sorted_asc = torch.sort(probs_c, descending=False)
+        lowk_idx = idx_sorted_asc[:per_retain_for_forget]
+        kept_bottom = lowk_idx.numel()
+        forget_kept_per_class[int(c)] = int(kept_bottom)
+
+        forget_feats_list.append(feats_c.index_select(0, lowk_idx))
+
+    forget_feats  = torch.cat(forget_feats_list, dim=0) if forget_feats_list else torch.empty(0, emb_dim, device=device)
     forget_labels = torch.full((forget_feats.shape[0],), forget_class, device=device, dtype=torch.long)
 
     retain_ds = TensorDataset(retain_feats.cpu(), retain_labels.cpu())
-    forget_ds  = TensorDataset(forget_feats.cpu(),  forget_labels.cpu())
+    forget_ds = TensorDataset(forget_feats.cpu(), forget_labels.cpu())
     retain_loader = DataLoader(retain_ds, batch_size=loader_batch_size, shuffle=True, drop_last=False)
-    forget_loader  = DataLoader(forget_ds,  batch_size=loader_batch_size, shuffle=True, drop_last=False)
+    forget_loader = DataLoader(forget_ds, batch_size=loader_batch_size, shuffle=True, drop_last=False)
+
+    # NEW: compute totals
+    total_retain = int(retain_feats.shape[0])
+    total_forget = int(forget_feats.shape[0])
 
     summary = {
         "emb_dim": emb_dim,
         "retain_classes": retain_classes,
-        "retain_per_class_generated": per_class,
-        "retain_top_k": retain_top_k,
-        "retain_total": retain_feats.shape[0],
-        "forget_class": forget_class,
-        "per_retain_for_forget": per_retain_for_forget,
-        "forget_total": forget_feats.shape[0],
+        "retain_per_class_generated": int(per_class),
+        "retain_top_k_per_class": int(retain_top_k),               
+        "retain_total": total_retain,                               
+        #"retain_kept_per_class": retain_kept_per_class,            
+        "forget_class": int(forget_class),
+        "per_retain_for_forget": int(per_retain_for_forget),
+        "forget_total": total_forget,                               
+        #"forget_kept_per_class": forget_kept_per_class,            
     }
     return {
         "retain_feats": retain_feats, "retain_labels": retain_labels, "retain_loader": retain_loader,
         "forget_feats": forget_feats, "forget_labels": forget_labels, "forget_loader": forget_loader,
         "summary": summary
     }
+
 
 @torch.no_grad()
 def eval_accuracy_on_loader(model, fc, loader, device):
@@ -521,14 +533,25 @@ for forget_class in forget_classes:
     test_ret_emb_loader  = make_emb_loader(test_ret_feats,  test_ret_labels)
 
 
-    def retain_k_multiplier(dataset_name: str, num_classes: int) -> int:
+    def retain_k_multiplier(dataset_name: str, num_classes: int, override: float | None = None) -> float:
+        if override is not None:
+            return float(override)
+
         d = dataset_name.strip().lower().replace("-", "").replace("_", "")
         mapping = {
-            "cifar10": 9,
-            "cifar100": 9,
-            "tiny_imagenet": 18,
+            "cifar10": 4,     
+            "cifar100": 9.0,
+            "tiny_imagenet": 18.0,  
         }
-        return mapping.get(d, 18 if num_classes == 200 else 9)
+        if d in mapping:
+            return mapping[d]
+
+        if num_classes == 200:
+            return 18.0
+        elif num_classes == 100:
+            return 9.0
+        else:
+            return 4
 
 
     retain_mult = retain_k_multiplier(dataset_name, num_classes)
@@ -873,6 +896,16 @@ for forget_class in forget_classes:
     # os.makedirs(best_csv_dir, exist_ok=True)
 
     if best["row"] is not None:
-        append_best_for_class(forget_class, best["row"])
+        retain_per_class = int(synth["summary"]["retain_top_k_per_class"])
+        total_retain     = int(synth["summary"]["retain_total"])
+        total_forget     = int(synth["summary"]["forget_total"])
+        append_best_for_class(
+            forget_class,
+            best["row"],
+            retain_per_class=retain_per_class,
+            total_retain=total_retain,
+            total_forget=total_forget,
+        )
     else:
         print(f"[BEST PER CLASS] No best row found for forget_class={forget_class}.")
+
