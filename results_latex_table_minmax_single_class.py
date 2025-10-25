@@ -585,6 +585,9 @@ def fmt_rs(mu, sigma):
     sigma = 0.0 if pd.isna(sigma) else float(sigma)
     return rf"${float(mu):.3f}\,\text{{\scriptsize\,±\,{sigma:.3f}}}$"
 
+def fmt_rs_max(v):
+    return "-" if pd.isna(v) else rf"${float(v):.3f}$"
+
 
 def inject_rs2_multicolumn(latex_src: str, n_metric_cols: int) -> str:
     """
@@ -921,9 +924,12 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
     
             # RS shown once (multirow=2) in the Unlearned row
             if "RS2" in g.columns.get_level_values(0).unique() and ((ds, m, "revival") in g.index):
-                rs_mu = g.loc[(ds, m, "revival"), ("RS2", "mean")]
-                rs_sd = g.loc[(ds, m, "revival"), ("RS2", "std")]
-                rs_text = fmt_rs(rs_mu, rs_sd)
+                # rs_mu = g.loc[(ds, m, "revival"), ("RS2", "mean")]
+                # rs_sd = g.loc[(ds, m, "revival"), ("RS2", "std")]
+                # rs_text = fmt_rs(rs_mu, rs_sd)
+                
+                rs_max = g.loc[(ds, m, "revival"), ("RS2", "max")]
+                rs_text = fmt_rs_max(rs_max)
             else:
                 rs_text = "-"
             row_un[(dsl, "RS")] = rf"\multirow{{2}}{{*}}{{{rs_text}}}"
@@ -1011,7 +1017,7 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
     caption = (f"Revival results of single-class unlearning on {ds_names} for {mdl_latex} "
                f"(mean$\\pm$std; Revival rows report $({{\\min}},{{\\max}})$ for "
                f"$\\mathcal{{A}}^t_f$).")
-    label   = f"tab:{slugify(mdl_latex)}_all_datasets"
+    label   = f"tab:{slugify(mdl_latex)}_single_class_all_datasets"
 
     latex = wrap_with_resizebox(latex, caption, label, star=True, width=r"\textwidth")
 
