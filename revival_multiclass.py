@@ -21,7 +21,7 @@ import math
 from copy import deepcopy
 from method.utils import *
 from pathlib import Path
-
+from typing import List
 # ------------------ Argparse ------------------
 import argparse
 from eval_unlearned_model import _build_tags, checkpoint_for
@@ -59,6 +59,10 @@ parser.add_argument(
 
 parser.add_argument('--rs_patience', type=int, default=200)
 parser.add_argument('--rs_directional', action='store_true')
+parser.add_argument(
+    '--retain_floor_frac', type=float, default=0.9,
+    help='Minimum allowed fraction of baseline test_retain accuracy (epoch-0).'
+)
 
 args = parser.parse_args()
 
@@ -112,6 +116,7 @@ os.makedirs(AGG_CSV_DIR, exist_ok=True)
 COLUMNS_SINGLE = [
     "forget_class", "dataset", "model", "method", "lr",
     "epochs_total", "tpr", "cpr",
+    "retain_per_class", "total_retain", "total_forget",      # <-- NEW
     "epoch", "syn_train_loss", "syn_train_acc",
     "syn_total", "syn_retain", "syn_forget",
     "all_train", "all_test",
@@ -120,63 +125,16 @@ COLUMNS_SINGLE = [
 ]
 
 COLUMNS_MULTI = [
-    "forget_class",       # e.g., "2,7" or "multi_2_7"
+    "forget_class",
     "dataset", "model", "method", "lr",
     "epochs_total", "tpr", "cpr",
+    "retain_per_class", "total_retain", "total_forget",      # <-- NEW
     "epoch", "syn_train_loss", "syn_train_acc",
     "syn_total", "syn_retain", "syn_forget",
     "all_train", "all_test",
     "train_fgt", "train_retain", "test_fgt", "test_retain",
     "RS",
 ]
-
-def append_best_for_class(forget_class: int, best_row: dict):
-    """
-    Append exactly ONE row per class with a fixed schema.
-    """
-    if best_row is None:
-        print(f"[AGG] No best row to append for class {forget_class}.")
-        return
-
-    row = {
-        "forget_class": int(forget_class),
-        "dataset": dataset_name,
-        "model": model_name,
-        "method": method,
-        "lr": lr,
-        "epochs_total": epochs,                         
-        "tpr": total_per_class,                          
-        "cpr": choose_per_retain_class_for_fgt,    
-        **best_row,  # expects keys like epoch, syn_* , all_*, train_*, test_*
-    }
-
-    # Enforce column order; missing keys become NaN
-    df = pd.DataFrame([row], columns=COLUMNS)
-
-    header_needed = not os.path.exists(AGG_CSV_PATH)
-
-    METRIC_COLS = [
-        "epochs_total", "tpr", "cpr",
-        "syn_train_loss", "syn_train_acc",
-        "syn_total", "syn_retain", "syn_forget",
-        "all_train", "all_test",
-        "train_fgt", "train_retain", "test_fgt", "test_retain", "RS",
-    ]
-
-    # after df = pd.DataFrame([row], columns=COLUMNS)
-    df[METRIC_COLS] = df[METRIC_COLS].apply(pd.to_numeric, errors="coerce").round(3)
-
-    df.to_csv(
-        AGG_CSV_PATH,
-        mode="a",
-        header=header_needed,
-        index=False,
-        float_format="%.3f",
-        sep=";",
-    )
-
-    print(f"[AGG] Appended best row for class {forget_class} -> {AGG_CSV_PATH}")
-
 
 def make_feature_extractor(net, num_classes):
     """
@@ -579,6 +537,7 @@ def _finalize_and_write_row(row, columns, csv_path):
     header_needed = not os.path.exists(csv_path)
     METRIC_COLS = [
         "epochs_total", "tpr", "cpr",
+        "retain_per_class", "total_retain", "total_forget",   
         "syn_train_loss", "syn_train_acc",
         "syn_total", "syn_retain", "syn_forget",
         "all_train", "all_test",
@@ -588,7 +547,8 @@ def _finalize_and_write_row(row, columns, csv_path):
     os.makedirs(os.path.dirname(csv_path), exist_ok=True)
     df.to_csv(csv_path, mode="a", header=header_needed, index=False, float_format="%.3f")
 
-def append_best_for_class(forget_class: int, best_row: dict):
+def append_best_for_class(forget_class: int, best_row: dict,
+                          retain_per_class: int, total_retain: int, total_forget: int):   # <-- add args
     if best_row is None:
         print(f"[AGG] No best row to append for class {forget_class}.")
         return
@@ -601,12 +561,18 @@ def append_best_for_class(forget_class: int, best_row: dict):
         "epochs_total": epochs,
         "tpr": total_per_class,
         "cpr": choose_per_retain_class_for_fgt,
+        "retain_per_class": int(retain_per_class),   
+        "total_retain": int(total_retain),        
+        "total_forget": int(total_forget),     
         **best_row,
     }
     _finalize_and_write_row(row, COLUMNS_SINGLE, AGG_CSV_PATH_SINGLE)
     print(f"[AGG] Appended best row for class {forget_class} -> {AGG_CSV_PATH_SINGLE}")
 
-def append_best_for_multi(forget_classes: list[int], best_row: dict):
+
+def append_best_for_multi(forget_classes: List[int], best_row: dict,
+                          retain_per_class: int, total_retain: int, total_forget: int):
+
     if best_row is None:
         print("[AGG] No best row to append for multi-forget.")
         return
@@ -620,10 +586,14 @@ def append_best_for_multi(forget_classes: list[int], best_row: dict):
         "epochs_total": epochs,
         "tpr": total_per_class,
         "cpr": choose_per_retain_class_for_fgt,
+        "retain_per_class": int(retain_per_class),    
+        "total_retain": int(total_retain),           
+        "total_forget": int(total_forget),           
         **best_row,
     }
     _finalize_and_write_row(row, COLUMNS_MULTI, AGG_CSV_PATH_MULTI)
     print(f"[AGG] Appended best row for forget={forget_str} -> {AGG_CSV_PATH_MULTI}")
+
 
 
 #forget_classes = _parse_forget_arg(args.forget, num_classes)
@@ -729,18 +699,31 @@ test_fgt_emb_loader  = make_emb_loader(test_fgt_feats,  test_fgt_labels)
 test_ret_emb_loader  = make_emb_loader(test_ret_feats,  test_ret_labels)
 
 
-def retain_k_multiplier(dataset_name: str, num_classes: int) -> int:
+
+def retain_k_multiplier(dataset_name: str, num_classes: int, override: float | None = None) -> float:
+    if override is not None:
+        return float(override)
+
     d = dataset_name.strip().lower().replace("-", "").replace("_", "")
     mapping = {
-        "cifar10": 9,
-        "cifar100": 9,
-        "tiny_imagenet": 18,
+        "cifar10": 4,     
+        "cifar100": 9.0,
+        "tiny_imagenet": 18.0,  
     }
-    return mapping.get(d, 18 if num_classes == 200 else 9)
+    if d in mapping:
+        return mapping[d]
+
+    if num_classes == 200:
+        return 18.0
+    elif num_classes == 100:
+        return 9.0
+    else:
+        return 4
 
 
 retain_mult = retain_k_multiplier(dataset_name, num_classes)
-retain_top_k = choose_per_retain_class_for_fgt * retain_mult
+retain_top_k = int(choose_per_retain_class_for_fgt * retain_mult)
+
 
 if len(forget_classes) == 1:
     synth = build_synthetic_embeddings_and_splits(
@@ -947,6 +930,14 @@ metrics_history[-1]["rs"] = float(rs0)
 print(f"[Epoch 00] RS={rs0:.4f}")
 row0["rs"] = float(rs0)
     
+# Retain floor (e.g., 90% of baseline)
+retain_floor = args.retain_floor_frac * A_r_tu
+print(f"[Constraint] test_retain must be >= {retain_floor:.2f} "
+      f"({args.retain_floor_frac:.0%} of baseline {A_r_tu:.2f}).")
+
+# Seed 'best' with epoch-0 (always allowed as fallback)
+best["row"] = row0.copy()
+best["key"] = _key_from_row(row0)
 
 # 3) Train only the FC for a few epochs; evaluate on real loaders each epoch
 for epoch in range(1, epochs + 1):
@@ -1044,11 +1035,12 @@ for epoch in range(1, epochs + 1):
     metrics_history[-1]["rs"] = float(rs)
     print(f"[Epoch {epoch:02d}] RS={rs:.4f}")
 
-    if rs > best_rs:
+    # Only treat as RS-best if retain passes the floor
+    if (acc_test_retain >= retain_floor) and (rs > best_rs):
         best_rs = rs
         best_rs_epoch = epoch
         no_improve = 0
-        save_best_fc = deepcopy(fc.state_dict())   # optional: keep best-RS FC
+        save_best_fc = deepcopy(fc.state_dict())
     else:
         no_improve += 1
         if no_improve >= patience:
@@ -1063,7 +1055,7 @@ for epoch in range(1, epochs + 1):
     row["rs"] = float(rs)
     
     key = _key_from_row(row)
-    if key > best["key"]:
+    if (row["test_retain"] >= retain_floor) and (key > best["key"]):
         best["key"] = key
         best["row"] = row.copy()
 
@@ -1092,10 +1084,22 @@ for epoch in range(1, epochs + 1):
 # os.makedirs(best_csv_dir, exist_ok=True)
 
 if best["row"] is not None:
+    # Works for both single and multi builders:
+    #   - single summary uses "retain_top_k"
+    #   - earlier variant used "retain_top_k_per_class"; handle both.
+    retain_per_class = int(
+        synth["summary"].get("retain_top_k_per_class",
+                             synth["summary"].get("retain_top_k", 0))
+    )
+    total_retain = int(synth["summary"]["retain_total"])
+    total_forget = int(synth["summary"]["forget_total"])
+
     if len(forget_classes) == 1:
-        append_best_for_class(forget_classes[0], best["row"])
+        append_best_for_class(forget_classes[0], best["row"],
+                              retain_per_class, total_retain, total_forget)
     else:
-        append_best_for_multi(forget_classes, best["row"])
+        append_best_for_multi(forget_classes, best["row"],
+                              retain_per_class, total_retain, total_forget)
 else:
     if len(forget_classes) == 1:
         print(f"[BEST] No best row found for forget_class={forget_classes[0]}.")
