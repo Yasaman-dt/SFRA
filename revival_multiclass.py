@@ -60,7 +60,7 @@ parser.add_argument(
 parser.add_argument('--rs_patience', type=int, default=200)
 parser.add_argument('--rs_directional', action='store_true')
 parser.add_argument(
-    '--retain_floor_frac', type=float, default=0.9,
+    '--retain_floor_frac', type=float, default=0.95,
     help='Minimum allowed fraction of baseline test_retain accuracy (epoch-0).'
 )
 
