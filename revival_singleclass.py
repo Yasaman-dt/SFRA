@@ -59,7 +59,7 @@ parser.add_argument('--rs_patience', type=int, default=200)
 parser.add_argument('--rs_directional', action='store_true')
 
 parser.add_argument(
-    '--retain_floor_frac', type=float, default=0.9,
+    '--retain_floor_frac', type=float, default=0.95,
     help='Minimum allowed fraction of baseline test_retain accuracy (epoch-0).'
 )
 
@@ -544,7 +544,7 @@ for forget_class in forget_classes:
 
         d = dataset_name.strip().lower().replace("-", "").replace("_", "")
         mapping = {
-            "cifar10": 4,     
+            "cifar10": 1,     
             "cifar100": 9.0,
             "tiny_imagenet": 18.0,  
         }
@@ -556,7 +556,7 @@ for forget_class in forget_classes:
         elif num_classes == 100:
             return 9.0
         else:
-            return 4
+            return 1
 
 
     retain_mult = retain_k_multiplier(dataset_name, num_classes)
