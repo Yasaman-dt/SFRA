@@ -62,6 +62,11 @@ parser.add_argument(
     '--retain_floor_frac', type=float, default=0.90,
     help='Minimum allowed fraction of baseline test_retain accuracy (epoch-0).'
 )
+parser.add_argument('--retain_per_class', type=int, default=500,
+                    help='Top-K retain synthetic embeddings per non-forget class (after sorting by confidence).')
+parser.add_argument('--forget_per_class', type=int, default=10,
+                    help='Bottom-K (low-conf) synthetic embeddings per non-forget class used as forget samples.')
+
 
 
 args = parser.parse_args()
@@ -71,9 +76,13 @@ model_name   = args.model_name
 dataset_name = args.dataset
 lr           = args.lr
 epochs       = args.epochs
-total_per_class = args.tpr 
-choose_per_retain_class_for_fgt = args.cpr           
+# total_per_class = args.tpr 
+# choose_per_retain_class_for_fgt = args.cpr           
+total_per_class        = int(args.tpr)               # how many to GENERATE per class before filtering
+retain_top_k           = int(args.retain_per_class)  # keep top-K per *retain* class
+per_retain_for_forget  = int(args.forget_per_class)  # keep bottom-K per retain class as forget-samples
 
+choose_per_retain_class_for_fgt = int(args.forget_per_class)
 
 # set num_classes from dataset
 NUM_CLASSES = {'cifar10': 10, 'cifar100': 100, 'tiny_imagenet': 200, 'imagenet': 1000}
@@ -451,7 +460,9 @@ for forget_class in forget_classes:
     print(f"\n================= FORGET CLASS {forget_class} =================")
 
     # per-class experiment folder
-    experiment_path = Path(f"results/{method}/plots_{dataset_name}_{model_name}_lr{lr}/forget_class_{forget_class}")
+    experiment_path = Path(
+        f"results/{method}/plots_{dataset_name}_{model_name}_lr{lr}_rpc{retain_top_k}_fpc{per_retain_for_forget}/forget_class_{forget_class}"
+    )
     experiment_path.mkdir(parents=True, exist_ok=True)
 
     # keep curves from epoch 0 baseline onward
@@ -538,29 +549,29 @@ for forget_class in forget_classes:
     test_ret_emb_loader  = make_emb_loader(test_ret_feats,  test_ret_labels)
 
 
-    def retain_k_multiplier(dataset_name: str, num_classes: int, override: float | None = None) -> float:
-        if override is not None:
-            return float(override)
+    # def retain_k_multiplier(dataset_name: str, num_classes: int, override: float | None = None) -> float:
+    #     if override is not None:
+    #         return float(override)
 
-        d = dataset_name.strip().lower().replace("-", "").replace("_", "")
-        mapping = {
-            "cifar10": 1,     
-            "cifar100": 9.0,
-            "tiny_imagenet": 18.0,  
-        }
-        if d in mapping:
-            return mapping[d]
+    #     d = dataset_name.strip().lower().replace("-", "").replace("_", "")
+    #     mapping = {
+    #         "cifar10": 1,     
+    #         "cifar100": 9.0,
+    #         "tiny_imagenet": 18.0,  
+    #     }
+    #     if d in mapping:
+    #         return mapping[d]
 
-        if num_classes == 200:
-            return 18.0
-        elif num_classes == 100:
-            return 9.0
-        else:
-            return 1
+    #     if num_classes == 200:
+    #         return 18.0
+    #     elif num_classes == 100:
+    #         return 9.0
+    #     else:
+    #         return 1
 
 
-    retain_mult = retain_k_multiplier(dataset_name, num_classes)
-    retain_top_k = choose_per_retain_class_for_fgt * retain_mult
+    # retain_mult = retain_k_multiplier(dataset_name, num_classes)
+    # retain_top_k = choose_per_retain_class_for_fgt * retain_mult
 
     # ---- run it ----
     synth = build_synthetic_embeddings_and_splits(
@@ -570,7 +581,7 @@ for forget_class in forget_classes:
         device=device,
         per_class=total_per_class,
         retain_top_k=retain_top_k,
-        per_retain_for_forget=choose_per_retain_class_for_fgt,   # 10 from each retain class → e.g., 9*10 = 90 total for CIFAR-10
+        per_retain_for_forget=per_retain_for_forget,   # 10 from each retain class → e.g., 9*10 = 90 total for CIFAR-10
         loader_batch_size=256,
     )
 
