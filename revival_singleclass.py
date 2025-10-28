@@ -122,7 +122,7 @@ os.makedirs(AGG_CSV_DIR, exist_ok=True)
 
 COLUMNS = [
     "forget_class", "dataset", "model", "method", "lr",
-    "epochs_total", "tpr", "cpr",
+    "epochs_total", "tpr", "forget_per_class",
     "retain_per_class", "total_retain", "total_forget",
     "epoch", "syn_train_loss", "syn_train_acc",
     "syn_total", "syn_retain", "syn_forget",
@@ -150,7 +150,7 @@ def append_best_for_class(
         "lr": lr,
         "epochs_total": epochs,
         "tpr": total_per_class,
-        "cpr": choose_per_retain_class_for_fgt,
+        "forget_per_class": choose_per_retain_class_for_fgt,
         "retain_per_class": int(retain_per_class),
         "total_retain": int(total_retain),
         "total_forget": int(total_forget),
@@ -161,7 +161,7 @@ def append_best_for_class(
     header_needed = not os.path.exists(AGG_CSV_PATH)
 
     METRIC_COLS = [
-        "epochs_total", "tpr", "cpr",
+        "epochs_total", "tpr", "forget_per_class",
         "retain_per_class", "total_retain", "total_forget",
         "syn_train_loss", "syn_train_acc",
         "syn_total", "syn_retain", "syn_forget",
