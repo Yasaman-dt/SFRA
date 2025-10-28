@@ -66,6 +66,11 @@ parser.add_argument(
     '--max_tries', type=int, default=50,
     help='Maximum sampling iterations per retain class while hunting for enough low-confidence samples.'
 )
+parser.add_argument(
+    '--retain_min_conf', type=float, default=0.0,
+    help='Keep synthetic RETAIN samples only if p(class) >= retain_min_conf (e.g., 0.8).'
+)
+
 
 args = parser.parse_args()
 
@@ -118,6 +123,7 @@ COLUMNS = [
     "forget_class", "dataset", "model", "method", "lr",
     "epochs_total", "cpr",
     "retain_per_class", "total_retain", "total_forget",
+    "forget_threshold", "retain_min_conf", "max_tries",
     "epoch", "syn_train_loss", "syn_train_acc",
     "syn_total", "syn_retain", "syn_forget",
     "all_train", "all_test",
@@ -161,6 +167,7 @@ def append_best_for_class(
     METRIC_COLS = [
         "epochs_total", "cpr",
         "retain_per_class", "total_retain", "total_forget",
+        "forget_threshold", "retain_min_conf", "max_tries",
         "syn_train_loss", "syn_train_acc",
         "syn_total", "syn_retain", "syn_forget",
         "all_train", "all_test",
@@ -262,6 +269,7 @@ def _get_final_linear(model, num_classes):
 def _collect_for_class(
     W: torch.Tensor, b: torch.Tensor, emb_dim: int, target_class: int,
     need_top: int, need_bottom: int, bottom_thresh: float,
+    retain_min_conf: float = 0.0,
     device: str = "cuda", batch: int = 4096, max_tries: int = 50
 ):
     """
@@ -293,34 +301,39 @@ def _collect_for_class(
 
         have = cat_probs.numel()
         if have > 0:
-            # candidates for top
-            _, idx_desc = torch.sort(cat_probs, descending=True)
-            top_ok = min(need_top, have)
+            # ---- RETAIN (TOP-K) with confidence floor ----
+            # only consider items with p >= retain_min_conf
+            eligible = (cat_probs >= retain_min_conf).nonzero(as_tuple=True)[0]
+            if eligible.numel() > 0:
+                elig_probs = cat_probs.index_select(0, eligible)
+                _, elig_sorted_desc = torch.sort(elig_probs, descending=True)
+                # pick top need_top among eligible
+                top_ok = min(need_top, elig_sorted_desc.numel())
+            else:
+                top_ok = 0
 
-            # candidates for bottom under threshold
+            # ---- FORGET (BOTTOM under threshold) ----
             under = (cat_probs < bottom_thresh).nonzero(as_tuple=True)[0]
             if under.numel() > 0:
                 under_probs = cat_probs.index_select(0, under)
-                # ascending among under-threshold
                 _, under_sorted_asc = torch.sort(under_probs, descending=False)
                 bottom_ok = min(need_bottom, under_sorted_asc.numel())
             else:
                 bottom_ok = 0
 
             if top_ok >= need_top and bottom_ok >= need_bottom:
-                # slice final selections
-                idx_top    = idx_desc[:need_top]
-                idx_under  = under.index_select(0, under_sorted_asc[:need_bottom])
+                idx_top   = eligible.index_select(0, elig_sorted_desc[:need_top])
+                idx_under = under.index_select(0, under_sorted_asc[:need_bottom])
 
-                top_feats  = cat_feats.index_select(0, idx_top)
-                top_probs  = cat_probs.index_select(0, idx_top)
-
-                bottom_feats = cat_feats.index_select(0, idx_under)
-                bottom_probs = cat_probs.index_select(0, idx_under)
+                top_feats     = cat_feats.index_select(0, idx_top)
+                top_probs     = cat_probs.index_select(0, idx_top)
+                bottom_feats  = cat_feats.index_select(0, idx_under)
+                bottom_probs  = cat_probs.index_select(0, idx_under)
 
                 return (top_feats, top_probs), (bottom_feats, bottom_probs), {
                     "sampled_total_pred_as_class": int(have),
                     "bottom_candidates_under_thresh": int(under.numel()),
+                    "retain_eligible_over_min_conf": int(eligible.numel()),
                 }
 
         tries += 1
@@ -332,8 +345,16 @@ def _collect_for_class(
                        (torch.empty(0, emb_dim, device=device), torch.empty(0, device=device)), \
                        {"sampled_total_pred_as_class": 0, "bottom_candidates_under_thresh": 0}
 
+
             _, idx_desc = torch.sort(cat_probs, descending=True)
-            top_idx = idx_desc[:min(need_top, have)]
+
+            eligible = (cat_probs >= retain_min_conf).nonzero(as_tuple=True)[0]
+            if eligible.numel() > 0:
+                elig_probs = cat_probs.index_select(0, eligible)
+                _, elig_sorted_desc = torch.sort(elig_probs, descending=True)
+                top_idx = eligible.index_select(0, elig_sorted_desc[:min(need_top, elig_sorted_desc.numel())])
+            else:
+                top_idx = torch.empty(0, dtype=torch.long, device=device)
 
             under = (cat_probs < bottom_thresh).nonzero(as_tuple=True)[0]
             if under.numel() > 0:
@@ -393,7 +414,8 @@ def build_synthetic_embeddings_and_splits(
     model, num_classes, forget_class, device,
     retain_top_k: int, per_retain_for_forget: int,
     forget_threshold: float, loader_batch_size: int = 256,
-    batch_per_draw: int = 4096, max_tries: int = 50
+    batch_per_draw: int = 4096, max_tries: int = 50,
+    retain_min_conf: float = 0.0,
 ):
     """
     For each retain class c != forget_class:
@@ -418,6 +440,7 @@ def build_synthetic_embeddings_and_splits(
             W=W, b=b, emb_dim=emb_dim, target_class=c,
             need_top=retain_top_k, need_bottom=per_retain_for_forget,
             bottom_thresh=forget_threshold,
+            retain_min_conf=retain_min_conf,
             device=device, batch=batch_per_draw, max_tries=max_tries
         )
 
@@ -559,7 +582,7 @@ for forget_class in forget_classes:
     print(f"\n================= FORGET CLASS {forget_class} =================")
 
     # per-class experiment folder
-    experiment_path = Path(f"results/{method}/plots_{dataset_name}_{model_name}_lr{lr}/forget_class_{forget_class}")
+    experiment_path = Path(f"results/{method}/plots_{dataset_name}_{model_name}_lr{lr}_ft{args.forget_threshold}/forget_class_{forget_class}")
     experiment_path.mkdir(parents=True, exist_ok=True)
 
     # keep curves from epoch 0 baseline onward
@@ -670,11 +693,16 @@ for forget_class in forget_classes:
         forget_threshold=args.forget_threshold,
         loader_batch_size=256,
         batch_per_draw=4096,
-        max_tries=args.max_tries
+        max_tries=args.max_tries,
+        retain_min_conf=args.retain_min_conf,
     )
 
     print("Synthetic selection summary:", synth["summary"])
     # Access: synth["retain_loader"], synth["forget_loader"], etc.
+    retain_per_class = retain_top_k
+    total_retain     = int(synth["summary"]["retain_total"])
+    total_forget     = int(synth["summary"]["forget_total"])
+
 
     # === after you build `synth` ===
     syn_retain_eval_loader = DataLoader(TensorDataset(synth["retain_feats"].cpu(),
@@ -886,23 +914,14 @@ for forget_class in forget_classes:
         acc_syn_fgt = eval_accuracy_on_loader(model, fc, syn_forget_eval_loader, device)
         acc_syn_total = (acc_syn_ret * n_syn_ret + acc_syn_fgt * n_syn_fgt) / (n_syn_ret + n_syn_fgt)
 
-
         # ----- Eval on your real loaders (images OR real-embeddings) -----
         with torch.no_grad():
-            # acc_all_train   = eval_accuracy_on_loader(model, fc, all_train_loader,   device)
-            # acc_all_test    = eval_accuracy_on_loader(model, fc, all_test_loader,    device)
-            # acc_train_fgt   = eval_accuracy_on_loader(model, fc, train_fgt_loader,   device)
-            # acc_train_retain= eval_accuracy_on_loader(model, fc, train_retain_loader,device)
-            # acc_test_fgt    = eval_accuracy_on_loader(model, fc, test_fgt_loader,    device)
-            # acc_test_retain = eval_accuracy_on_loader(model, fc, test_retain_loader, device)
-
             acc_all_train    = eval_accuracy_on_emb_loader(fc, all_train_emb_loader,    device)
             acc_all_test     = eval_accuracy_on_emb_loader(fc, all_test_emb_loader,     device)
             acc_train_fgt    = eval_accuracy_on_emb_loader(fc, train_fgt_emb_loader,    device)
             acc_train_retain = eval_accuracy_on_emb_loader(fc, train_ret_emb_loader,    device)
             acc_test_fgt     = eval_accuracy_on_emb_loader(fc, test_fgt_emb_loader,     device)
             acc_test_retain  = eval_accuracy_on_emb_loader(fc, test_ret_emb_loader,     device)
-
 
         print(
             f"[Epoch {epoch:02d}] "
@@ -913,7 +932,13 @@ for forget_class in forget_classes:
             f"test_fgt={acc_test_fgt:.2f}% test_ret={acc_test_retain:.2f}%"
         )
 
+        # ----- Compute RS for this epoch (do this BEFORE building 'row') -----
+        A_r_tr = float(acc_test_retain)
+        A_f_tr = float(acc_test_fgt)
+        rs = revival_score(A_r_tr, A_f_tr, A_r_tu, A_f_tu, directional=args.rs_directional)
+        print(f"[Epoch {epoch:02d}] RS={rs:.4f}")
 
+        # Log metrics for this epoch
         metrics_history.append({
             "epoch": epoch,
             "syn_train_loss": float(train_loss),
@@ -927,10 +952,27 @@ for forget_class in forget_classes:
             "train_retain": float(acc_train_retain),
             "test_fgt": float(acc_test_fgt),
             "test_retain": float(acc_test_retain),
+            "rs": float(rs),
         })
 
-
+        # Build the row AFTER rs is defined
         row = {
+            "forget_class": int(forget_class),
+            "dataset": dataset_name,
+            "model": model_name,
+            "method": method,
+            "lr": lr,
+            "epochs_total": epochs,
+            "cpr": choose_per_retain_class_for_fgt,
+
+            "retain_per_class": int(retain_per_class),
+            "total_retain": int(total_retain),
+            "total_forget": int(total_forget),
+
+            "forget_threshold": float(args.forget_threshold),
+            "retain_min_conf": float(args.retain_min_conf),
+            "max_tries": int(args.max_tries),
+
             "epoch": epoch,
             "syn_train_loss": float(train_loss),
             "syn_train_acc": float(train_acc),
@@ -943,55 +985,47 @@ for forget_class in forget_classes:
             "train_retain": float(acc_train_retain),
             "test_fgt": float(acc_test_fgt),
             "test_retain": float(acc_test_retain),
+            "RS": float(rs),   # <- now safe
         }
-        
-        # after you computed acc_* for this epoch:
-        A_r_tr = float(acc_test_retain)
-        A_f_tr = float(acc_test_fgt)
 
-
-        rs = revival_score(A_r_tr, A_f_tr, A_r_tu, A_f_tu, directional=args.rs_directional)
-        metrics_history[-1]["rs"] = float(rs)
-        print(f"[Epoch {epoch:02d}] RS={rs:.4f}")
-
+        # Track best RS (optional early stopping)
         if rs > best_rs:
             best_rs = rs
             best_rs_epoch = epoch
             no_improve = 0
-            save_best_fc = deepcopy(fc.state_dict())   # optional: keep best-RS FC
+            save_best_fc = deepcopy(fc.state_dict())
         else:
             no_improve += 1
             if no_improve >= patience:
                 print(f"[EarlyStop] RS plateaued for {patience} epochs. "
-                    f"Best RS={best_rs:.4f} @ epoch {best_rs_epoch}.")
+                      f"Best RS={best_rs:.4f} @ epoch {best_rs_epoch}.")
                 if save_best_fc is not None:
                     fc.load_state_dict(save_best_fc)
                 break
-        
-        
-        metrics_history[-1]["rs"] = float(rs)
-        row["rs"] = float(rs)
-        
+
+        # Update best row for final CSV (by your lexicographic key)
         key = _key_from_row(row)
         if key > best["key"]:
             best["key"] = key
             best["row"] = row.copy()
 
-
-        # append as FRACTIONS
+        # Curves (fractions)
         accs_curves["train_forget"].append(float(acc_train_fgt) / 100.0)
         accs_curves["test_forget"].append(float(acc_test_fgt) / 100.0)
         accs_curves["train_remain"].append(float(acc_train_retain) / 100.0)
         accs_curves["test_remain"].append(float(acc_test_retain) / 100.0)
 
-        # re-plot; epoch must equal the length of your y-series (1..N)
-        epoch_for_plot = len(accs_curves["train_forget"]) 
+        epoch_for_plot = len(accs_curves["train_forget"])
         plot_unlearn_remain_acc_figure(
             epoch=epoch_for_plot,
             accs_dict=accs_curves,
             experiment_path=experiment_path,
             plot_type="plot",
         )
+
+
+        
+
 
     # # === AFTER the epoch loop finishes, write ONE best row for this forget_class ===
     # best_csv_dir = os.path.join("results", method)
