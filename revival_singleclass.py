@@ -34,7 +34,7 @@ parser.add_argument('--method', type=str, default='original',
 parser.add_argument('--model', '--model_name', dest='model_name', type=str, default='resnet18')
 parser.add_argument('--dataset', type=str, required=True)
 parser.add_argument('--lr', type=float, default=5e-5)
-parser.add_argument('--epochs', type=int, default=50)
+parser.add_argument('--epochs', type=int, default=500)
 parser.add_argument(
     '--forget',
     type=str,
@@ -55,11 +55,11 @@ parser.add_argument(
 parser.add_argument(
     '--cpr', type=int, default=100)
 
-parser.add_argument('--rs_patience', type=int, default=200)
+parser.add_argument('--rs_patience', type=int, default=500)
 parser.add_argument('--rs_directional', action='store_true')
 
 parser.add_argument(
-    '--retain_floor_frac', type=float, default=0.95,
+    '--retain_floor_frac', type=float, default=0.90,
     help='Minimum allowed fraction of baseline test_retain accuracy (epoch-0).'
 )
 
