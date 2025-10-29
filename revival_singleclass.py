@@ -636,15 +636,17 @@ for forget_class in forget_classes:
 
 
     # --- keep this once, above the function (replace your current `best = {...}`) ---
-    best = {"key": (float("-inf"), float("-inf"), float("-inf"), float("-inf")), "row": None}
+    best = {"key": (float("-inf"), float("-inf"), float("-inf"), float("-inf"), float("-inf")), "row": None}
+
 
     def _safe_get(row, k):
         v = row.get(k, float("-inf"))
         return v if (isinstance(v, (int, float)) and v == v) else float("-inf")
 
     def _key_from_row(row):
-        # Order of priority for “best”: test_fgt, then test_retain, then train_fgt, then train_retain
+        # Priority: RS, then test_fgt, then test_retain, then train_fgt, then train_retain
         return (
+            float(_safe_get(row, "RS")),
             float(_safe_get(row, "test_fgt")),
             float(_safe_get(row, "test_retain")),
             float(_safe_get(row, "train_fgt")),
@@ -727,9 +729,7 @@ for forget_class in forget_classes:
         "test_fgt": float(acc_test_fgt),
         "test_retain": float(acc_test_retain),
     }
-    best["row"] = row0.copy()
-    best["key"] = _key_from_row(row0)
-
+    
 
     # map your naming: remain == retain
     accs_curves["train_forget"].append(float(acc_train_fgt) / 100.0)
@@ -764,10 +764,11 @@ for forget_class in forget_classes:
 
 
     rs0 = revival_score(A_r_tr, A_f_tr, A_r_tu, A_f_tu, directional=args.rs_directional)
-    metrics_history[-1]["rs"] = float(rs0)
+    metrics_history[-1]["RS"] = float(rs0)
     print(f"[Epoch 00] RS={rs0:.4f}")
-    row0["rs"] = float(rs0)
-
+    row0["RS"] = float(rs0)
+    best["row"] = row0.copy()
+    best["key"] = _key_from_row(row0)
         
     retain_floor = args.retain_floor_frac * A_r_tu
     print(f"[Constraint] test_retain must be >= {retain_floor:.2f} "
@@ -866,7 +867,7 @@ for forget_class in forget_classes:
 
 
         rs = revival_score(A_r_tr, A_f_tr, A_r_tu, A_f_tu, directional=args.rs_directional)
-        metrics_history[-1]["rs"] = float(rs)
+        metrics_history[-1]["RS"] = float(rs)
         print(f"[Epoch {epoch:02d}] RS={rs:.4f}")
 
         if (acc_test_retain >= retain_floor) and (rs > best_rs):
@@ -885,8 +886,8 @@ for forget_class in forget_classes:
 
         
         
-        metrics_history[-1]["rs"] = float(rs)
-        row["rs"] = float(rs)
+        metrics_history[-1]["RS"] = float(rs)
+        row["RS"] = float(rs)
         
         key = _key_from_row(row)
         if (row["test_retain"] >= retain_floor) and (key > best["key"]):
