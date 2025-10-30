@@ -8,10 +8,25 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 from torch.utils.data import TensorDataset, DataLoader
+from method.utils import *
 
 # your helpers
 from utils import get_transforms, get_dataset, get_dataloader, get_unlearn_loader
 from trainer import *  # assumes load_model is here
+
+def _to01(xs):
+    # your hist uses % (0..100). Convert to 0..1 for the plotter.
+    return [float(x)/100.0 for x in xs]
+
+def _hist_to_accs_dict(hist: dict) -> dict:
+    # map your keys → the plotter’s keys
+    return {
+        "train_forget": _to01(hist["train_fgt"]),
+        "test_forget":  _to01(hist["test_fgt"]),
+        "train_remain": _to01(hist["train_retain"]),
+        "test_remain":  _to01(hist["test_retain"]),
+    }
+    
 
 # ---------------- Argparse ----------------
 p = argparse.ArgumentParser("Class unlearning revival (from prebuilt pool)")
@@ -75,7 +90,9 @@ epochs = args.epochs
 COLUMNS = [
     "forget_class", "dataset", "model", "method", "lr",
     "epochs_total", "tpr", "forget_per_class",
+    "pool_take_per_class",
     "retain_per_class", "total_retain", "total_forget",
+    "chosen_total",                     
     "epoch", "syn_train_loss", "syn_train_acc",
     "syn_total", "syn_retain", "syn_forget",
     "all_train", "all_test",
@@ -179,9 +196,11 @@ def revival_score(A_r_tr, A_f_tr, A_r_tu, A_f_tu, directional=False):
     forget_term = float(np.clip(forget_term, 0.0, 1.0))
     return retain_term * forget_term
 
+# 2) In append_best_for_class(), compute and include it
 def append_best_for_class(
     forget_class: int, best_row: dict,
-    retain_per_class: int, total_retain: int, total_forget: int
+    retain_per_class: int, total_retain: int, total_forget: int,
+    pool_take_per_class: int,   # <-- NEW PARAM
 ):
     if best_row is None:
         print(f"[AGG] No best row to append for class {forget_class}."); return
@@ -189,24 +208,31 @@ def append_best_for_class(
         "forget_class": int(forget_class),
         "dataset": dataset_name, "model": model_name,
         "method": method, "lr": lr, "epochs_total": epochs,
-        "tpr": -1,  # generation per class not used here; we log -1
+        "tpr": -1,
         "forget_per_class": int(args.forget_per_class),
+        "pool_take_per_class": int(pool_take_per_class),   # <-- WRITE IT
         "retain_per_class": int(retain_per_class),
         "total_retain": int(total_retain),
         "total_forget": int(total_forget),
+        "chosen_total": int(total_retain + total_forget),
         **best_row,
     }
     df = pd.DataFrame([row], columns=COLUMNS)
     header_needed = not os.path.exists(AGG_CSV_PATH)
     METRIC_COLS = [
-        "epochs_total", "tpr", "forget_per_class", "retain_per_class",
-        "total_retain", "total_forget", "syn_train_loss", "syn_train_acc",
+        "epochs_total", "tpr", "forget_per_class",
+        "pool_take_per_class",                 # <-- ADD HERE
+        "retain_per_class",
+        "total_retain", "total_forget", "chosen_total",
+        "syn_train_loss", "syn_train_acc",
         "syn_total", "syn_retain", "syn_forget", "all_train", "all_test",
         "train_fgt", "train_retain", "test_fgt", "test_retain", "RS",
     ]
     df[METRIC_COLS] = df[METRIC_COLS].apply(pd.to_numeric, errors="coerce").round(3)
     df.to_csv(AGG_CSV_PATH, mode="a", header=header_needed, index=False, float_format="%.3f")
     print(f"[AGG] Appended best row for class {forget_class} -> {AGG_CSV_PATH}")
+
+
 
 # ---------------- Pool selection ----------------
 def load_synth_pool(path: str):
@@ -303,6 +329,23 @@ for forget_class in forget_classes:
     os.makedirs(run_plots_dir, exist_ok=True)
     ckpt = checkpoint_for(method, dataset_name, model_name, forget_class, lr, base_dir)
     model = load_model(ckpt, model_name, dataset_name, num_classes).to(device).eval()
+
+    # --- init plot histories + per-epoch CSV path ---
+    hist = {
+        "train_fgt":   [],
+        "test_fgt":    [],
+        "train_retain":[],
+        "test_retain": [],
+        "RS":          [],
+    }
+    
+    per_epoch_csv = os.path.join(run_plots_dir, "metrics_by_epoch.csv")
+    if not os.path.exists(per_epoch_csv):
+        pd.DataFrame(columns=[
+            "epoch","syn_train_loss","syn_train_acc","syn_total","syn_retain","syn_forget",
+            "all_train","all_test","train_fgt","train_retain","test_fgt","test_retain","RS"
+        ]).to_csv(per_epoch_csv, index=False)
+
 
     # datasets & loaders (real images)
     wo_dataaug = False
@@ -439,6 +482,37 @@ for forget_class in forget_classes:
     }
     best["row"] = row0.copy(); best["key"] = _key_from_row(row0)
 
+    # record epoch-0 metrics and plot
+    hist["train_fgt"].append(float(m0["train_fgt"]))
+    hist["test_fgt"].append(float(m0["test_fgt"]))
+    hist["train_retain"].append(float(m0["train_retain"]))
+    hist["test_retain"].append(float(m0["test_retain"]))
+    hist["RS"].append(float(rs0))
+    accs_dict = _hist_to_accs_dict(hist)
+    epoch_for_plot = len(accs_dict["train_forget"])
+    plot_unlearn_remain_acc_figure(
+        epoch=epoch_for_plot,
+        accs_dict=accs_dict,
+        experiment_path=Path(run_plots_dir),
+        plot_type="plot",
+    )
+
+    # append epoch-0 row to per-epoch CSV
+    pd.DataFrame([{
+        "epoch": 0, "syn_train_loss": None, "syn_train_acc": None,
+        "syn_total": m0["syn_total"], "syn_retain": m0["syn_retain"], "syn_forget": m0["syn_forget"],
+        "all_train": m0["all_train"], "all_test": m0["all_test"],
+        "train_fgt": m0["train_fgt"], "train_retain": m0["train_retain"],
+        "test_fgt": m0["test_fgt"], "test_retain": m0["test_retain"],
+        "RS": rs0
+    }]).to_csv(per_epoch_csv, mode="a", header=False, index=False)
+
+
+
+
+
+
+
     # Optim
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(fc.parameters(), lr=1e-2, weight_decay=1e-4)
@@ -480,6 +554,38 @@ for forget_class in forget_classes:
         if (m["test_retain"] >= retain_floor) and (key > best["key"]):
             best["key"] = key; best["row"] = row.copy()
 
+        # record epoch-k metrics and plot
+        hist["train_fgt"].append(float(m["train_fgt"]))
+        hist["test_fgt"].append(float(m["test_fgt"]))
+        hist["train_retain"].append(float(m["train_retain"]))
+        hist["test_retain"].append(float(m["test_retain"]))
+        hist["RS"].append(float(rs))
+
+        accs_dict = _hist_to_accs_dict(hist)
+        epoch_for_plot = len(accs_dict["train_forget"])
+        plot_unlearn_remain_acc_figure(
+            epoch=epoch_for_plot,
+            accs_dict=accs_dict,
+            experiment_path=Path(run_plots_dir),
+            plot_type="plot",
+        )
+
+
+
+
+
+        # append epoch-k row to per-epoch CSV
+        pd.DataFrame([{
+            "epoch": epoch, "syn_train_loss": float(train_loss), "syn_train_acc": float(train_acc),
+            "syn_total": m["syn_total"], "syn_retain": m["syn_retain"], "syn_forget": m["syn_forget"],
+            "all_train": m["all_train"], "all_test": m["all_test"],
+            "train_fgt": m["train_fgt"], "train_retain": m["train_retain"],
+            "test_fgt": m["test_fgt"], "test_retain": m["test_retain"],
+            "RS": rs
+        }]).to_csv(per_epoch_csv, mode="a", header=False, index=False)
+
+
+
         # RS early stop w/ retain floor guard
         if (m["test_retain"] >= retain_floor) and (rs > best_rs):
             best_rs = rs; best_rs_epoch = epoch; no_improve = 0
@@ -501,4 +607,5 @@ for forget_class in forget_classes:
         retain_per_class=retain_per_class,
         total_retain=total_retain,
         total_forget=total_forget,
+        pool_take_per_class=int(synth["summary"]["take_per_class"]),  # <-- PASS IT
     )
