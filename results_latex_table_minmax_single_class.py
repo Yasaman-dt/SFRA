@@ -46,7 +46,8 @@ COL_LABELS = {
 
 # Keep only these forget classes for TinyImageNet
 FORGET_CLASS_FILTERS = {
-    "tiny_imagenet": {40, 80, 120, 160}
+    "cifar100": {0,20,40, 60, 80},
+    "tiny_imagenet": {0, 40, 80, 120, 160}
 }
 
 def _apply_forget_filter(df: pd.DataFrame, dataset: str) -> pd.DataFrame:
@@ -313,6 +314,32 @@ def load_original_csv(path: Path, ds_hint: Optional[str]=None, mdl_hint: Optiona
     keep_cols = ["forget_class","dataset","model","method",
                  "train_retain_acc","train_forget_acc","test_retain_acc","test_forget_acc"]
     return d[keep_cols].copy()
+
+def _rank_styles(values):
+    """
+    Given a list of numeric RS values (may contain NaN), return two thresholds:
+    max_val and second_max (next distinct less-than-max). If there's no second
+    distinct value, second_max is None.
+    """
+    vals = sorted({float(v) for v in values if pd.notna(v)}, reverse=True)
+    if not vals:
+        return (None, None)
+    if len(vals) == 1:
+        return (vals[0], None)
+    return (vals[0], vals[1])
+
+def _style_rs(v, max_v, second_v):
+    if pd.isna(v):
+        return "-"
+    val = f"{float(v):.3f}"
+    if (max_v is not None) and (abs(v - max_v) < 1e-12):
+        return rf"\textbf{{\boldmath ${val}$}}"
+    if (second_v is not None) and (abs(v - second_v) < 1e-12):
+        return rf"\underline{{$ {val} $}}"
+    return rf"${val}$"
+
+
+
 
 all_rows = []
 per_method_info = []
@@ -869,38 +896,57 @@ def center_method_phase_headers(latex_src: str, dataset_labels: List[str]) -> st
 
     return "\n".join(lines)
 
+
+
 def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[str]) -> Optional[Path]:
     df = df_src[df_src["model"] == mdl].copy()
     if df.empty:
         print(f"[WARN] No rows for model={mdl}")
         return None
 
-    # keep only the requested datasets
     df = df[df["dataset"].isin(datasets)].copy()
-
-    # make sure RS2 (if present) is numeric so we can aggregate it
     if "RS2" in df.columns:
         df["RS2"] = pd.to_numeric(df["RS2"], errors="coerce")
 
-    # aggregate ALL_METRIC_COLS and RS2 (if present)
     agg_cols = ALL_METRIC_COLS.copy()
     if "RS2" in df.columns:
         agg_cols.append("RS2")
 
-    # group by dataset,method,phase
     g = df.groupby(["dataset", "method", "phase"], dropna=False)[agg_cols].agg(["mean", "std", "min", "max"])
 
-    # build rows (two per non-original method; one for original)
     present = [m for m in METHOD_ORDER if m in df["method"].unique()]
     extras  = sorted(set(df["method"].unique()) - set(present))
     method_list = present + extras
-    
+
+    dataset_labels = [_latex_dataset_name(d) for d in datasets]
+
+    # ---------- PASS 1: collect RS maxima per dataset & method ----------
+    # We will use RS = max RS2 over revival rows (as in your existing code).
+    rs_per_ds = {dsl: {} for dsl in dataset_labels}   # {dsl: {method -> rs_value or NaN}}
+    for m in method_list:
+        if m == "original":
+            continue
+        for ds in datasets:
+            dsl = _latex_dataset_name(ds)
+            if "RS2" in g.columns.get_level_values(0).unique() and ((ds, m, "revival") in g.index):
+                rs_max = g.loc[(ds, m, "revival"), ("RS2", "max")]
+                rs_per_ds[dsl][m] = float(rs_max) if pd.notna(rs_max) else np.nan
+            else:
+                rs_per_ds[dsl][m] = np.nan
+
+    # Compute (max, second max) thresholds per dataset (distinct values)
+    rs_rank_thresholds = {}
+    for dsl in dataset_labels:
+        rs_vals = list(rs_per_ds[dsl].values())
+        max_v, second_v = _rank_styles(rs_vals)
+        rs_rank_thresholds[dsl] = (max_v, second_v)
+
+    # ---------- PASS 2: build rows with styled RS ----------
     rows = []
     for m in method_list:
         pretty = _method_label(m)
-    
+
         if m == "original":
-            # one row; RS is '-' for all datasets
             row = {"Method": pretty, "Phase": "Original"}
             for ds in datasets:
                 dsl = _latex_dataset_name(ds)
@@ -915,25 +961,22 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
                         row[(dsl, COL_LABELS[col])] = "-"
             rows.append(row)
             continue
-    
-        # -------- two rows: Unlearned + Revival --------
-        # Put the method name once here with multirow=2
+
+        # Unlearned (prints RS with multirow)
         row_un = {"Method": rf"\multirow{{2}}{{*}}{{{pretty}}}", "Phase": "Unlearned"}
         for ds in datasets:
             dsl = _latex_dataset_name(ds)
-    
-            # RS shown once (multirow=2) in the Unlearned row
-            if "RS2" in g.columns.get_level_values(0).unique() and ((ds, m, "revival") in g.index):
-                # rs_mu = g.loc[(ds, m, "revival"), ("RS2", "mean")]
-                # rs_sd = g.loc[(ds, m, "revival"), ("RS2", "std")]
-                # rs_text = fmt_rs(rs_mu, rs_sd)
-                
-                rs_max = g.loc[(ds, m, "revival"), ("RS2", "max")]
-                rs_text = fmt_rs_max(rs_max)
+
+            # Style RS using per-dataset thresholds
+            raw_rs = rs_per_ds[dsl].get(m, np.nan)
+            max_v, second_v = rs_rank_thresholds[dsl]
+            if pd.notna(raw_rs):
+                styled = _style_rs(raw_rs, max_v, second_v)
             else:
-                rs_text = "-"
-            row_un[(dsl, "RS")] = rf"\multirow{{2}}{{*}}{{{rs_text}}}"
-    
+                styled = "-"
+
+            row_un[(dsl, "RS")] = rf"\multirow{{2}}{{*}}{{{styled}}}"
+
             # Unlearned metrics: mean±std
             if (ds, m, "unlearned") in g.index:
                 for col in OUT_METRIC_COLS:
@@ -943,14 +986,14 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
             else:
                 for col in OUT_METRIC_COLS:
                     row_un[(dsl, COL_LABELS[col])] = "-"
-    
+
         rows.append(row_un)
-    
-        # Revival row: leave Method blank to complete the multirow
+
+        # Revival
         row_rev = {"Method": "", "Phase": "Revival"}
         for ds in datasets:
             dsl = _latex_dataset_name(ds)
-            row_rev[(dsl, "RS")] = ""  # RS multirow continues above
+            row_rev[(dsl, "RS")] = ""  # continues multirow
             if (ds, m, "revival") in g.index:
                 for col in OUT_METRIC_COLS:
                     if col in ("train_forget_acc", "test_forget_acc"):
@@ -964,13 +1007,10 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
             else:
                 for col in OUT_METRIC_COLS:
                     row_rev[(dsl, COL_LABELS[col])] = "-"
-    
+
         rows.append(row_rev)
 
     # ---------- build final DataFrame with MultiIndex columns ----------
-    dataset_labels = [_latex_dataset_name(d) for d in datasets]
-
-    # order: Method | Phase | [ per-dataset: RS, metrics... ]
     ordered_cols = [("","Method"), ("","Phase")]
     for dsl in dataset_labels:
         for c in OUT_METRIC_COLS:
@@ -978,32 +1018,24 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
         ordered_cols.append((dsl, "RS"))
 
     table_df = pd.DataFrame(rows)
-
-    # map pretty method names while it's still single-index
     table_df["Method"] = table_df["Method"].map(_method_label)
 
-
-    # Now convert to MultiIndex and reorder
     table_df = table_df.rename(columns={"Method": ("","Method"), "Phase": ("","Phase")})
     table_df.columns = pd.MultiIndex.from_tuples(table_df.columns)
     table_df = table_df[ordered_cols]
 
-
-    # Escape only text columns
     for col in [("","Method"), ("","Phase")]:
         table_df[col] = (table_df[col].astype(str)
                          .str.replace("_", r"\_", regex=False)
                          .str.replace("&", r"\&", regex=False)
                          .str.replace("%", r"\%", regex=False))
 
-    # column format: Method | Phase | (RS + metrics)*per-dataset
     cols_per_dataset = 1 + len(OUT_METRIC_COLS)  # RS + metrics
     column_format = "c|c|" + ("{}|".format("c"*cols_per_dataset) * len(datasets)).rstrip("|")
 
     latex = table_df.to_latex(index=False, escape=False, multicolumn=True,
                               multicolumn_format="c", column_format=column_format)
 
-    # keep your header/vertical rule cosmetics
     latex = center_method_phase_headers(latex, dataset_labels)
     latex = add_group_vertical_bars(latex, datasets)
     latex = add_midrules_between_methods(latex)
@@ -1026,6 +1058,7 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
         f.write(latex)
     print(f"[OK] wrote: {out}")
     return out
+
 
 
 for mdl in MODELS:
