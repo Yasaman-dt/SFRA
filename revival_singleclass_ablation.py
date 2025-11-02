@@ -54,7 +54,7 @@ p.add_argument('--forget_per_class', type=int, default=10,
                help='Bottom-K synthetic embeddings per non-forget class (relabel to forget class).')
 
 # RS / constraints
-p.add_argument('--rs_patience', type=int, default=500)
+p.add_argument('--rs_patience', type=int, default=300)
 p.add_argument('--rs_directional', action='store_true')
 p.add_argument('--retain_floor_frac', type=float, default=0.90,
                help='Min fraction of baseline retain accuracy.')

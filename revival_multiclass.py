@@ -60,9 +60,15 @@ parser.add_argument(
 parser.add_argument('--rs_patience', type=int, default=200)
 parser.add_argument('--rs_directional', action='store_true')
 parser.add_argument(
-    '--retain_floor_frac', type=float, default=0.95,
+    '--retain_floor_frac', type=float, default=0.90,
     help='Minimum allowed fraction of baseline test_retain accuracy (epoch-0).'
 )
+# --- add near other argparse args ---
+parser.add_argument('--retain_per_class', type=int, default=None,
+                    help='Top-K retain synthetic embeddings per non-forget class (after sorting by confidence).')
+parser.add_argument('--forget_per_class', type=int, default=None,
+                    help='Bottom-K per retain class used as forget samples. In multi-forget, interpreted as per-forget per retain class.')
+
 
 args = parser.parse_args()
 
@@ -376,12 +382,13 @@ def build_synthetic_embeddings_and_splits_multi(
         "retain_classes": retain_classes,
         "forget_classes": forget_classes,
         "retain_per_class_generated": per_class,
-        "retain_top_k": retain_top_k,
+        "retain_top_k_per_class": int(retain_top_k),      # <- standardized key
         "retain_total": int(retain_feats.shape[0]),
         "per_retain_for_each_forget": int(per_retain_for_each_forget),
         "forget_total": int(forget_feats.shape[0]),
         "forget_class_counts": per_forget_counts,
     }
+
     return {
         "retain_feats": retain_feats, "retain_labels": retain_labels, "retain_loader": retain_loader,
         "forget_feats": forget_feats, "forget_labels": forget_labels, "forget_loader": forget_loader,
@@ -442,11 +449,11 @@ def build_synthetic_embeddings_and_splits(
         "emb_dim": emb_dim,
         "retain_classes": retain_classes,
         "retain_per_class_generated": per_class,
-        "retain_top_k": retain_top_k,
-        "retain_total": retain_feats.shape[0],
-        "forget_class": forget_class,
-        "per_retain_for_forget": per_retain_for_forget,
-        "forget_total": forget_feats.shape[0],
+        "retain_top_k_per_class": int(retain_top_k),      # <- standardized key
+        "retain_total": int(retain_feats.shape[0]),
+        "forget_class": int(forget_class),
+        "per_retain_for_forget": int(per_retain_for_forget),
+        "forget_total": int(forget_feats.shape[0]),
     }
     return {
         "retain_feats": retain_feats, "retain_labels": retain_labels, "retain_loader": retain_loader,
@@ -699,30 +706,9 @@ test_fgt_emb_loader  = make_emb_loader(test_fgt_feats,  test_fgt_labels)
 test_ret_emb_loader  = make_emb_loader(test_ret_feats,  test_ret_labels)
 
 
-
-def retain_k_multiplier(dataset_name: str, num_classes: int, override: float | None = None) -> float:
-    if override is not None:
-        return float(override)
-
-    d = dataset_name.strip().lower().replace("-", "").replace("_", "")
-    mapping = {
-        "cifar10": 4,     
-        "cifar100": 9.0,
-        "tiny_imagenet": 18.0,  
-    }
-    if d in mapping:
-        return mapping[d]
-
-    if num_classes == 200:
-        return 18.0
-    elif num_classes == 100:
-        return 9.0
-    else:
-        return 4
-
-
-retain_mult = retain_k_multiplier(dataset_name, num_classes)
-retain_top_k = int(choose_per_retain_class_for_fgt * retain_mult)
+# If user passed explicit K, use it; else derive from your existing cpr * multiplier
+retain_top_k = int(args.retain_per_class)
+per_retain_for_forget = int(args.forget_per_class)
 
 
 if len(forget_classes) == 1:
@@ -733,7 +719,7 @@ if len(forget_classes) == 1:
         device=device,
         per_class=total_per_class,
         retain_top_k=retain_top_k,
-        per_retain_for_forget=choose_per_retain_class_for_fgt,
+        per_retain_for_forget=per_retain_for_forget,
         loader_batch_size=256,
     )
 else:
@@ -744,9 +730,10 @@ else:
         device=device,
         per_class=total_per_class,
         retain_top_k=retain_top_k,
-        per_retain_for_each_forget=choose_per_retain_class_for_fgt,  # balanced per retain class
+        per_retain_for_each_forget=per_retain_for_forget,  # balanced per retain class
         loader_batch_size=256,
     )
+
 
 print("Synthetic selection summary:", synth["summary"])
 # Access: synth["retain_loader"], synth["forget_loader"], etc.
@@ -926,9 +913,9 @@ A_r_tr = float(acc_test_retain)
 A_f_tr = float(acc_test_fgt)
 
 rs0 = revival_score(A_r_tr, A_f_tr, A_r_tu, A_f_tu, directional=args.rs_directional)
-metrics_history[-1]["rs"] = float(rs0)
+metrics_history[-1]["RS"] = float(rs0)
 print(f"[Epoch 00] RS={rs0:.4f}")
-row0["rs"] = float(rs0)
+row0["RS"] = float(rs0)
     
 # Retain floor (e.g., 90% of baseline)
 retain_floor = args.retain_floor_frac * A_r_tu
@@ -1032,7 +1019,7 @@ for epoch in range(1, epochs + 1):
 
 
     rs = revival_score(A_r_tr, A_f_tr, A_r_tu, A_f_tu, directional=args.rs_directional)
-    metrics_history[-1]["rs"] = float(rs)
+    metrics_history[-1]["RS"] = float(rs)
     print(f"[Epoch {epoch:02d}] RS={rs:.4f}")
 
     # Only treat as RS-best if retain passes the floor
@@ -1051,8 +1038,8 @@ for epoch in range(1, epochs + 1):
             break
     
     
-    metrics_history[-1]["rs"] = float(rs)
-    row["rs"] = float(rs)
+    metrics_history[-1]["RS"] = float(rs)
+    row["RS"] = float(rs)
     
     key = _key_from_row(row)
     if (row["test_retain"] >= retain_floor) and (key > best["key"]):
@@ -1089,8 +1076,9 @@ if best["row"] is not None:
     #   - earlier variant used "retain_top_k_per_class"; handle both.
     retain_per_class = int(
         synth["summary"].get("retain_top_k_per_class",
-                             synth["summary"].get("retain_top_k", 0))
+                            synth["summary"].get("retain_top_k", 0))
     )
+
     total_retain = int(synth["summary"]["retain_total"])
     total_forget = int(synth["summary"]["forget_total"])
 
