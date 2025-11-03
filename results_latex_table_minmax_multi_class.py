@@ -316,6 +316,29 @@ def load_original_csv(path: Path, ds_hint: Optional[str]=None, mdl_hint: Optiona
                  "train_retain_acc","train_forget_acc","test_retain_acc","test_forget_acc"]
     return d[keep_cols].copy()
 
+def _rank_styles(values):
+    """
+    Given a list of numeric RS values (may contain NaN), return two thresholds:
+    max_val and second_max (next distinct less-than-max). If there's no second
+    distinct value, second_max is None.
+    """
+    vals = sorted({float(v) for v in values if pd.notna(v)}, reverse=True)
+    if not vals:
+        return (None, None)
+    if len(vals) == 1:
+        return (vals[0], None)
+    return (vals[0], vals[1])
+
+def _style_rs(v, max_v, second_v):
+    if pd.isna(v):
+        return "-"
+    val = f"{float(v):.3f}"
+    if (max_v is not None) and (abs(v - max_v) < 1e-12):
+        return rf"\textbf{{\boldmath ${val}$}}"
+    if (second_v is not None) and (abs(v - second_v) < 1e-12):
+        return rf"\underline{{$ {val} $}}"
+    return rf"${val}$"
+
 all_rows = []
 per_method_info = []
 
@@ -710,6 +733,18 @@ def render_table_for(ds: str, mdl: str, df_src: pd.DataFrame):
         agg_cols = agg_cols + ["RS2"]
     g = df.groupby(["method","phase"], dropna=False)[agg_cols].agg(["mean"])
     
+    # -------- NEW: collect RS means per method (from revival) and rank them --------
+    rs_by_method = {}
+    if has_rs:
+        for m in df["method"].unique():
+            if (m, "revival") in g.index:
+                rs_mu = g.loc[(m, "revival"), ("RS2", "mean")]
+                rs_by_method[m] = float(rs_mu) if pd.notna(rs_mu) else np.nan
+            else:
+                rs_by_method[m] = np.nan
+    max_v, second_v = _rank_styles(list(rs_by_method.values()))
+    # -------------------------------------------------------------------------------
+
     # method ordering (yours + extras found)
     present = [m for m in METHOD_ORDER if m in df["method"].unique()]
     extras  = sorted(set(df["method"].unique()) - set(present))
@@ -739,19 +774,19 @@ def render_table_for(ds: str, mdl: str, df_src: pd.DataFrame):
             else:
                 for col in OUT_METRIC_COLS:
                     row_un[col] = "-"
-    
-            # RS from the revival group (mean±std); place in Unlearned row as a column
-            if has_rs and (m, "revival") in g.index:
-                rs_mu = g.loc[(m, "revival"), ("RS2", "mean")]
-                rs_text = fmt_rs(rs_mu)
+
+            # -------- CHANGED: style the RS mean using max/second thresholds --------
+            if has_rs:
+                rs_mu = rs_by_method.get(m, np.nan)
+                rs_text_styled = _style_rs(rs_mu, max_v, second_v)
             else:
-                rs_text = "-"
-            
-            # Put the multirow RS in the Unlearned row; leave empty in the Revival row
-            row_un[RS_LABEL] = rf"\multirow{{2}}{{*}}{{{rs_text}}}"
+                rs_text_styled = "-"
+            row_un[RS_LABEL] = rf"\multirow{{2}}{{*}}{{{rs_text_styled}}}"
+            # ------------------------------------------------------------------------
+
             rows.append(row_un)
-    
-            # --- Revival row (leave RS blank to keep table compact) ---
+
+            # --- Revival row (RS cell blank to keep multirow) ---
             row_re = {"Method": m, "Phase": "Revival"}
             if (m, "revival") in g.index:
                 for col in OUT_METRIC_COLS:
@@ -760,7 +795,7 @@ def render_table_for(ds: str, mdl: str, df_src: pd.DataFrame):
             else:
                 for col in OUT_METRIC_COLS:
                     row_re[col] = "-"
-            row_re[RS_LABEL] = ""  # second row of the multirow
+            row_re[RS_LABEL] = ""  # continue multirow
             rows.append(row_re)
 
 
@@ -881,7 +916,6 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
         print(f"[WARN] No rows for model={mdl}")
         return None
 
-    # keep only the requested datasets (keeps caller's order)
     df = df[df["dataset"].isin(datasets)].copy()
 
     if "RS2" in df.columns:
@@ -896,18 +930,36 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
     present = [m for m in METHOD_ORDER if m in df["method"].unique()]
     extras  = sorted(set(df["method"].unique()) - set(present))
     method_list = present + extras
-    
+
+    # ---------- NEW: Pass 1 — collect RS means per dataset & method and rank ----------
+    rs_per_ds = { _latex_dataset_name(ds): {} for ds in datasets }
+    for ds in datasets:
+        dsl = _latex_dataset_name(ds)
+        for m in method_list:
+            if m == "original":
+                rs_per_ds[dsl][m] = np.nan
+                continue
+            if "RS2" in g.columns.get_level_values(0).unique() and ((ds, m, "revival") in g.index):
+                rs_mu = g.loc[(ds, m, "revival"), ("RS2", "mean")]
+                rs_per_ds[dsl][m] = float(rs_mu) if pd.notna(rs_mu) else np.nan
+            else:
+                rs_per_ds[dsl][m] = np.nan
+
+    rs_rank_thresholds = {}
+    for ds in datasets:
+        dsl = _latex_dataset_name(ds)
+        max_v, second_v = _rank_styles(list(rs_per_ds[dsl].values()))
+        rs_rank_thresholds[dsl] = (max_v, second_v)
+    # -------------------------------------------------------------------------------
+
     rows = []
     for m in method_list:
         pretty = _method_label(m)
-    
-        # --- inside the loop for methods ---
-        
+
         if m == "original":
             row = {"Method": pretty, "Phase": "Original"}
             for ds in datasets:
                 dsl = _latex_dataset_name(ds)
-                # RS header: use RS_LABEL (not "RS")
                 row[(dsl, RS_LABEL)] = "-"
                 if (ds, m, "original") in g.index:
                     for col in OUT_METRIC_COLS:
@@ -918,21 +970,19 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
                         row[(dsl, COL_LABELS[col])] = "-"
             rows.append(row)
             continue
-        
-        # -------- Unlearned row (RS shown here as a single value) --------
+
+        # -------- Unlearned row (styled RS shown here for each dataset) --------
         row_un = {"Method": rf"\multirow{{2}}{{*}}{{{pretty}}}", "Phase": "Unlearned"}
         for ds in datasets:
             dsl = _latex_dataset_name(ds)
-        
-            # RS from revival group (single mean value, like your separate table)
-            if "RS2" in g.columns.get_level_values(0).unique() and ((ds, m, "revival") in g.index):
-                rs_mu = g.loc[(ds, m, "revival"), ("RS2", "mean")]
-                rs_text = fmt_rs(rs_mu)
-            else:
-                rs_text = "-"
-            row_un[(dsl, RS_LABEL)] = rf"\multirow{{2}}{{*}}{{{rs_text}}}"
-        
-            # Unlearned metrics: mean±std
+
+            # -------- CHANGED: style RS using per-dataset thresholds --------
+            raw_rs = rs_per_ds[dsl].get(m, np.nan)
+            max_v, second_v = rs_rank_thresholds[dsl]
+            rs_text_styled = _style_rs(raw_rs, max_v, second_v) if pd.notna(raw_rs) else "-"
+            row_un[(dsl, RS_LABEL)] = rf"\multirow{{2}}{{*}}{{{rs_text_styled}}}"
+            # ------------------------------------------------------------------
+
             if (ds, m, "unlearned") in g.index:
                 for col in OUT_METRIC_COLS:
                     mu = g.loc[(ds, m, "unlearned"), (col, "mean")]
@@ -940,13 +990,14 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
             else:
                 for col in OUT_METRIC_COLS:
                     row_un[(dsl, COL_LABELS[col])] = "-"
+
         rows.append(row_un)
-        
-        # -------- Revival row (no RS value here; metrics are mean±std) --------
+
+        # -------- Revival row (no RS value here; metrics only) --------
         row_rev = {"Method": "", "Phase": "Revival"}
         for ds in datasets:
             dsl = _latex_dataset_name(ds)
-            row_rev[(dsl, RS_LABEL)] = ""  # continues the multirow above
+            row_rev[(dsl, RS_LABEL)] = ""  # continues multirow
             if (ds, m, "revival") in g.index:
                 for col in OUT_METRIC_COLS:
                     mu = g.loc[(ds, m, "revival"), (col, "mean")]
