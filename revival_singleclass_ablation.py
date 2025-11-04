@@ -62,6 +62,15 @@ p.add_argument('--retain_floor_frac', type=float, default=0.90,
 # infra
 p.add_argument('--seed', type=int, default=0)
 p.add_argument('--ckpt_dir', default='/export/livia/home/vision/Zdehghani/classification/exps')
+
+p.add_argument('--save_synth_dir', type=str, default=None,
+               help='If set, save selected synthetic (retain/forget) tensors to this directory.')
+p.add_argument('--save_real_dir', type=str, default=None,
+               help='If set, save real-set embeddings/labels/indices (all/train/test; retain/forget) per forget class.')
+
+p.add_argument('--save_ckpt_dir', type=str, default=None,
+               help='If set, save the best-RS FC checkpoint per forget class here.')
+
 args = p.parse_args()
 
 # ---------------- Setup ----------------
@@ -168,6 +177,13 @@ def make_emb_loader(x, y, bs=4096, shuffle=False, num_workers=4):
         pin_memory=(device == 'cuda'), num_workers=num_workers,
         persistent_workers=(num_workers > 0), prefetch_factor=(4 if num_workers > 0 else None)
     )
+
+def _ckpt_filename(dataset_name, model_name, method, forget_class, lr, retain_k, forget_k, seed, take_per_class, pool_tag):
+    take_tag = int(take_per_class) if (take_per_class is not None) else -1
+    return (f"{dataset_name}_{model_name}_{method}"
+            f"_fg{int(forget_class)}_lr{lr:g}_ret{int(retain_k)}_fgK{int(forget_k)}"
+            f"_seed{int(seed)}_take{take_tag}_{pool_tag}_best.pth")
+
 
 @torch.inference_mode()
 def eval_accuracy_on_emb_loader(fc, loader, device):
@@ -371,6 +387,7 @@ for forget_class in forget_classes:
         batch_size=batch_size_real, num_workers=num_workers, num_forget=float("inf")
     )
 
+
     # embed once (real) to speed eval by using FC only
     feature_model = make_feature_extractor(model, num_classes).eval()
     all_train_feats, all_train_labels = embed_loader_to_tensor(feature_model, all_train_loader)
@@ -379,6 +396,60 @@ for forget_class in forget_classes:
     train_ret_feats, train_ret_labels = embed_loader_to_tensor(feature_model, train_retain_loader)
     test_fgt_feats,  test_fgt_labels  = embed_loader_to_tensor(feature_model, test_fgt_loader)
     test_ret_feats,  test_ret_labels  = embed_loader_to_tensor(feature_model, test_retain_loader)
+
+    # === Save real embeddings to .pt (optional) ===
+    def _cpu(x):
+        return x.detach().cpu() if torch.is_tensor(x) else x
+
+    if args.save_real_dir is not None:
+        os.makedirs(args.save_real_dir, exist_ok=True)
+        real_out = os.path.join(args.save_real_dir, f"real_fg{int(forget_class)}.pt")
+        torch.save({
+            "meta": {
+                "dataset": dataset_name,
+                "model": model_name,
+                "method": method,
+                "forget_class": int(forget_class),
+                "num_classes": int(num_classes),
+                "seed": int(args.seed),
+            },
+            # full sets (no augmentation, eval transform)
+            "all_train": {
+                "feats": _cpu(all_train_feats),     # FloatTensor [N_train, D]
+                "labels": _cpu(all_train_labels),   # LongTensor  [N_train]
+            },
+            "all_test": {
+                "feats": _cpu(all_test_feats),      # FloatTensor [N_test, D]
+                "labels": _cpu(all_test_labels),    # LongTensor  [N_test]
+            },
+            # one-vs-all splits
+            "train_forget": {
+                "feats": _cpu(train_fgt_feats),
+                "labels": _cpu(train_fgt_labels),
+                "orig_indices": _cpu(_train_fgt_idx),      # indices into the original train set
+            },
+            "train_retain": {
+                "feats": _cpu(train_ret_feats),
+                "labels": _cpu(train_ret_labels),
+                "orig_indices": _cpu(_train_retain_idx),
+            },
+            "test_forget": {
+                "feats": _cpu(test_fgt_feats),
+                "labels": _cpu(test_fgt_labels),
+                "orig_indices": _cpu(_test_fgt_idx),       # indices into the original test set
+            },
+            "test_retain": {
+                "feats": _cpu(test_ret_feats),
+                "labels": _cpu(test_ret_labels),
+                "orig_indices": _cpu(_test_retain_idx),
+            },
+        }, real_out)
+        print(f"[save] real embeddings/splits -> {os.path.abspath(real_out)}")
+
+
+
+
+
 
     # wrap as embedding loaders
     all_train_emb_loader = make_emb_loader(all_train_feats, all_train_labels)
@@ -400,6 +471,30 @@ for forget_class in forget_classes:
         loader_batch_size=256,
     )
     print("Synthetic selection summary:", synth["summary"])
+
+
+    if args.save_synth_dir is not None:
+        os.makedirs(args.save_synth_dir, exist_ok=True)
+        synth_out = os.path.join(args.save_synth_dir, f"synth_fg{int(forget_class)}.pt")
+        torch.save({
+            "retain_feats": synth["retain_feats"],     # FloatTensor [N_ret, D]
+            "retain_labels": synth["retain_labels"],   # LongTensor  [N_ret]
+            "forget_feats": synth["forget_feats"],     # FloatTensor [N_fgt, D]
+            "forget_labels": synth["forget_labels"],   # LongTensor  [N_fgt] (all == forget_class)
+            "summary": {
+                **synth["summary"],
+                "dataset": dataset_name,
+                "model": model_name,
+                "method": method,
+                "lr": lr,
+                "pool_take_per_class": int(take_per_class if (take_per_class is not None) else -1),
+                "retain_top_k": int(args.retain_per_class),
+                "forget_per_class": int(args.forget_per_class),
+                "seed": int(args.seed),
+            },
+        }, synth_out)
+        print(f"[save] synthetic selection -> {os.path.abspath(synth_out)}")
+
 
     # eval loaders (synthetic subsets)
     syn_retain_eval_loader = DataLoader(
@@ -601,6 +696,44 @@ for forget_class in forget_classes:
     retain_per_class = int(args.retain_per_class)
     total_retain     = int(synth["summary"]["retain_total"])
     total_forget     = int(synth["summary"]["forget_total"])
+        
+    # ----- Save best-RS FC checkpoint (optional) -----
+    if args.save_ckpt_dir is not None:
+        os.makedirs(args.save_ckpt_dir, exist_ok=True)
+        ckpt_name = _ckpt_filename(
+            dataset_name, model_name, method, forget_class, lr,
+            args.retain_per_class, args.forget_per_class, args.seed,
+            take_per_class, pool_tag
+        )
+        out_best = os.path.join(args.save_ckpt_dir, ckpt_name)
+
+        best_fc_state = saved_fc if (saved_fc is not None) else fc.state_dict()  # fallback if early-stop never improved
+
+        torch.save({
+            "kind": "fc_only_best",
+            "meta": {
+                "dataset": dataset_name,
+                "model": model_name,
+                "method": method,
+                "forget_class": int(forget_class),
+                "lr": lr,
+                "retain_top_k": int(args.retain_per_class),
+                "forget_per_class": int(args.forget_per_class),
+                "seed": int(args.seed),
+                "pool_tag": pool_tag,
+                "take_per_class": int(take_per_class) if (take_per_class is not None) else -1,
+                "best_epoch": int(best_rs_epoch),
+                "best_RS": float(best_rs),
+                "best_row": best["row"],   # metrics snapshot at best
+            },
+            "fc_state_dict": best_fc_state,
+        }, out_best)
+        print(f"[save] best-RS FC checkpoint -> {os.path.abspath(out_best)}")
+        
+    
+    
+    
+    
     append_best_for_class(
         forget_class,
         best["row"],
