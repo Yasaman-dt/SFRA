@@ -31,12 +31,11 @@ matplotlib.rcParams.update({
     # 'text.usetex': True,
     # 'font.family': 'serif',
     # 'font.serif': ['Computer Modern Roman'],
-    'axes.labelsize': 22,
-    'font.size': 19,
-    'legend.fontsize': 19,
-    'xtick.labelsize': 21,
-    'ytick.labelsize': 21,
-    'axes.titlesize': 22
+    'axes.labelsize': 17,
+    'font.size': 12,
+    'legend.fontsize': 13,
+    'xtick.labelsize': 14,
+    'ytick.labelsize': 14,
 })
 plt.rc('axes', labelcolor='black')
 plt.rc('ytick', color='black')
@@ -104,7 +103,6 @@ def plot_with_black_box(plot_obj, filename):
             plt.gcf().add_artist(rect)
     os.makedirs(os.path.dirname(filename), exist_ok=True)
     plt.savefig(f"{filename}.png", dpi=600, bbox_inches='tight')
-    plt.savefig(f"{filename}.pdf", dpi=600, bbox_inches='tight')
     plt.show()
 
 # ===================== HELPERS =====================
@@ -174,6 +172,7 @@ def _load_block(method_dirs, x_candidates, x_fallback_contains, label_for_xaxis,
     all_long, all_rs = [], []
     common_x_col = None
     out_root = os.path.commonpath([os.path.abspath(d) for d in method_dirs]) if len(method_dirs) > 1 else method_dirs[0]
+
 
     for mdir in method_dirs:
         method = os.path.basename(mdir.rstrip("\\/"))
@@ -263,7 +262,6 @@ n_long, n_rs, n_xcol, out_root_n = _load_block(
 out_root = os.path.commonpath([os.path.abspath(d) for d in (method_dirs_m + method_dirs_n)]) \
            if (method_dirs_m and method_dirs_n) else (out_root_m if method_dirs_m else out_root_n)
 os.makedirs(out_root, exist_ok=True)
-sns.set_theme(style="whitegrid")
 
 # ===================== PER-ARCH HELPERS =====================
 def _split_method_arch(df):
@@ -418,6 +416,11 @@ def set_arch_ylim(ax, arch, y_max: int = 101, fallback_min: int = 39):
     ax.set_ylim(arch_ymin_from_name(arch, fallback=fallback_min), y_max)
 
 
+OUT_DIR = os.path.join(out_root, "ablation_plots")
+os.makedirs(OUT_DIR, exist_ok=True)
+
+def out_png(name: str) -> str:
+    return os.path.join(OUT_DIR, name)
 
 # ===================== PER-ARCH FIGURES (COMBINED) =====================
 for arch in sorted(arches):
@@ -480,7 +483,9 @@ for arch in sorted(arches):
     tweak_axes([ax for ax in (ax_m_a, ax_n_a) if ax.get_visible()],
                line_alpha=1.0, marker_size=8, collections_alpha=0.1)
     plt.tight_layout()
-    plot_with_black_box(fig_acc_a, os.path.join(out_root, f"accuracies_M_N_{_safe_name(arch)}"))
+
+    plot_with_black_box(fig_acc_a, out_png(f"accuracies_M_N_{_safe_name(arch)}"))
+
 
 # ===================== PER-ARCH FIGURES: SPLIT BY SERIES (M and N) =====================
 for arch in sorted(arches):
@@ -525,7 +530,7 @@ for arch in sorted(arches):
                 marker="o", linewidth=3, ax=ax_m_retain, legend=True
             )
         #ax_m_retain.set_title("Retain accuracy")
-        leg = ax_m_retain.legend(loc='lower right')
+        leg = ax_m_retain.legend(loc='lower right', title="Method")
         ax_m_retain.set_xlabel("M")
         ax_m_retain.set_ylabel("Retain Accuracy (%)")
         #ax_m_retain.minorticks_on()
@@ -537,7 +542,7 @@ for arch in sorted(arches):
         xticks_mr = sorted(m_long_a[m_xcol].unique())
         want = [300, 400]
         xticks_mr = sorted(set(xticks_mr).union(want))
-        ax_m_forget.set_xticks(xticks_mr)
+        ax_m_retain.set_xticks(xticks_mr)
         ax_m_retain.set_xticks(xticks_mr)
         ax_m_retain.set_xticklabels([f'{int(x):,}' if x >= 1 else f'{x:.3g}' for x in xticks_mr])
         ax_m_retain.grid(True)
@@ -545,7 +550,7 @@ for arch in sorted(arches):
 
         tweak_axes([ax_m_forget, ax_m_retain], line_alpha=1.0, marker_size=8, collections_alpha=0.1)
         plt.tight_layout()
-        plot_with_black_box(fig_m, os.path.join(out_root, f"accuracies_M_{_safe_name(arch)}"))
+        plot_with_black_box(fig_m,     out_png(f"accuracies_M_{_safe_name(arch)}"))
 
     # ---------------- N figure: two panels (Forget, Retain) ----------------
     if not n_long_a.empty:
@@ -596,4 +601,117 @@ for arch in sorted(arches):
         ax_n_retain.grid(True)
         tweak_axes([ax_n_forget, ax_n_retain], line_alpha=1.0, marker_size=8, collections_alpha=0.1)
         plt.tight_layout()
-        plot_with_black_box(fig_n, os.path.join(out_root, f"accuracies_N_{_safe_name(arch)}"))
+        plot_with_black_box(fig_n,     out_png(f"accuracies_N_{_safe_name(arch)}"))
+
+
+# ===================== ONE 2×2 FIGURE PER ARCH (M top, N bottom) =====================
+
+
+for arch in sorted(arches):
+    m_long_a = m_long[m_long["arch"] == arch]
+    n_long_a = n_long[n_long["arch"] == arch]
+
+    # skip if nothing to plot
+    if m_long_a.empty and n_long_a.empty:
+        continue
+
+    fig, axes = plt.subplots(2, 2, figsize=(11, 10))  # [[M_forget, M_retain],[N_forget, N_retain]]
+    ax_m_f, ax_m_r = axes[0, 0], axes[0, 1]
+    ax_n_f, ax_n_r = axes[1, 0], axes[1, 1]
+
+
+    # ---------- Row 1: M (linear x) ----------
+    if not m_long_a.empty:
+        order_m = [m for m in ALL_METHODS if m in set(m_long_a["Method"])]
+
+        # Forget
+        m_forget = m_long_a[m_long_a["series"] == "Forget Test"]
+        if not m_forget.empty:
+            sns.lineplot(data=m_forget, x=m_xcol, y="value", style="Method",
+                         hue="Method", hue_order=order_m, palette=PALETTE_GLOBAL,
+                         marker="o", linewidth=3, dashes=True, ax=ax_m_f, legend=False)
+        ax_m_f.set_xlabel("M"); ax_m_f.set_ylabel("Forget Accuracy (%)")
+        #ax_m_f.minorticks_on()
+        ax_m_f.tick_params(which='major', bottom=True, left=True)
+        ax_m_f.tick_params(which='minor', bottom=True)
+        set_arch_ylim(ax_m_f, arch)
+        ax_m_f.yaxis.set_major_locator(MultipleLocator(10))
+        ax_m_f.yaxis.set_major_formatter(ScalarFormatter())
+        xticks_m_f = sorted(m_long_a[m_xcol].unique())
+        want = [300, 400]
+        xticks_m_f = sorted(set(xticks_m_f).union(want))
+        ax_m_f.set_xticks(xticks_m_f)
+        ax_m_f.set_xticklabels([f'{int(x):,}' if x >= 1 else f'{x:.3g}' for x in xticks_m])
+        ax_m_f.grid(True)
+
+        # Retain
+        m_retain = m_long_a[m_long_a["series"] == "Retain Test"]
+        if not m_retain.empty:
+            sns.lineplot(data=m_retain, x=m_xcol, y="value", style="Method",
+                         hue="Method", hue_order=order_m, palette=PALETTE_GLOBAL,
+                         marker="o", linewidth=3, dashes=True, ax=ax_m_r, legend=True)
+        ax_m_r.legend(loc="lower right", title="Method")
+        ax_m_r.set_xlabel("M"); ax_m_r.set_ylabel("Retain Accuracy (%)")
+        #ax_m_r.minorticks_on()
+        ax_m_r.tick_params(which='major', bottom=True, left=True)
+        ax_m_r.tick_params(which='minor', bottom=True)
+        set_arch_ylim(ax_m_r, arch)
+        ax_m_r.yaxis.set_major_locator(MultipleLocator(10))
+        ax_m_r.yaxis.set_major_formatter(ScalarFormatter())
+        xticks_m_r = sorted(m_long_a[m_xcol].unique())
+        want = [300, 400]
+        xticks_m_r = sorted(set(xticks_m_r).union(want))
+        ax_m_r.set_xticks(xticks_m_r)
+        ax_m_r.set_xticklabels([f'{int(x):,}' if x >= 1 else f'{x:.3g}' for x in xticks_m])
+        ax_m_r.grid(True)
+    else:
+        ax_m_f.set_visible(False); ax_m_r.set_visible(False)
+
+    # ---------- Row 2: N (log x) ----------
+    if not n_long_a.empty:
+        order_n = [m for m in ALL_METHODS if m in set(n_long_a["Method"])]
+
+        # Forget
+        n_forget = n_long_a[n_long_a["series"] == "Forget Test"]
+        if not n_forget.empty:
+            sns.lineplot(data=n_forget, x=n_xcol, y="value", style="Method",
+                         hue="Method", hue_order=order_n, palette=PALETTE_GLOBAL,
+                         marker="o", linewidth=3, dashes=True, ax=ax_n_f, legend=False)
+        ax_n_f.set_xlabel("N"); ax_n_f.set_ylabel("Forget Accuracy (%)")
+        ax_n_f.set_xscale('log', base=10); pretty_log_x(ax_n_f)
+        pretty_log_x(ax_n_f)
+        #ax_n_retain.minorticks_on()
+        ax_n_f.tick_params(which='major', bottom=True, left=True)
+        ax_n_f.tick_params(which='minor', bottom=True)
+        set_arch_ylim(ax_n_f, arch)
+        ax_n_f.yaxis.set_major_locator(MultipleLocator(10))
+        ax_n_f.yaxis.set_major_formatter(ScalarFormatter())
+        ax_n_f.grid(True)
+
+        # Retain
+        n_retain = n_long_a[n_long_a["series"] == "Retain Test"]
+        if not n_retain.empty:
+            sns.lineplot(data=n_retain, x=n_xcol, y="value", style="Method",
+                         hue="Method", hue_order=order_n, palette=PALETTE_GLOBAL,
+                         marker="o", linewidth=3, dashes=True, ax=ax_n_r, legend=False)
+        ax_n_r.set_xlabel("N"); ax_n_r.set_ylabel("Retain Accuracy (%)")
+        ax_n_r.set_xscale('log', base=10); pretty_log_x(ax_n_r)
+        set_arch_ylim(ax_n_r, arch)
+        ax_n_r.yaxis.set_major_locator(MultipleLocator(10))
+        ax_n_r.yaxis.set_major_formatter(ScalarFormatter())
+        pretty_log_x(ax_n_r)
+        #ax_n_retain.minorticks_on()
+        ax_n_r.tick_params(which='major', bottom=True, left=True)
+        ax_n_r.tick_params(which='minor', bottom=True)        
+        ax_n_r.grid(True)
+        
+    else:
+        ax_n_f.set_visible(False); ax_n_r.set_visible(False)
+
+    
+    tweak_axes([ax for ax in (ax_m_f, ax_m_r, ax_n_f, ax_n_r) if ax.get_visible()],
+               line_alpha=1.0, marker_size=8, collections_alpha=0.1)
+
+    plt.tight_layout()
+    plot_with_black_box(fig,       out_png(f"Acc_M_N_{_safe_name(arch)}"))
+

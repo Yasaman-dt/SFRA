@@ -1046,9 +1046,13 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
     else:
         ds_names = ", ".join(_latex_dataset_name(d) for d in datasets[:-1]) + f", and {_latex_dataset_name(datasets[-1])}"
 
-    caption = (f"Revival results of single-class unlearning on {ds_names} for {mdl_latex} "
-               f"(mean$\\pm$std; Revival rows report $({{\\min}},{{\\max}})$ for "
-               f"$\\mathcal{{A}}^t_f$).")
+    caption = (
+        f"Class revival results of single-class unlearning on {ds_names} for {mdl_latex}. "
+        "For retain accuracy $\\mathcal{{A}}^t_r$ and unlearned-model forget accuracy "
+        "$\\mathcal{{A}}^t_f$ we report \\emph{{mean}}$\\pm$\\emph{{std}}. "
+        "For the revival-model forget accuracy, we report $(\\min,\\max)$ of $\\mathcal{{A}}^t_f$ and "
+        "for RS is the maximum revival observed."
+    )
     label   = f"tab:{slugify(mdl_latex)}_single_class_all_datasets"
 
     latex = wrap_with_resizebox(latex, caption, label, star=True, width=r"\textwidth")

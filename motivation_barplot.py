@@ -76,7 +76,7 @@ ax.tick_params(axis='x', pad=6)  # a bit more space from the axis
 
 # Legend OUTSIDE (right side, boxed)
 legend = ax.legend(
-    title="Metric",
+    title="Model",
     ncol=1,
     frameon=True,          # draw box
     fancybox=True,         # rounded corners

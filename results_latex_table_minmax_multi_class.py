@@ -638,9 +638,9 @@ def inject_rs2_multicolumn(latex_src: str, n_metric_cols: int) -> str:
 
 def wrap_with_resizebox(latex_src: str, caption: str, label: str,
                         star: bool = True, width: str = r"\columnwidth") -> str:
-    env = "table*" if star else "table"
+    env = "table"
     return (
-        f"\\begin{{{env}}}[t]\n"
+        f"\\begin{{{env}}}[h]\n"
         f"\\centering\n"
         f"\\caption{{{caption}}}\n"
         f"\\label{{{label}}}\n"
@@ -1049,14 +1049,12 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
     else:
         ds_names = ", ".join(_latex_dataset_name(d) for d in datasets[:-1]) + f", and {_latex_dataset_name(datasets[-1])}"
 
-    caption = (f"Revival results of multi-class unlearning on {ds_names} for {mdl_latex} "
-               f"(mean$\\pm$std; Revival rows report $({{\\min}},{{\\max}})$ for "
-               f"$\\mathcal{{A}}^t_f$).")
+    caption = (f"Class revival results of multi-class unlearning on {ds_names} for {mdl_latex} ")
 
     # ---- CHANGED: unique label per dataset selection ----
     label   = f"tab:{slugify(mdl_latex)}_multi_class"
 
-    latex = wrap_with_resizebox(latex, caption, label, star=True, width=r"\textwidth")
+    latex = wrap_with_resizebox(latex, caption, label, star=True, width=r"\columnwidth")
 
     # ---- CHANGED: unique filename per dataset selection ----
     out = base_dir / f"latex_table_{slugify(mdl)}_multi_class.tex"
