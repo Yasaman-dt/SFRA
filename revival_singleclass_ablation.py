@@ -181,8 +181,7 @@ def make_emb_loader(x, y, bs=4096, shuffle=False, num_workers=4):
 def _ckpt_filename(dataset_name, model_name, method, forget_class, lr, retain_k, forget_k, seed, take_per_class, pool_tag):
     take_tag = int(take_per_class) if (take_per_class is not None) else -1
     return (f"{dataset_name}_{model_name}_{method}"
-            f"_fg{int(forget_class)}_lr{lr:g}_ret{int(retain_k)}_fgK{int(forget_k)}"
-            f"_seed{int(seed)}_take{take_tag}_{pool_tag}_best.pth")
+            f"_fg{int(forget_class)}_lr{lr:g}_best.pth")
 
 
 @torch.inference_mode()
