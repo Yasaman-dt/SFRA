@@ -4,12 +4,22 @@ import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
 from typing import List, Dict, Tuple
+import matplotlib as mpl
+mpl.rcParams.update({
+    "font.size": 13,        # base
+    "axes.titlesize": 18,
+    "axes.labelsize": 16,
+    "xtick.labelsize": 14,
+    "ytick.labelsize": 14,
+    "legend.fontsize": 14,
+})
+
 
 # ----------------- USER CONFIG -----------------
 base_dir   = Path(r"C:/Users/AT56170/Desktop/Codes/Machine Unlearning - Classification/class_unlearning/results_single_class/")
-DATASET    = "cifar10"
+DATASET    = "tiny_imagenet"
 MODEL      = "vit-b-16"
-FORGET_C   = "0"          # accept "9" or 9
+FORGET_C   = "160"          # accept "9" or 9
 SAVE_PNG   = True
 OUT_NAME   = f"radar_{DATASET}_{MODEL}_forget{FORGET_C}.png"
 
@@ -98,44 +108,58 @@ def _move_polar_xticklabels_out(ax, angles, radius, labels, fontsize=9):
         # IMPORTANT: in polar axes you can set (theta, r) directly
         t.set_position((th, radius))
         
-def _radar_plot(labels: List[str], orig: float, un: np.ndarray, re: np.ndarray,
-                title: str = "", save_path: Path = None, annotate: bool = True):
+def put_xticklabels_outside(ax, angles, labels, pad=0.16, fontsize=14, rotation=0):
+    ax.set_xticklabels([])  # remove the built-ins
+    for th, lab in zip(angles, labels):
+        ax.text(th, 1.0 + pad, lab,
+                transform=ax.get_xaxis_transform(),  # (theta in data, r in axes)
+                ha="center", va="center",
+                rotation=rotation, rotation_mode="anchor",
+                fontsize=fontsize, clip_on=False)
+
+        
+        
+def _radar_plot(labels, orig, un, re, title="", save_path=None, annotate=True):
     K = len(labels)
     angles = np.linspace(0, 2*np.pi, K, endpoint=False)
 
     def _close(v): return np.concatenate([v, v[:1]])
     angles_c = np.concatenate([angles, angles[:1]])
 
-    # --- clamp values to [0, 100] ---
     clamp = lambda v: np.clip(v, 0, 100)
     orig_vec = clamp(np.array([orig]*K, dtype=float))
     un = clamp(un.astype(float))
     re = clamp(re.astype(float))
 
-    fig = plt.figure(figsize=(6.2, 6.2))
+    fig = plt.figure(figsize=(6.8, 6.8))  # slightly larger canvas
     ax = plt.subplot(111, polar=True)
     ax.set_theta_offset(np.pi / 2)
     ax.set_theta_direction(-1)
 
-    # --- force radial max at 100 ---
     rmax = 100.0
     ax.set_ylim(-1, rmax)
-    ax.set_rgrids([20, 40, 60, 80, 100], angle=180)  # optional: tidy grid
+    ax.set_rgrids([20, 40, 60, 80, 100], angle=180)
 
     ax.set_rlabel_position(180)
     ax.set_xticks(angles)
-    ax.set_xticklabels(labels)
+    #ax.set_xticklabels(labels)
+    put_xticklabels_outside(ax, angles, labels, pad=0.18, fontsize=14)
+    plt.subplots_adjust(top=1, bottom=0.05, left=0.05, right=0.7)  # a bit more room
+    # --- BIGGER tick labels ---
+    # for t in ax.get_xticklabels():
+    #     t.set_fontsize(12)
+    # for t in ax.get_yticklabels():
+    #     t.set_fontsize(12)
 
-    # Polygons (unchanged colors/styles)
-    p0, = ax.plot(angles_c, _close(orig_vec), linewidth=2.0, linestyle="-",
+    p0, = ax.plot(angles_c, _close(orig_vec), linewidth=2.2, linestyle="-",
                   color="blue", label="Original")
     ax.fill(angles_c, _close(orig_vec), alpha=0.10, color="blue")
 
-    p1, = ax.plot(angles_c, _close(un), linewidth=2.0, linestyle="-",
+    p1, = ax.plot(angles_c, _close(un), linewidth=2.2, linestyle="-",
                   color="red", label="Unlearned")
     ax.fill(angles_c, _close(un), alpha=0.10, color="red")
 
-    p2, = ax.plot(angles_c, _close(re), linewidth=2.0, linestyle="-",
+    p2, = ax.plot(angles_c, _close(re), linewidth=2.2, linestyle="-",
                   color="green", label="Revival")
     ax.fill(angles_c, _close(re), alpha=0.10, color="green")
 
@@ -145,13 +169,18 @@ def _radar_plot(labels: List[str], orig: float, un: np.ndarray, re: np.ndarray,
             for ang, v in zip(angles, vals):
                 if not np.isfinite(v): continue
                 ax.text(ang, min(v + offset, rmax), fmt.format(v),
-                        ha="center", va="center", fontsize=8,
+                        ha="center", va="center",
+                        fontsize=12,  # <-- bigger annotation numbers
                         color=color if color is not None else "black",
-                        bbox=dict(boxstyle="round,pad=0.15", fc="white", ec="none", alpha=0.6))
-        _annotate_series(orig_vec, off0, color="blue")
-        _annotate_series(re,       off2, color="green")
+                        bbox=dict(boxstyle="round,pad=0.18", fc="white", ec="none", alpha=0.6))
+       # _annotate_series(orig_vec, off0, color="blue")
+        #_annotate_series(re,       off2, color="green")
 
-    ax.legend(loc="upper right", bbox_to_anchor=(1.15, 1.10))
+    # --- Bigger legend + actually show the title you computed ---
+    ax.legend(loc="lower right", title="Phase", bbox_to_anchor=(1.2, 1), fontsize=12)
+    # if title:
+    #     ax.set_title(title, fontsize=16, pad=14)
+
     plt.tight_layout()
     if save_path:
         fig.savefig(save_path, dpi=300, bbox_inches="tight")
