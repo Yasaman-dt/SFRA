@@ -135,16 +135,57 @@ def run_tsne(matrix: np.ndarray, perplexity: float, seed: int, pca_dim: int = 50
                 metric="euclidean", verbose=1)
     return tsne.fit_transform(X)
 
-def scatter_tsne(Z, labels, title, out_png, alpha=0.7, s=6):
-    plt.figure(figsize=(7, 6), dpi=150)
-    K = int(labels.max().item() + 1) if labels.numel() > 0 else 0
+import matplotlib.pyplot as plt
+
+def scatter_tsne(Z, labels, title, out_png, alpha=0.7, s=25,
+                 hide_axes=True, forget_classes=None, num_classes=None):
+    fig, ax = plt.subplots(figsize=(6, 6), dpi=600)
+    forget_classes = set(forget_classes or [])
+    K = int(num_classes) if num_classes is not None else (
+        int(labels.max().item() + 1) if labels.numel() > 0 else 0
+    )
+
+    cmap = plt.get_cmap('tab10')
+    handles, legend_texts = [], []
+
     for c in range(K):
         m = (labels == c).numpy()
-        if m.sum() == 0: continue
-        plt.scatter(Z[m, 0], Z[m, 1], label=str(c), alpha=alpha, s=s)
-    plt.title(title)
-    plt.legend(markerscale=2, fontsize=8, ncol=2, frameon=False)
-    plt.tight_layout(); plt.savefig(out_png, bbox_inches="tight"); plt.close()
+        is_forget = (c in forget_classes)
+        marker = '^' if is_forget else 'o'
+        color  = cmap(c % 10)
+
+        if m.sum() > 0:
+            h = ax.scatter(Z[m, 0], Z[m, 1], alpha=alpha, s=s,
+                           marker=marker, color=color, edgecolors='none')
+        else:
+            # proxy handle so legend still shows Class c
+            import matplotlib.lines as mlines
+            h = mlines.Line2D([0], [0], marker=marker, linestyle='None',
+                              markerfacecolor=color, markeredgewidth=0, markersize=6)
+
+        handles.append(h)
+        legend_texts.append(f"Class {c}" + (" (forget)" if is_forget else ""))
+
+    ax.set_title(title)
+    leg = ax.legend(handles, legend_texts, loc="upper right", ncol=1, fontsize=8,
+                    frameon=True, fancybox=True, framealpha=0.95, borderpad=0.6,
+                    markerscale=1.6, handlelength=1.4, handletextpad=0.6)
+    leg.get_frame().set_linewidth(0.8)
+    leg.get_frame().set_edgecolor("0.6")
+
+    if hide_axes:
+        ax.set_xticks([]); ax.set_yticks([])
+        ax.set_xlabel(''); ax.set_ylabel('')
+        for spine in ax.spines.values(): spine.set_visible(False)
+        ax.set_frame_on(False)
+
+    fig.tight_layout()
+    fig.savefig(out_png, bbox_inches="tight")
+    plt.close(fig)
+
+
+
+
 
 def build_out_dir(args) -> Path:
     # Auto-name: <out_root>/<dataset>_<model>_<method>_f<forget_class>/
@@ -196,7 +237,10 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     num_classes = NUM_CLASSES[args.dataset]
     forget_classes_plot = parse_class_list(args.forget, num_classes)
-
+    if not forget_classes_plot:
+        forget_classes_plot = [int(args.forget_class)]
+    
+    
     # Resolve checkpoint
     if args.ckpt and len(args.ckpt) > 0:
         ckpt_path = args.ckpt
@@ -255,42 +299,24 @@ def main():
         pd.DataFrame({"x": Z_feat[:,0], "y": Z_feat[:,1],
                       "label": labels_sub.numpy().astype(int),
                       "space": "pre_fc", "split": name}).to_csv(out_dir / f"{name}_tsne_pre_fc.csv", index=False)
-        scatter_tsne(Z_feat, labels_sub, f"{name} • t-SNE (pre-FC)", str(out_dir / f"{name}_tsne_pre_fc.png"))
+        
+        scatter_tsne(
+            Z_feat, labels_sub, f"",
+            str(out_dir / f"{name}_tsne_pre_fc.png"),
+            forget_classes=forget_classes_plot
+        )
 
         Z_prob = run_tsne(probs.numpy(), perplexity=args.perplexity, seed=args.seed, pca_dim=50)
         pd.DataFrame({"x": Z_prob[:,0], "y": Z_prob[:,1],
                       "label": labels_sub.numpy().astype(int),
                       "space": "prob", "split": name}).to_csv(out_dir / f"{name}_tsne_prob.csv", index=False)
-        scatter_tsne(Z_prob, labels_sub, f"{name} • t-SNE (probabilities)", str(out_dir / f"{name}_tsne_prob.png"))
 
-        if len(forget_classes_plot) > 0:
-            is_forget = torch.zeros_like(labels_sub, dtype=torch.bool)
-            for c in forget_classes_plot: is_forget |= (labels_sub == c)
-            is_retain = ~is_forget
+        scatter_tsne(
+            Z_prob, labels_sub, f"",
+            str(out_dir / f"{name}_tsne_prob.png"),
+            forget_classes=forget_classes_plot
+        )
 
-            def _subset(tag, mask):
-                n = int(mask.sum().item())
-                if n == 0:
-                    print(f"[t-SNE] {name}-{tag}: no samples, skipping."); return
-                Z = run_tsne(feats[mask].numpy(), perplexity=args.perplexity, seed=args.seed, pca_dim=50)
-                pd.DataFrame({"x": Z[:,0], "y": Z[:,1],
-                              "label": labels_sub[mask].numpy().astype(int),
-                              "space": "pre_fc", "split": name, "subset": tag}).to_csv(
-                                  out_dir / f"{name}_tsne_pre_fc_{tag}.csv", index=False)
-                scatter_tsne(Z, labels_sub[mask], f"{name} • t-SNE (pre-FC • {tag})",
-                             str(out_dir / f"{name}_tsne_pre_fc_{tag}.png"))
-                Zp = run_tsne(probs[mask].numpy(), perplexity=args.perplexity, seed=args.seed, pca_dim=50)
-                pd.DataFrame({"x": Zp[:,0], "y": Zp[:,1],
-                              "label": labels_sub[mask].numpy().astype(int),
-                              "space": "prob", "split": name, "subset": tag}).to_csv(
-                                  out_dir / f"{name}_tsne_prob_{tag}.csv", index=False)
-                scatter_tsne(Zp, labels_sub[mask], f"{name} • t-SNE (prob • {tag})",
-                             str(out_dir / f"{name}_tsne_prob_{tag}.png"))
-
-            _subset("forget", is_forget)
-            _subset("retain", is_retain)
-
-        print(f"[t-SNE] Done for {name}. Saved outputs to {out_dir.resolve()}")
 
     if args.split in ("train", "both"): process_split("train", train_loader)
     if args.split in ("test", "both"):  process_split("test",  test_loader)

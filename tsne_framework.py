@@ -157,7 +157,7 @@ def scatter_tsne(
     classnames=None,
     hide_box=True
 ):
-    fig, ax = plt.subplots(figsize=(7, 6), dpi=150)
+    fig, ax = plt.subplots(figsize=(6, 6), dpi=600)
 
     K = int(labels.max().item() + 1) if labels.numel() > 0 else 0
     # fallback to numeric names if custom names are missing/misaligned
@@ -184,6 +184,86 @@ def scatter_tsne(
     fig.tight_layout()
     fig.savefig(out_png, bbox_inches="tight")
     plt.close(fig)
+
+
+
+
+import matplotlib as mpl
+
+def plot_tsne_with_shapes_and_colors(
+    Z: np.ndarray,
+    true_labels: torch.Tensor,
+    pred_labels: torch.Tensor,
+    forget_set: set,
+    out_png: str,
+    classnames=None,
+    alpha: float = 0.7,
+    s: int = 10,
+    title: str | None = None,
+):
+    """
+    Shapes:
+      - retain (true label NOT in forget_set): circle 'o'
+      - forget (true label IN forget_set): triangle '^'
+    Colors:
+      - retain: color by TRUE label
+      - forget: color by PRED label
+    """
+    # tensors -> cpu numpy
+    y_true = true_labels.detach().cpu().numpy().astype(int)
+    y_pred = pred_labels.detach().cpu().numpy().astype(int)
+
+    K = int(max(y_true.max(), y_pred.max()) + 1) if y_true.size > 0 else 0
+    if not classnames or len(classnames) < K:
+        classnames = [str(i) for i in range(K)]
+
+    # discrete colormap with K distinct colors
+    cmap = mpl.cm.get_cmap('tab10', K) 
+    def color_from_class(c): return cmap(c)
+
+    is_forget = np.isin(y_true, list(forget_set))
+    is_retain = ~is_forget
+
+    # Colors per point
+    # retain -> color by true label
+    retain_colors = [color_from_class(c) for c in y_true[is_retain]]
+    # forget -> color by predicted label
+    forget_colors = [color_from_class(c) for c in y_pred[is_forget]]
+
+    fig, ax = plt.subplots(figsize=(6, 6), dpi=600)
+
+    # retain (circles)
+    if is_retain.sum() > 0:
+        ax.scatter(
+            Z[is_retain, 0], Z[is_retain, 1],
+            s=s, alpha=alpha, marker='o', linewidths=0, c=retain_colors, label="retain (true-color)"
+        )
+    # forget (triangles)
+    if is_forget.sum() > 0:
+        ax.scatter(
+            Z[is_forget, 0], Z[is_forget, 1],
+            s=max(s, 12), alpha=alpha, marker='^', linewidths=0, c=forget_colors, label="forget (pred-color)"
+        )
+
+    # Clean axes
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+    ax.tick_params(left=False, bottom=False, labelleft=False, labelbottom=False)
+    if title:
+        ax.set_title(title, fontsize=10)
+
+    # Minimal legend (shape semantics)
+    handles = [
+        mpl.lines.Line2D([0], [0], marker='o', linestyle='None', markersize=6, label='retain (true-color)'),
+        mpl.lines.Line2D([0], [0], marker='^', linestyle='None', markersize=7, label='forget (pred-color)'),
+    ]
+    #ax.legend(handles=handles, frameon=False, fontsize=8, loc='upper right')
+
+    fig.tight_layout()
+    fig.savefig(out_png, bbox_inches="tight")
+    plt.close(fig)
+
+
 
 def build_out_dir(args) -> Path:
     # Auto-name: <out_root>/<dataset>_<model>_<method>_f<forget_class>/
@@ -377,7 +457,7 @@ def main():
         scatter_tsne(
             Z_prob, labels_sub,
             f"{name} • t-SNE (probabilities)",
-            str(out_dir / f"{name}_tsne_pro_unlearned.png"),
+            str(out_dir / f"{name}_tsne_prob_unlearned.png"),
         )
 
         # Compare checkpoint B (probabilities only) on the SAME subset
@@ -399,6 +479,41 @@ def main():
             f"{name} • t-SNE (probabilities • revival)",
             str(out_dir / f"{name}_tsne_prob_revival.png"),
         )
+
+
+
+        # --- NEW: shape-by-(retain/forget) & color-by-(true/pred) plots on the SAME embedding ---
+        # Use the same embedding coordinates (Z_feat) for fair comparison.
+
+        # predicted labels on the SAME kept indices
+        pred_unlearned = probs.argmax(dim=1)      # from unlearned/current model
+        pred_revival   = probs_b.argmax(dim=1)    # from revival head
+
+        # which classes count as "forget" for the shape split
+        forget_shape_set = set(forget_classes_plot) if len(forget_classes_plot) > 0 else {int(args.forget_class)}
+
+        # (A) Unlearned view: circles=retain colored by TRUE label; triangles=forget colored by UNLEARNED PRED
+        plot_tsne_with_shapes_and_colors(
+            Z=Z_feat,
+            true_labels=labels_sub,
+            pred_labels=pred_unlearned,
+            forget_set=forget_shape_set,
+            out_png=str(out_dir / f"{name}_tsne_pre_fc_shapes_unlearned.png"),
+            alpha=0.7, s=25,
+            #title=f"{name} • t-SNE (embeddings • retain⇢true color • forget⇢UNL pred)"
+        )
+
+        # (B) Revival view: circles=retain colored by TRUE label; triangles=forget colored by REVIVAL PRED
+        plot_tsne_with_shapes_and_colors(
+            Z=Z_feat,
+            true_labels=labels_sub,
+            pred_labels=pred_revival,
+            forget_set=forget_shape_set,
+            out_png=str(out_dir / f"{name}_tsne_pre_fc_shapes_revival.png"),
+            alpha=0.7, s=25,
+            #title=f"{name} • t-SNE (embeddings • retain⇢true color • forget⇢REV pred)"
+        )
+
 
         if len(forget_classes_plot) > 0:
             is_forget = torch.zeros_like(labels_sub, dtype=torch.bool)
