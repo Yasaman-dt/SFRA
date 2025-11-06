@@ -119,55 +119,77 @@ def run_tsne(matrix: np.ndarray, perplexity: float, seed: int, pca_dim: int = 50
                 learning_rate="auto", init="pca", random_state=seed,
                 metric="euclidean", verbose=1)
     return tsne.fit_transform(X)
+from matplotlib.lines import Line2D  # <-- add this import near the top
 
 def scatter_tsne_mixed(
     Z: np.ndarray,
     color_labels: torch.Tensor,   # int per sample (0..K-1)
     is_forget: torch.Tensor,      # bool per sample
     K: int,
-    title: str,
+    title: str,                   # kept in signature but unused
     out_png: str,
-    alpha: float = 0.8,
-    s_retain: int = 10,
-    s_forget: int = 14,
+    alpha: float = 0.7,
+    s_retain: int = 20,
+    s_forget: int = 20,
+    class_names: list = None,     # <-- optional, to show names instead of ids
 ):
-    from matplotlib.lines import Line2D
     assert Z.shape[0] == color_labels.numel() == is_forget.numel()
-    plt.figure(figsize=(7, 6), dpi=150)
+
+    fig, ax = plt.subplots(figsize=(7, 6), dpi=150)
     cmap = plt.get_cmap("tab20" if K > 10 else "tab10")
     def color_for(c): return cmap(c % cmap.N)
 
+    # Plot retain ('o') and forget ('^') samples per class with consistent colors
     for c in range(K):
         idx_c = (color_labels == c)
-        if idx_c.any():
-            idx_r = idx_c & (~is_forget)
-            if idx_r.any():
-                P = Z[idx_r.numpy()]
-                plt.scatter(P[:, 0], P[:, 1], marker='o', s=s_retain,
-                            alpha=alpha, linewidths=0, color=color_for(c))
-            idx_f = idx_c & is_forget
-            if idx_f.any():
-                P = Z[idx_f.numpy()]
-                plt.scatter(P[:, 0], P[:, 1], marker='^', s=s_forget,
-                            alpha=alpha, linewidths=0, color=color_for(c))
+        if not idx_c.any():
+            continue
 
-    class_handles = [Line2D([0], [0], marker='o', color='none',
-                            markerfacecolor=color_for(c), markersize=6, label=str(c))
-                     for c in range(K)]
-    marker_handles = [
-        Line2D([0], [0], marker='o', color='k', linestyle='none', label='retain'),
-        Line2D([0], [0], marker='^', color='k', linestyle='none', label='forget')
-    ]
-    first = plt.legend(handles=class_handles, title="Class (color)", loc="upper right",
-                       ncol=1, fontsize=8, frameon=False)
-    plt.gca().add_artist(first)
-    plt.legend(handles=marker_handles, title="Subset (marker)", loc="lower right",
-               ncol=1, fontsize=8, frameon=False)
+        idx_r = idx_c & (~is_forget)
+        if idx_r.any():
+            P = Z[idx_r.numpy()]
+            ax.scatter(P[:, 0], P[:, 1], marker='o', s=s_retain,
+                       alpha=alpha, linewidths=0, color=color_for(c))
 
-    plt.title(title)
-    plt.tight_layout()
-    plt.savefig(out_png, bbox_inches="tight")
-    plt.close()
+        idx_f = idx_c & is_forget
+        if idx_f.any():
+            P = Z[idx_f.numpy()]
+            ax.scatter(P[:, 0], P[:, 1], marker='^', s=s_forget,
+                       alpha=alpha, linewidths=0, color=color_for(c))
+
+    # -------- legend for RETAIN class colors --------
+    # Only include classes that actually appear among retain samples
+    retain_mask = (~is_forget)
+    if retain_mask.any():
+        retain_classes = torch.unique(color_labels[retain_mask]).tolist()
+        retain_classes = [int(c) for c in retain_classes]
+
+        handles = []
+        for c in sorted(retain_classes):
+            label = class_names[c] if (class_names is not None and c < len(class_names)) else f"class {c}"
+            handles.append(
+                Line2D([0], [0],
+                       marker='o', linestyle='None', markersize=6,
+                       markerfacecolor=color_for(c), markeredgecolor='none',
+                       label=label)
+            )
+        # Place legend outside to avoid covering points
+        leg = ax.legend(handles=handles, title="Retain: class color",
+                        loc='center left', bbox_to_anchor=(1.02, 0.5),
+                        frameon=False, ncol=1)
+        ax.add_artist(leg)
+    # -----------------------------------------------
+
+    # Axis labels only (no title)
+    ax.set_xlabel("t-SNE 1")
+    ax.set_ylabel("t-SNE 2")
+
+    fig.tight_layout()
+    fig.savefig(out_png, bbox_inches="tight")
+    plt.close(fig)
+
+
+
 
 def build_out_dir(args) -> Path:
     name = f"{args.dataset}_{args.model_name}_{args.method}_f{args.forget_class}"
@@ -270,9 +292,9 @@ def main():
             "space": "pre_fc", "split": name
         }).to_csv(out_dir / f"{name}_tsne_pre_fc.csv", index=False)
         scatter_tsne_mixed(
-            Z_feat, color_labels=color_labels, is_forget=is_forget, K=K,
-            title=f"{name} • t-SNE (pre-FC)",
-            out_png=str(out_dir / f"{name}_tsne_pre_fc.png")
+            Z_feat, color_labels=color_labels, is_forget=is_forget, K=num_classes,
+            #title=f"{name} • t-SNE (pre-FC)",
+            out_png=str(out_dir / f"{name}_tsne_pre_fc.png", class_names=getattr(trainset, "classes", None))
         )
 
         # ---- probabilities ----
