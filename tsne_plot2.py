@@ -174,10 +174,10 @@ def scatter_tsne_mixed(
                        label=label)
             )
         # Place legend outside to avoid covering points
-        leg = ax.legend(handles=handles, title="Retain: class color",
-                        loc='center left', bbox_to_anchor=(1.02, 0.5),
-                        frameon=False, ncol=1)
-        ax.add_artist(leg)
+        # leg = ax.legend(handles=handles, title="Retain: class color",
+        #                 loc='center left', bbox_to_anchor=(1.02, 0.5),
+        #                 frameon=False, ncol=1)
+        #ax.add_artist(leg)
     # -----------------------------------------------
 
     # Axis labels only (no title)
@@ -192,7 +192,7 @@ def scatter_tsne_mixed(
 
 
 def build_out_dir(args) -> Path:
-    name = f"{args.dataset}_{args.model_name}_{args.method}_f{args.forget_class}"
+    name = f"{args.dataset}_{args.model_name}_{args.method}_f{args.forget_class}_2"
     return Path(args.out_root) / name
 
 def main():
@@ -291,10 +291,15 @@ def main():
             "is_forget": is_forget.numpy().astype(int),
             "space": "pre_fc", "split": name
         }).to_csv(out_dir / f"{name}_tsne_pre_fc.csv", index=False)
+        # ---- pre-FC ----
         scatter_tsne_mixed(
-            Z_feat, color_labels=color_labels, is_forget=is_forget, K=num_classes,
-            #title=f"{name} • t-SNE (pre-FC)",
-            out_png=str(out_dir / f"{name}_tsne_pre_fc.png", class_names=getattr(trainset, "classes", None))
+            Z_feat,
+            color_labels=color_labels,
+            is_forget=is_forget,
+            K=num_classes,
+            title=f"{name} • t-SNE (pre-FC)",
+            out_png=str(out_dir / f"{name}_tsne_pre_fc.png"),
+            class_names=getattr(trainset, "classes", None),
         )
 
         # ---- probabilities ----
@@ -307,10 +312,15 @@ def main():
             "is_forget": is_forget.numpy().astype(int),
             "space": "prob", "split": name
         }).to_csv(out_dir / f"{name}_tsne_prob.csv", index=False)
+        # ---- probabilities ----
         scatter_tsne_mixed(
-            Z_prob, color_labels=color_labels, is_forget=is_forget, K=K,
+            Z_prob,
+            color_labels=color_labels,
+            is_forget=is_forget,
+            K=K,
             title=f"{name} • t-SNE (probabilities)",
-            out_png=str(out_dir / f"{name}_tsne_prob.png")
+            out_png=str(out_dir / f"{name}_tsne_prob.png"),
+            class_names=getattr(trainset, "classes", None),
         )
 
         print(f"[t-SNE] Done for {name}. Saved outputs to {out_dir.resolve()}")

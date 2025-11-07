@@ -189,7 +189,7 @@ def scatter_tsne(Z, labels, title, out_png, alpha=0.7, s=25,
 
 def build_out_dir(args) -> Path:
     # Auto-name: <out_root>/<dataset>_<model>_<method>_f<forget_class>/
-    name = f"{args.dataset}_{args.model_name}_{args.method}_f{args.forget_class}"
+    name = f"{args.dataset}_{args.model_name}_{args.method}_f{args.forget_class}_1"
     return Path(args.out_root) / name
 
 # ------------------- main -------------------
