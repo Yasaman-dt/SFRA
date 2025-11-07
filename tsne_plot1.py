@@ -293,7 +293,7 @@ def main():
         probs = probs.index_select(0, keep)
         labels_sub = labels.index_select(0, keep)
 
-        torch.save({"feats": feats, "probs": probs, "labels": labels_sub}, out_dir / f"{name}_raw.pt")
+        #torch.save({"feats": feats, "probs": probs, "labels": labels_sub}, out_dir / f"{name}_raw.pt")
 
         Z_feat = run_tsne(feats.numpy(), perplexity=args.perplexity, seed=args.seed, pca_dim=50)
         pd.DataFrame({"x": Z_feat[:,0], "y": Z_feat[:,1],

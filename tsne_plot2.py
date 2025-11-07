@@ -270,7 +270,7 @@ def main():
         probs = probs.index_select(0, keep)
         labels_sub = labels.index_select(0, keep)
 
-        torch.save({"feats": feats, "probs": probs, "labels": labels_sub}, out_dir / f"{name}_raw.pt")
+        #torch.save({"feats": feats, "probs": probs, "labels": labels_sub}, out_dir / f"{name}_raw.pt")
 
         # masks and coloring labels
         K = num_classes
