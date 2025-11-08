@@ -671,7 +671,7 @@ method_name_and_ref = {
     # "wood_fisher": r"WoodFisher",
     "scrub": r"SCRUB \cite{kurmanji2023towards}",
     "bad_teacher" : r"Bad Teacher \cite{chundawat2023can}",
-    "salun" : r"Saliency Unlearn \cite{fan2023salun}",
+    "salun" : r"SalUn \cite{fan2023salun}",
     "delete": r"DELETE \cite{zhou2025decoupled}",
 }
 
@@ -773,11 +773,14 @@ def render_table_for(ds: str, mdl: str, df_src: pd.DataFrame):
 
     table_df["Method"] = table_df["Method"].map(_method_label)
 
+    table_df = table_df.rename(columns={"Phase": "Model state"})
+
+
     table_df = apply_multirow(table_df)
 
 
     # escape LaTeX in text columns
-    for col in ["Method","Phase"]:
+    for col in ["Method","Model state"]:
         table_df[col] = (table_df[col].astype(str)
                          .str.replace("_", r"\_", regex=False)
                          .str.replace("&", r"\&", regex=False)
@@ -895,7 +898,6 @@ def center_method_phase_headers(latex_src: str, dataset_labels: List[str]) -> st
     lines[h2] = _join_cells(h2_cells, h2_trail)
 
     return "\n".join(lines)
-
 
 
 def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[str]) -> Optional[Path]:
@@ -1037,6 +1039,8 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
                               multicolumn_format="c", column_format=column_format)
 
     latex = center_method_phase_headers(latex, dataset_labels)
+    latex = latex.replace(r"\multirow{2}{*}{Phase}", r"\multirow{2}{*}{Model state}")
+
     latex = add_group_vertical_bars(latex, datasets)
     latex = add_midrules_between_methods(latex)
 

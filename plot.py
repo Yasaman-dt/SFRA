@@ -16,12 +16,36 @@ from matplotlib.ticker import FuncFormatter, LogLocator, NullFormatter
 from matplotlib.ticker import LogLocator, NullLocator, NullFormatter, ScalarFormatter, MultipleLocator
 
 # ===================== STYLE =====================
-def pretty_log_x(ax):
-    ax.set_xscale('log', base=10)
-    ax.xaxis.set_major_locator(LogLocator(base=10))
-    ax.xaxis.set_major_formatter(FuncFormatter(
-        lambda x, pos: '{:,.0f}'.format(x) if x >= 1 else ('{:.3g}'.format(x))
-    ))
+from matplotlib.ticker import FuncFormatter, LogLocator, NullLocator, NullFormatter
+
+plt.rcParams.update({
+    "font.family": "serif",
+    "font.serif": ["Times New Roman"],  # first choice; falls back if missing
+    "mathtext.fontset": "stix",         # math text in a Times-like style
+})
+
+
+def _fmt_kmb(x, pos=None):
+    # Pretty 1e3→1K, 1e6→1M, 1e9→1B; keep ints for [1, 1000), compact <1
+    if x == 0:
+        return "0"
+    ax = abs(x)
+    if ax >= 1e9:
+        s = f"{x/1e9:g}B"
+    elif ax >= 1e6:
+        s = f"{x/1e6:g}M"
+    elif ax >= 1e3:
+        s = f"{x/1e3:g}K"
+    elif ax >= 1:
+        s = f"{int(x):,}"
+    else:
+        s = f"{x:.3g}"
+    return s
+
+def pretty_log_x(ax, base=10):
+    ax.set_xscale('log', base=base)
+    ax.xaxis.set_major_locator(LogLocator(base=base))
+    ax.xaxis.set_major_formatter(FuncFormatter(_fmt_kmb))
     ax.xaxis.set_minor_locator(NullLocator())
     ax.xaxis.set_minor_formatter(NullFormatter())
     
@@ -31,11 +55,11 @@ matplotlib.rcParams.update({
     # 'text.usetex': True,
     # 'font.family': 'serif',
     # 'font.serif': ['Computer Modern Roman'],
-    'axes.labelsize': 17,
-    'font.size': 12,
-    'legend.fontsize': 13,
-    'xtick.labelsize': 14,
-    'ytick.labelsize': 14,
+    'axes.labelsize': 19,
+    'font.size': 14,
+    'legend.fontsize': 15,
+    'xtick.labelsize': 16,
+    'ytick.labelsize': 16,
 })
 plt.rc('axes', labelcolor='black')
 plt.rc('ytick', color='black')

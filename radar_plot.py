@@ -5,15 +5,29 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 from typing import List, Dict, Tuple
 import matplotlib as mpl
+import re
+
 mpl.rcParams.update({
-    "font.size": 13,        # base
-    "axes.titlesize": 18,
-    "axes.labelsize": 16,
-    "xtick.labelsize": 14,
-    "ytick.labelsize": 14,
-    "legend.fontsize": 14,
+    "font.size": 5,        
+    "axes.labelsize": 14,
+    "xtick.labelsize": 12,
+    "ytick.labelsize": 12,
+    "legend.fontsize": 12,
+})
+mpl.rcParams.update({
+    "text.color": "black",
+    "axes.labelcolor": "black",
+    "xtick.color": "black",
+    "ytick.color": "black",
+    "legend.labelcolor": "black",
 })
 
+
+plt.rcParams.update({
+    "font.family": "serif",
+    "font.serif": ["Times New Roman"],  # first choice; falls back if missing
+    "mathtext.fontset": "stix",         # math text in a Times-like style
+})
 
 # ----------------- USER CONFIG -----------------
 base_dir   = Path(r"C:/Users/AT56170/Desktop/Codes/Machine Unlearning - Classification/class_unlearning/results_single_class/")
@@ -31,18 +45,24 @@ METHOD_ORDER = [
 ]
 
 PRETTY = {
-    "finetune": "Finetune",
-    "gradient_ascent": "Negative Gradient",
-    "neggrad_plus": "Negative Gradient+",
-    "random_label": "Random Label",
-    "boundary_shrink": "Boundary Shrink",
-    "l2ul_adv": "Learn to Unlearn",
-    "scrub": "SCRUB",
-    "bad_teacher": "Bad Teacher",
-    "salun": "Saliency Unlearn",
-    "delete": "DELETE",
+    "finetune": "Finetune (CVPR 2020)",
+    "gradient_ascent": "Negative Gradient (CVPR 2020)",
+    "neggrad_plus": "Negative Gradient+ (NeurIPS 2023)",
+    "random_label": "Random Label (AAAI 2021)",
+    "boundary_shrink": "Boundary Shrink (CVPR 2023)",
+    "l2ul_adv": "Learn to Unlearn (AAAI 2024)",
+    "scrub": "SCRUB (NeurIPS 2023)",
+    "bad_teacher": "Bad Teacher (AAAI 2023)",
+    "salun": "SalUn (ICLR 2024)",
+    "delete": "DELETE (CVPR 2025)",
 }
 
+def break_paren(name: str) -> str:
+    return re.sub(r'\s*\(', r'\n(', name)
+
+def label_two_lines(name: str) -> str:
+    s = break_paren(name)
+    return s if '\n' in s else two_line(s)
 
 # ----------------- HELPERS -----------------
 def _slug(s: str) -> str:
@@ -108,14 +128,47 @@ def _move_polar_xticklabels_out(ax, angles, radius, labels, fontsize=9):
         # IMPORTANT: in polar axes you can set (theta, r) directly
         t.set_position((th, radius))
         
-def put_xticklabels_outside(ax, angles, labels, pad=0.16, fontsize=14, rotation=0):
-    ax.set_xticklabels([])  # remove the built-ins
+def put_xticklabels_outside(ax, angles, labels, pad=0.16,
+                            fontsize_main=14, fontsize_paren=10,
+                            line_gap=0.07, rotation=0,
+                            bold_main=True):
+    ax.set_xticklabels([])  # we'll draw them manually
     for th, lab in zip(angles, labels):
-        ax.text(th, 1.0 + pad, lab,
-                transform=ax.get_xaxis_transform(),  # (theta in data, r in axes)
-                ha="center", va="center",
-                rotation=rotation, rotation_mode="anchor",
-                fontsize=fontsize, clip_on=False)
+        p = (pad[labels.index(lab)] if hasattr(pad, "__len__") else pad)
+        r0 = 1.0 + p
+        lines = lab.split("\n")
+
+        if len(lines) == 2 and lines[1].lstrip().startswith("("):
+            # main line (method) — bold
+            ax.text(th, r0, lines[0],
+                    transform=ax.get_xaxis_transform(),
+                    ha="center", va="bottom",
+                    rotation=rotation, rotation_mode="anchor",
+                    fontsize=fontsize_main, clip_on=False,
+                    color="black",
+                    fontweight="bold" if bold_main else None)
+            # second line (venue/year) — normal
+            ax.text(th, r0, lines[1],
+                    transform=ax.get_xaxis_transform(),
+                    ha="center", va="top",
+                    rotation=rotation, rotation_mode="anchor",
+                    fontsize=fontsize_paren, clip_on=False,
+                    color="black",
+                    fontweight=None)
+        else:
+            # generic multi-line: bold only the first line
+            for i, line in enumerate(lines):
+                is_main = (i == 0)
+                fs = fontsize_main if is_main else fontsize_paren
+                ax.text(th, r0 + i * line_gap, line,
+                        transform=ax.get_xaxis_transform(),
+                        ha="center", va="center",
+                        rotation=rotation, rotation_mode="anchor",
+                        fontsize=fs, clip_on=False,
+                        color="black",
+                        fontweight="bold" if (bold_main and is_main) else None)
+
+
 
         
         
@@ -138,13 +191,38 @@ def _radar_plot(labels, orig, un, re, title="", save_path=None, annotate=True):
 
     rmax = 100.0
     ax.set_ylim(-1, rmax)
-    ax.set_rgrids([20, 40, 60, 80, 100], angle=180)
+    radii = [20, 40, 60, 80, 100]
+    ax.set_rgrids(radii, labels=[f"{r}%" for r in radii], angle=180)
+
 
     ax.set_rlabel_position(180)
     ax.set_xticks(angles)
     #ax.set_xticklabels(labels)
-    put_xticklabels_outside(ax, angles, labels, pad=0.18, fontsize=14)
-    plt.subplots_adjust(top=1, bottom=0.05, left=0.05, right=0.7)  # a bit more room
+    
+    # default pad for all labels
+    pads = [0.25] * len(labels)
+    # # push "Negative Gradient+" a bit further out
+    if "neggrad_plus" in methods:
+        pads[methods.index("neggrad_plus")] = 0.45  
+    if "random_label" in methods:
+        pads[methods.index("random_label")] = 0.35 
+    if "finetune" in methods:
+        pads[methods.index("finetune")] = 0.15
+    if "scrub" in methods:
+        pads[methods.index("scrub")] = 0.20        
+    if "l2ul_adv" in methods:
+        pads[methods.index("l2ul_adv")] = 0.20 
+    if "bad_teacher" in methods:
+        pads[methods.index("bad_teacher")] = 0.30 
+    if "delete" in methods:
+        pads[methods.index("delete")] = 0.20 
+    # if "gradient_ascent" in methods:
+    #     pads[methods.index("gradient_ascent")] = 0.25 
+
+    put_xticklabels_outside(ax, angles, labels, pad=pads,  fontsize_main=14, fontsize_paren=9)
+    
+    
+    #plt.subplots_adjust(top=1, bottom=0.05, left=0.05, right=0.7)  # a bit more room
     # --- BIGGER tick labels ---
     # for t in ax.get_xticklabels():
     #     t.set_fontsize(12)
@@ -163,6 +241,8 @@ def _radar_plot(labels, orig, un, re, title="", save_path=None, annotate=True):
                   color="green", label="Revival")
     ax.fill(angles_c, _close(re), alpha=0.10, color="green")
 
+
+
     if annotate:
         off0, off2 = rmax*0.020, rmax*0.060
         def _annotate_series(vals, offset, fmt="{:.1f}", color=None):
@@ -177,13 +257,13 @@ def _radar_plot(labels, orig, un, re, title="", save_path=None, annotate=True):
         #_annotate_series(re,       off2, color="green")
 
     # --- Bigger legend + actually show the title you computed ---
-    ax.legend(loc="lower right", title="Phase", bbox_to_anchor=(1.2, 1), fontsize=12)
-    # if title:
-    #     ax.set_title(title, fontsize=16, pad=14)
+    leg = ax.legend(loc="upper left", title="Model state", bbox_to_anchor=(1.15, 1.15), fontsize=12)
+    #leg.get_title().set_fontweight("bold")
+
 
     plt.tight_layout()
     if save_path:
-        fig.savefig(save_path, dpi=300, bbox_inches="tight")
+        fig.savefig(save_path, dpi=1200, bbox_inches="tight")
     plt.show()
 
 
@@ -204,7 +284,7 @@ if __name__ == "__main__":
         raise SystemExit("No unlearned/revival rows found for the chosen dataset/model/forget_class.")
 
     # pretty labels for axes
-    labels = [two_line(PRETTY.get(m, m)) for m in methods]
+    labels = [label_two_lines(PRETTY.get(m, m)) for m in methods]
 
 
     # values

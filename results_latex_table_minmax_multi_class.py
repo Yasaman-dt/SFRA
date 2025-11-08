@@ -18,7 +18,11 @@ methods = [
     "scrub", "bad_teacher", "salun", "delete",
 ]
 
-
+PHASE_PRETTY = {
+    "original": r"Pre-unlearning (Original)",
+    "revival":  r"Post-unlearning (Class Revival)",
+    "unlearned": "Unlearned",
+}
 
 MODELS   = ["resnet18", "vit-s-16", "vit-b-16", "swin-t", "vgg16"]
 
@@ -665,7 +669,7 @@ method_name_and_ref = {
     # "wood_fisher": r"WoodFisher",
     "scrub": r"SCRUB \cite{kurmanji2023towards}",
     "bad_teacher" : r"Bad Teacher \cite{chundawat2023can}",
-    "salun" : r"Saliency Unlearn \cite{fan2023salun}",
+    "salun" : r"SalUn \cite{fan2023salun}",
     "delete": r"DELETE \cite{zhou2025decoupled}",
 }
 
@@ -818,6 +822,10 @@ def render_table_for(ds: str, mdl: str, df_src: pd.DataFrame):
     # dynamic column format: Method | Phase | (one 'c' per displayed metric)
     column_format = "c|c|" + ("c" * (len(OUT_METRIC_COLS) + 1))  # +1 for RS
     latex = table_df.to_latex(index=False, escape=False, column_format=column_format)
+    
+    # change "Phase" header to "Model state" (only the first header hit)
+    latex = latex.replace(" & Phase & ", " & Model state & ", 1)
+
     #latex = inject_rs2_multicolumn(latex, n_metric_cols=len(OUT_METRIC_COLS))
 
     latex = add_midrules_between_methods(latex)
@@ -1036,6 +1044,8 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
                               multicolumn_format="c", column_format=column_format)
 
     latex = center_method_phase_headers(latex, dataset_labels)
+    latex = latex.replace(r"\multirow{2}{*}{Phase}", r"\multirow{2}{*}{Model state}")
+
     latex = add_group_vertical_bars(latex, datasets)
     latex = add_midrules_between_methods(latex)
 
