@@ -31,6 +31,7 @@ import pandas as pd
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 import matplotlib.pyplot as plt
+import matplotlib as mpl
 
 from utils import get_transforms, get_dataset
 from trainer import *  # must provide load_model(ckpt, model_name, dataset, num_classes)
@@ -142,9 +143,16 @@ def run_tsne(matrix: np.ndarray, perplexity: float, seed: int, pca_dim: int = 50
         raise ValueError("Input to t-SNE must be 2D (N,D).")
     if X.shape[1] > pca_dim:
         X = PCA(n_components=pca_dim, random_state=seed).fit_transform(X)
-    tsne = TSNE(n_components=2, perplexity=perplexity, n_iter=1000,
-                learning_rate="auto", init="pca", random_state=seed,
-                metric="euclidean", verbose=1)
+    tsne = TSNE(
+        n_components=2,
+        perplexity=perplexity,
+        max_iter=1000,              # <- updated from n_iter
+        learning_rate="auto",
+        init="pca",
+        random_state=seed,
+        metric="euclidean",
+        verbose=1
+    )
     return tsne.fit_transform(X)
 
 def scatter_tsne(
@@ -170,11 +178,6 @@ def scatter_tsne(
             continue
         ax.scatter(Z[m, 0], Z[m, 1], label=classnames[c], alpha=alpha, s=s)
 
-    #ax.set_title(title)
-
-    # Legend without box
-    #ax.legend(markerscale=2, fontsize=8, ncol=2, frameon=False)
-
     # Remove axes spines/ticks/labels for a clean look
     if hide_box:
         for spine in ax.spines.values():
@@ -184,11 +187,6 @@ def scatter_tsne(
     fig.tight_layout()
     fig.savefig(out_png, bbox_inches="tight")
     plt.close(fig)
-
-
-
-
-import matplotlib as mpl
 
 def plot_tsne_with_shapes_and_colors(
     Z: np.ndarray,
@@ -218,52 +216,34 @@ def plot_tsne_with_shapes_and_colors(
         classnames = [str(i) for i in range(K)]
 
     # discrete colormap with K distinct colors
-    cmap = mpl.cm.get_cmap('tab10', K) 
+    cmap = mpl.cm.get_cmap('tab10', K)
     def color_from_class(c): return cmap(c)
 
     is_forget = np.isin(y_true, list(forget_set))
     is_retain = ~is_forget
 
     # Colors per point
-    # retain -> color by true label
-    retain_colors = [color_from_class(c) for c in y_true[is_retain]]
-    # forget -> color by predicted label
-    forget_colors = [color_from_class(c) for c in y_pred[is_forget]]
+    retain_colors = [color_from_class(c) for c in y_true[is_retain]]   # retain: color by TRUE
+    forget_colors = [color_from_class(c) for c in y_pred[is_forget]]   # forget: color by PRED
 
     fig, ax = plt.subplots(figsize=(6, 6), dpi=600)
 
-    # retain (circles)
     if is_retain.sum() > 0:
-        ax.scatter(
-            Z[is_retain, 0], Z[is_retain, 1],
-            s=s, alpha=alpha, marker='o', linewidths=0, c=retain_colors, label="retain (true-color)"
-        )
-    # forget (triangles)
+        ax.scatter(Z[is_retain, 0], Z[is_retain, 1], s=s, alpha=alpha, marker='o',
+                   linewidths=0, c=retain_colors, label="retain (true-color)")
     if is_forget.sum() > 0:
-        ax.scatter(
-            Z[is_forget, 0], Z[is_forget, 1],
-            s=max(s, 12), alpha=alpha, marker='^', linewidths=0, c=forget_colors, label="forget (pred-color)"
-        )
+        ax.scatter(Z[is_forget, 0], Z[is_forget, 1], s=max(s, 12), alpha=alpha, marker='^',
+                   linewidths=0, c=forget_colors, label="forget (pred-color)")
 
-    # Clean axes
     for spine in ax.spines.values():
         spine.set_visible(False)
     ax.tick_params(left=False, bottom=False, labelleft=False, labelbottom=False)
     if title:
         ax.set_title(title, fontsize=10)
 
-    # Minimal legend (shape semantics)
-    handles = [
-        mpl.lines.Line2D([0], [0], marker='o', linestyle='None', markersize=6, label='retain (true-color)'),
-        mpl.lines.Line2D([0], [0], marker='^', linestyle='None', markersize=7, label='forget (pred-color)'),
-    ]
-    #ax.legend(handles=handles, frameon=False, fontsize=8, loc='upper right')
-
     fig.tight_layout()
     fig.savefig(out_png, bbox_inches="tight")
     plt.close(fig)
-
-
 
 def build_out_dir(args) -> Path:
     # Auto-name: <out_root>/<dataset>_<model>_<method>_f<forget_class>/
@@ -325,6 +305,10 @@ def main():
     ap.add_argument("--forget", type=str, default="",
                     help="Classes to treat as 'forget' for plotting subsets, e.g. '7' or '0,2-4,7'")
 
+    # Toggle to disable revival usage entirely
+    ap.add_argument("--no_revival", action="store_true",
+                    help="If set, skip loading/using the revival checkpoint and only analyze the unlearned model.")
+
     # args
     args = ap.parse_args()
 
@@ -350,50 +334,43 @@ def main():
         raise FileNotFoundError(f"Unlearned Model Checkpoint does not exist: {ckpt_path}")
 
     # Resolve checkpoint B (revival/compare) IN CODE via results/...
-    # Resolve checkpoint B (revival/compare) IN CODE via results/{method}/{dataset}_{arch}_{method}_fg{forget}_lr{lr}_best.pth
     ckpt_path_b = results_checkpoint_for(
-        method=args.method,                 # <-- same as A's method
+        method=args.method,
         dataset=args.dataset,
         architecture=args.model_name,
         forget_class=int(args.forget_class),
-        lr=args.lr,                         # <-- same as A's lr
+        lr=args.lr,
         root=RESULTS_ROOT
     )
     print(f"Using revival checkpoint: {ckpt_path_b}")
-    if not os.path.isfile(ckpt_path_b):
-        raise FileNotFoundError(f"Revival Checkpoint does not exist: {ckpt_path_b}")
-
+    if not args.no_revival:
+        if not os.path.isfile(ckpt_path_b):
+            raise FileNotFoundError(f"Revival Checkpoint does not exist: {ckpt_path_b}")
+    else:
+        print("[revival] Skipped by --no_revival; proceeding with unlearned-only analysis.")
 
     # Load model & feature extractor (A)
     model = load_model(ckpt_path, args.model_name, args.dataset, num_classes).to(device).eval()
     feat_model = make_feature_extractor(model, num_classes, device=device)
 
-    # --- keep your helper _get_final_linear_module as-is ---
+    # Build model_b for revival only if enabled
+    if not args.no_revival:
+        model_b = load_model(ckpt_path, args.model_name, args.dataset, num_classes).to(device).eval()
+        rev = torch.load(ckpt_path_b, map_location="cpu")
+        if "fc_state_dict" not in rev:
+            raise RuntimeError(f"Revival checkpoint {ckpt_path_b} has no 'fc_state_dict' key.")
+        fc_module = _get_final_linear_module(model_b, num_classes)
+        sd = rev["fc_state_dict"]
+        w = sd.get("weight", None)
+        if w is not None and hasattr(fc_module, "in_features"):
+            if w.shape[-1] != fc_module.in_features or w.shape[0] != fc_module.out_features:
+                raise RuntimeError(
+                    f"Revival FC shape {tuple(w.shape)} "
+                    f"does not match model head ({fc_module.out_features},{fc_module.in_features})."
+                )
+        fc_module.load_state_dict(sd, strict=True)
+        model_b.eval()
 
-    # (1) FIX the variable name here: use ckpt_path (the full backbone), not ckpt_path_a
-    model_b = load_model(ckpt_path, args.model_name, args.dataset, num_classes).to(device).eval()
-
-    # (2) Load the FC-only revival weights into model_b's final linear
-    rev = torch.load(ckpt_path_b, map_location="cpu")  # results/..._best.pth
-    if "fc_state_dict" not in rev:
-        raise RuntimeError(f"Revival checkpoint {ckpt_path_b} has no 'fc_state_dict' key.")
-    fc_module = _get_final_linear_module(model_b, num_classes)
-
-    # Optional: quick shape sanity check
-    sd = rev["fc_state_dict"]
-    w = sd.get("weight", None)
-    b = sd.get("bias", None)
-    if w is not None and hasattr(fc_module, "in_features"):
-        if w.shape[-1] != fc_module.in_features or w.shape[0] != fc_module.out_features:
-            raise RuntimeError(
-                f"Revival FC shape {tuple(w.shape)} "
-                f"does not match model head ({fc_module.out_features},{fc_module.in_features})."
-            )
-
-    fc_module.load_state_dict(sd, strict=True)
-    model_b.eval()
-
-    
     # Data (no aug)
     wo_dataaug = True
     transform_train, transform_test = get_transforms(args.dataset, args.model_name, wo_dataaug=wo_dataaug)
@@ -460,39 +437,139 @@ def main():
             str(out_dir / f"{name}_tsne_prob_unlearned.png"),
         )
 
-        # Compare checkpoint B (probabilities only) on the SAME subset
-        probs_b_all, labels_b_all = collect_probs_only(model_b, loader, device)
-        probs_b  = probs_b_all.index_select(0, keep)
-        labels_b = labels_b_all.index_select(0, keep)
-
-        torch.save({"probs": probs_b, "labels": labels_b}, out_dir / f"{name}_raw_prob_revival.pt")
-
-        Z_prob_b = run_tsne(probs_b.numpy(), perplexity=args.perplexity, seed=args.seed, pca_dim=50)
-        pd.DataFrame(
-            {"x": Z_prob_b[:,0], "y": Z_prob_b[:,1],
-             "label": labels_b.numpy().astype(int),
-             "space": "prob", "split": name, "model": "revival"}
-        ).to_csv(out_dir / f"{name}_tsne_prob_revival.csv", index=False)
-
-        scatter_tsne(
-            Z_prob_b, labels_b,
-            f"{name} • t-SNE (probabilities • revival)",
-            str(out_dir / f"{name}_tsne_prob_revival.png"),
-        )
-
-
-
-        # --- NEW: shape-by-(retain/forget) & color-by-(true/pred) plots on the SAME embedding ---
-        # Use the same embedding coordinates (Z_feat) for fair comparison.
-
-        # predicted labels on the SAME kept indices
-        pred_unlearned = probs.argmax(dim=1)      # from unlearned/current model
-        pred_revival   = probs_b.argmax(dim=1)    # from revival head
-
-        # which classes count as "forget" for the shape split
+        # ---- Define forget set once (used throughout this function) ----
         forget_shape_set = set(forget_classes_plot) if len(forget_classes_plot) > 0 else {int(args.forget_class)}
 
-        # (A) Unlearned view: circles=retain colored by TRUE label; triangles=forget colored by UNLEARNED PRED
+        # predictions for unlearned model on the kept subset
+        pred_unlearned = probs.argmax(dim=1)
+
+        # ---- Confidence exports (UNLEARNED ONLY) ----
+        is_forget = torch.zeros_like(labels_sub, dtype=torch.bool)
+        for c in forget_shape_set:
+            is_forget |= (labels_sub == c)
+        is_retain = ~is_forget
+
+
+        # ---- Subset probability dumps (UNLEARNED) ----
+        # Save the order of rows in each subset, to align with the .npy arrays
+        row_idx = torch.arange(labels_sub.numel())
+        idx_forget = row_idx[is_forget].numpy()
+        idx_retain = row_idx[is_retain].numpy()
+
+
+
+
+
+
+
+        # Full probability vectors for each subset
+        forget_probs_un = probs[is_forget].numpy()   # shape: [n_forget, K]
+        retain_probs_un = probs[is_retain].numpy()   # shape: [n_retain, K]
+
+        # Persist as .npy + matching index .csv (so you can join with other tables)
+        np.save(out_dir / f"{name}_forget_probs_unlearned.npy", forget_probs_un)
+        np.save(out_dir / f"{name}_retain_probs_unlearned.npy", retain_probs_un)
+
+        pd.DataFrame({"row_in_kept_subset": idx_forget}).to_csv(
+            out_dir / f"{name}_forget_row_indices_unlearned.csv", index=False
+        )
+        pd.DataFrame({"row_in_kept_subset": idx_retain}).to_csv(
+            out_dir / f"{name}_retain_row_indices_unlearned.csv", index=False
+        )
+
+        # (A) Forget samples: confidence of the predicted class
+        if is_forget.any():
+            conf_forget_pred = probs[is_forget].max(dim=1).values
+            df_forget = pd.DataFrame({
+                "true_label": labels_sub[is_forget].numpy().astype(int),
+                "pred_label": pred_unlearned[is_forget].numpy().astype(int),
+                "conf_pred":  conf_forget_pred.numpy()
+            })
+            out_csv_forget = out_dir / f"{name}_forget_pred_conf_unlearned.csv"
+            df_forget.to_csv(out_csv_forget, index=False)
+            print(f"[conf] wrote {out_csv_forget} (n={len(df_forget)})")
+        else:
+            print("[conf] no forget samples in subset.")
+
+        # (B) Retain samples: confidence of the true class
+        if is_retain.any():
+            true_retain = labels_sub[is_retain]
+            conf_retain_true = probs[is_retain].gather(1, true_retain.view(-1,1)).squeeze(1)
+            df_retain = pd.DataFrame({
+                "true_label": true_retain.numpy().astype(int),
+                "pred_label": pred_unlearned[is_retain].numpy().astype(int),
+                "conf_true":  conf_retain_true.numpy()
+            })
+            out_csv_retain = out_dir / f"{name}_retain_true_conf_unlearned.csv"
+            df_retain.to_csv(out_csv_retain, index=False)
+            print(f"[conf] wrote {out_csv_retain} (n={len(df_retain)})")
+        else:
+            print("[conf] no retain samples in subset.")
+
+        # ---- Revival comparison (wrapped) ----
+        if not args.no_revival:
+            probs_b_all, labels_b_all = collect_probs_only(model_b, loader, device)
+            probs_b  = probs_b_all.index_select(0, keep)
+            labels_b = labels_b_all.index_select(0, keep)
+
+            torch.save({"probs": probs_b, "labels": labels_b}, out_dir / f"{name}_raw_prob_revival.pt")
+
+            Z_prob_b = run_tsne(probs_b.numpy(), perplexity=args.perplexity, seed=args.seed, pca_dim=50)
+            pd.DataFrame(
+                {"x": Z_prob_b[:,0], "y": Z_prob_b[:,1],
+                 "label": labels_b.numpy().astype(int),
+                 "space": "prob", "split": name, "model": "revival"}
+            ).to_csv(out_dir / f"{name}_tsne_prob_revival.csv", index=False)
+
+            scatter_tsne(
+                Z_prob_b, labels_b,
+                f"{name} • t-SNE (probabilities • revival)",
+                str(out_dir / f"{name}_tsne_prob_revival.png"),
+            )
+
+            pred_revival = probs_b.argmax(dim=1)
+
+            # Predicted-class confidence for FORGET samples (both models)
+            is_forget_mask = is_forget  # same mask
+            if is_forget_mask.any():
+                conf_unlearned = probs[is_forget_mask].gather(
+                    1, pred_unlearned[is_forget_mask].view(-1, 1)
+                ).squeeze(1)
+                conf_revival   = probs_b[is_forget_mask].gather(
+                    1, pred_revival[is_forget_mask].view(-1, 1)
+                ).squeeze(1)
+
+                df_forget_cmp = pd.DataFrame({
+                    "true_label":   labels_sub[is_forget_mask].numpy().astype(int),
+                    "pred_unlearn": pred_unlearned[is_forget_mask].numpy().astype(int),
+                    "conf_unlearn": conf_unlearned.numpy(),
+                    "pred_revival": pred_revival[is_forget_mask].numpy().astype(int),
+                    "conf_revival": conf_revival.numpy(),
+                })
+                out_csv = out_dir / f"{name}_forget_pred_conf.csv"
+                df_forget_cmp.to_csv(out_csv, index=False)
+                print(f"[forget/conf] Saved per-sample confidences -> {out_csv}")
+
+                per_cls = df_forget_cmp.groupby("true_label")[["conf_unlearn","conf_revival"]].mean()
+                per_cls_path = out_dir / f"{name}_forget_pred_conf_per_class.csv"
+                per_cls.to_csv(per_cls_path)
+                print(f"[forget/conf] Per-class means -> {per_cls_path}")
+            else:
+                print("[forget/conf] No forget samples in this subset; skipped.")
+
+            # shape/color plot with revival preds
+            plot_tsne_with_shapes_and_colors(
+                Z=Z_feat,
+                true_labels=labels_sub,
+                pred_labels=pred_revival,
+                forget_set=forget_shape_set,
+                out_png=str(out_dir / f"{name}_tsne_pre_fc_shapes_revival.png"),
+                alpha=0.7, s=25,
+            )
+        else:
+            print("[revival] All revival visualizations skipped by --no_revival.")
+
+        # Unlearned view (always)
         plot_tsne_with_shapes_and_colors(
             Z=Z_feat,
             true_labels=labels_sub,
@@ -500,25 +577,13 @@ def main():
             forget_set=forget_shape_set,
             out_png=str(out_dir / f"{name}_tsne_pre_fc_shapes_unlearned.png"),
             alpha=0.7, s=25,
-            #title=f"{name} • t-SNE (embeddings • retain⇢true color • forget⇢UNL pred)"
         )
 
-        # (B) Revival view: circles=retain colored by TRUE label; triangles=forget colored by REVIVAL PRED
-        plot_tsne_with_shapes_and_colors(
-            Z=Z_feat,
-            true_labels=labels_sub,
-            pred_labels=pred_revival,
-            forget_set=forget_shape_set,
-            out_png=str(out_dir / f"{name}_tsne_pre_fc_shapes_revival.png"),
-            alpha=0.7, s=25,
-            #title=f"{name} • t-SNE (embeddings • retain⇢true color • forget⇢REV pred)"
-        )
-
-
+        # Optional per-subset t-SNEs if --forget specified
         if len(forget_classes_plot) > 0:
-            is_forget = torch.zeros_like(labels_sub, dtype=torch.bool)
-            for c in forget_classes_plot: is_forget |= (labels_sub == c)
-            is_retain = ~is_forget
+            is_forget_sub = torch.zeros_like(labels_sub, dtype=torch.bool)
+            for c in forget_classes_plot: is_forget_sub |= (labels_sub == c)
+            is_retain_sub = ~is_forget_sub
 
             def _subset(tag, mask):
                 n = int(mask.sum().item())
@@ -545,8 +610,8 @@ def main():
                     str(out_dir / f"{name}_tsne_prob_{tag}.png"),
                 )
 
-            _subset("forget", is_forget)
-            _subset("retain", is_retain)
+            _subset("forget", is_forget_sub)
+            _subset("retain", is_retain_sub)
 
         print(f"[t-SNE] Done for {name}. Saved outputs to {out_dir.resolve()}")
 

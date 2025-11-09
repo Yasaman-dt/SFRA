@@ -135,7 +135,7 @@ def scatter_tsne_mixed(
 ):
     assert Z.shape[0] == color_labels.numel() == is_forget.numel()
 
-    fig, ax = plt.subplots(figsize=(7, 6), dpi=150)
+    fig, ax = plt.subplots(figsize=(7, 6), dpi=600)
     cmap = plt.get_cmap("tab20" if K > 10 else "tab10")
     def color_for(c): return cmap(c % cmap.N)
 
@@ -157,32 +157,62 @@ def scatter_tsne_mixed(
             ax.scatter(P[:, 0], P[:, 1], marker='^', s=s_forget,
                        alpha=alpha, linewidths=0, color=color_for(c))
 
-    # -------- legend for RETAIN class colors --------
-    # Only include classes that actually appear among retain samples
+    # -------- legends: put them side-by-side at the top --------
     retain_mask = (~is_forget)
-    if retain_mask.any():
-        retain_classes = torch.unique(color_labels[retain_mask]).tolist()
-        retain_classes = [int(c) for c in retain_classes]
+    # if retain_mask.any():
+    #     retain_classes = torch.unique(color_labels[retain_mask]).tolist()
+    #     retain_classes = [int(c) for c in retain_classes]
 
-        handles = []
-        for c in sorted(retain_classes):
-            label = class_names[c] if (class_names is not None and c < len(class_names)) else f"class {c}"
-            handles.append(
-                Line2D([0], [0],
-                       marker='o', linestyle='None', markersize=6,
-                       markerfacecolor=color_for(c), markeredgecolor='none',
-                       label=label)
-            )
-        # Place legend outside to avoid covering points
-        # leg = ax.legend(handles=handles, title="Retain: class color",
-        #                 loc='center left', bbox_to_anchor=(1.02, 0.5),
-        #                 frameon=False, ncol=1)
-        #ax.add_artist(leg)
+    #     # Class-color legend (retain classes)
+    #     class_handles = [
+    #         Line2D([0],[0], marker='o', linestyle='None', markersize=6,
+    #                markerfacecolor=color_for(c), markeredgecolor='none',
+    #                label=f"Class {c}")
+    #         for c in sorted(retain_classes)
+    #     ]
+
+    #     # Place the class legend at the top-right INSIDE the axes
+    #     leg_classes = ax.legend(
+    #         handles=class_handles,
+    #         loc='upper right',
+    #         bbox_to_anchor=(0.98, 0.98),  # (x, y) in axes fraction
+    #         frameon=True, fancybox=True, framealpha=0.85,
+    #         borderpad=0.4, labelspacing=0.3,
+    #         handlelength=1.0, handletextpad=0.3,
+    #         fontsize=10, title_fontsize=9,
+    #         ncol=1
+    #     )
+
+    #     # Shape legend (retain vs forget) — unfilled triangle for forget
+    #     shape_handles = [
+    #         Line2D([0],[0], marker='o', linestyle='None', markersize=6,
+    #                markerfacecolor='gray', markeredgecolor='gray', label='Retain Class'),
+    #         Line2D([0],[0], marker='^', linestyle='None', markersize=6,
+    #                markerfacecolor='gray', markeredgecolor='gray', label='Forget Class'),
+    #     ]
+
+    #     # Place the shape legend to the LEFT of the class legend
+    #     # tweak x=0.60..0.80 depending on how wide your class legend is
+    #     leg_shapes = ax.legend(
+    #         handles=shape_handles,
+    #         loc='upper right',
+    #         bbox_to_anchor=(0.84, 0.98),  # <-- sit beside the class legend
+    #         frameon=True, fancybox=True, framealpha=0.85,
+    #         borderpad=0.4, labelspacing=0.3,
+    #         handlelength=1.0, handletextpad=0.3,
+    #         fontsize=10,
+    #     )
+
+    #     # Keep both
+    #     ax.add_artist(leg_classes)
+
     # -----------------------------------------------
 
     # Axis labels only (no title)
-    ax.set_xlabel("t-SNE 1")
-    ax.set_ylabel("t-SNE 2")
+    ax.set_xticks([])
+    ax.set_yticks([])    
+    ax.set_xlabel("t-SNE 1", fontsize=10)
+    ax.set_ylabel("t-SNE 2", fontsize=10)
 
     fig.tight_layout()
     fig.savefig(out_png, bbox_inches="tight")

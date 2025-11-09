@@ -139,7 +139,7 @@ import matplotlib.pyplot as plt
 
 def scatter_tsne(Z, labels, title, out_png, alpha=0.7, s=25,
                  hide_axes=True, forget_classes=None, num_classes=None):
-    fig, ax = plt.subplots(figsize=(6, 6), dpi=600)
+    fig, ax = plt.subplots(figsize=(7, 6), dpi=600)
     forget_classes = set(forget_classes or [])
     K = int(num_classes) if num_classes is not None else (
         int(labels.max().item() + 1) if labels.numel() > 0 else 0
@@ -166,18 +166,21 @@ def scatter_tsne(Z, labels, title, out_png, alpha=0.7, s=25,
         handles.append(h)
         legend_texts.append(f"Class {c}" + (" (forget)" if is_forget else ""))
 
-    ax.set_title(title)
+    #ax.set_title(title)
     leg = ax.legend(handles, legend_texts, loc="upper right", ncol=1, fontsize=8,
                     frameon=True, fancybox=True, framealpha=0.95, borderpad=0.6,
                     markerscale=1.6, handlelength=1.4, handletextpad=0.6)
     leg.get_frame().set_linewidth(0.8)
     leg.get_frame().set_edgecolor("0.6")
 
-    if hide_axes:
-        ax.set_xticks([]); ax.set_yticks([])
-        ax.set_xlabel(''); ax.set_ylabel('')
-        for spine in ax.spines.values(): spine.set_visible(False)
-        ax.set_frame_on(False)
+    #if hide_axes:
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_xlabel("t-SNE 1", fontsize=10)
+    ax.set_ylabel("t-SNE 2", fontsize=10)  
+    #ax.set_xlabel(''); ax.set_ylabel('')
+        # for spine in ax.spines.values(): spine.set_visible(False)
+        # ax.set_frame_on(False)
 
     fig.tight_layout()
     fig.savefig(out_png, bbox_inches="tight")
