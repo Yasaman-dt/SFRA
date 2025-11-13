@@ -159,7 +159,6 @@ def gather_and_write_metrics_csv(
         row["mia_m_entropy"]   = None
         row["mia_prob"]        = None
 
-    # Stable column order (CHANGED: insert "forget" before "forget_class")
     base_cols   = ["method", "forget", "forget_class",
                    "train_retain_acc", "train_forget_acc", "test_retain_acc", "test_forget_acc"]
     class_cols  = [f"train_class{i}_acc" for i in range(num_classes)] + [f"test_class{i}_acc" for i in range(num_classes)]

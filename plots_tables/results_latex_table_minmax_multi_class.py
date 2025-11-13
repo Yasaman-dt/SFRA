@@ -779,7 +779,7 @@ def render_table_for(ds: str, mdl: str, df_src: pd.DataFrame):
                 for col in OUT_METRIC_COLS:
                     row_un[col] = "-"
 
-            # -------- CHANGED: style the RS mean using max/second thresholds --------
+            # -------- style the RS mean using max/second thresholds --------
             if has_rs:
                 rs_mu = rs_by_method.get(m, np.nan)
                 rs_text_styled = _style_rs(rs_mu, max_v, second_v)
@@ -863,7 +863,7 @@ def add_group_vertical_bars(latex_src: str, datasets: List[str]) -> str:
     Works even if the header text is wrapped. (Joint table: RS + metrics per dataset)
     """
     out = latex_src
-    ncols = 1 + len(OUT_METRIC_COLS)  # RS + metrics  <<< CHANGED
+    ncols = 1 + len(OUT_METRIC_COLS)  # RS + metrics
     for i, ds in enumerate(datasets):
         dsl = _latex_dataset_name(ds)
         pat = rf"(\\multicolumn\{{{ncols}\}}\{{)(?:\|?c\|?)(\}}\{{[^}}]*{re.escape(dsl)}[^}}]*\}})"
@@ -984,7 +984,7 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
         for ds in datasets:
             dsl = _latex_dataset_name(ds)
 
-            # -------- CHANGED: style RS using per-dataset thresholds --------
+            # -------- style RS using per-dataset thresholds --------
             raw_rs = rs_per_ds[dsl].get(m, np.nan)
             max_v, second_v = rs_rank_thresholds[dsl]
             rs_text_styled = _style_rs(raw_rs, max_v, second_v) if pd.notna(raw_rs) else "-"
@@ -1068,7 +1068,7 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
 
     latex = wrap_with_resizebox(latex, caption, label, star=True, width=r"\columnwidth")
 
-    # ---- CHANGED: unique filename per dataset selection ----
+    # ---- unique filename per dataset selection ----
     out = base_dir / f"latex_table_{slugify(mdl)}_multi_class.tex"
     with open(out, "w", encoding="utf-8") as f:
         f.write(latex)

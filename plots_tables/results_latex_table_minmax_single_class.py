@@ -828,7 +828,7 @@ def add_group_vertical_bars(latex_src: str, datasets: List[str]) -> str:
     Works even if the header text is wrapped. (Joint table: RS + metrics per dataset)
     """
     out = latex_src
-    ncols = 1 + len(OUT_METRIC_COLS)  # RS + metrics  <<< CHANGED
+    ncols = 1 + len(OUT_METRIC_COLS)
     for i, ds in enumerate(datasets):
         dsl = _latex_dataset_name(ds)
         pat = rf"(\\multicolumn\{{{ncols}\}}\{{)(?:\|?c\|?)(\}}\{{[^}}]*{re.escape(dsl)}[^}}]*\}})"
@@ -867,7 +867,7 @@ def center_method_phase_headers(latex_src: str, dataset_labels: List[str]) -> st
     if h2 is None:
         return latex_src
 
-    ncols = 1 + len(OUT_METRIC_COLS)  # RS + metrics  <<< CHANGED
+    ncols = 1 + len(OUT_METRIC_COLS)  # RS + metrics
     group_bits = [rf"\multicolumn{{{ncols}}}{{c}}{{\textbf{{{ds}}}}}" for ds in dataset_labels]
     new_h1 = (
         r"\multirow{2}{*}{Method} & \multirow{2}{*}{Phase} & "
