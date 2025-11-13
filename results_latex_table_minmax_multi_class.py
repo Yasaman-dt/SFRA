@@ -48,7 +48,7 @@ COL_LABELS = {
     "test_forget_acc":  r"$\mathcal{A}^{t}_{f}(\%)$",
 }
 
-RS_LABEL = r"$\mathrm{RS}$"
+RS_LABEL = r"RS"
 
 # Keep only these forget classes for TinyImageNet
 FORGET_CLASS_FILTERS = {
@@ -677,10 +677,10 @@ method_name_and_ref = {
 def _latex_model_name(mdl: str) -> str:
     mapping = {
         "resnet18": "ResNet-18",
-        "vit-s-16": "ViT-S-16",
-        "vit-b-16": "ViT-B-16",
+        "vit-s-16": "ViT-S/16",
+        "vit-b-16": "ViT-B/16",
         "swin-t":   "Swin-T",
-        "vgg16":    "VGGNet-16",
+        "vgg16":    "VGG-16",
     }
     return mapping.get(mdl, mdl)
 
@@ -1057,9 +1057,11 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
     if len(datasets) == 1:
         ds_names = _latex_dataset_name(datasets[0])
     else:
-        ds_names = ", ".join(_latex_dataset_name(d) for d in datasets[:-1]) + f", and {_latex_dataset_name(datasets[-1])}"
+        ds_names = ", ".join(_latex_dataset_name(d) for d in datasets[:-1]) + f" and {_latex_dataset_name(datasets[-1])}"
 
-    caption = (f"Class revival results of multi-class unlearning on {ds_names} for {mdl_latex} ")
+    caption = (f"Class revival results of multi-class unlearning on {ds_names} for {mdl_latex}. In each dataset block, the highest RS is bolded and the second-highest is "
+                r"\underline{underlined}."
+                )
 
     # ---- CHANGED: unique label per dataset selection ----
     label   = f"tab:{slugify(mdl_latex)}_multi_class"

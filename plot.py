@@ -1,29 +1,28 @@
-#!/usr/bin/env python3
 import os, re, glob
 import numpy as np
 import pandas as pd
 import seaborn as sns
 import matplotlib
-
 import matplotlib.pyplot as plt
-from matplotlib.ticker import LogLocator, LogFormatterSciNotation
 import matplotlib.patches as patches
-from matplotlib.ticker import MaxNLocator, ScalarFormatter
-from matplotlib.ticker import MultipleLocator, FormatStrFormatter
-from matplotlib.ticker import LogLocator, LogFormatterMathtext
+from matplotlib.ticker import LogFormatterSciNotation, MaxNLocator, FormatStrFormatter
 from matplotlib.lines import Line2D
 from matplotlib.ticker import FuncFormatter, LogLocator, NullFormatter
-from matplotlib.ticker import LogLocator, NullLocator, NullFormatter, ScalarFormatter, MultipleLocator
+from matplotlib.ticker import NullLocator, ScalarFormatter, MultipleLocator
+import matplotlib as mpl
+from matplotlib.ticker import FixedLocator, FuncFormatter, MaxNLocator
 
-# ===================== STYLE =====================
-from matplotlib.ticker import FuncFormatter, LogLocator, NullLocator, NullFormatter
 
-plt.rcParams.update({
+       
+    
+sns.set_theme(style="whitegrid", rc={
     "font.family": "serif",
-    "font.serif": ["Times New Roman"],  # first choice; falls back if missing
-    "mathtext.fontset": "stix",         # math text in a Times-like style
+    "font.serif": ["Times New Roman", "Times", "Nimbus Roman No9 L"],
 })
-
+mpl.rcParams.update({
+    "text.usetex": False,
+    "mathtext.fontset": "stix",  # closest built-in to Times math
+})
 
 def _fmt_kmb(x, pos=None):
     # Pretty 1e3→1K, 1e6→1M, 1e9→1B; keep ints for [1, 1000), compact <1
@@ -31,15 +30,15 @@ def _fmt_kmb(x, pos=None):
         return "0"
     ax = abs(x)
     if ax >= 1e9:
-        s = f"{x/1e9:g}B"
+        s = f"${x/1e9:g}B$"
     elif ax >= 1e6:
-        s = f"{x/1e6:g}M"
+        s = f"${x/1e6:g}M$"
     elif ax >= 1e3:
-        s = f"{x/1e3:g}K"
+        s = f"${x/1e3:g}K$"
     elif ax >= 1:
-        s = f"{int(x):,}"
+        s = f"${int(x):,}$"
     else:
-        s = f"{x:.3g}"
+        s = f"${x:.3g}$"
     return s
 
 def pretty_log_x(ax, base=10):
@@ -49,18 +48,55 @@ def pretty_log_x(ax, base=10):
     ax.xaxis.set_minor_locator(NullLocator())
     ax.xaxis.set_minor_formatter(NullFormatter())
     
-sns.set_theme(style="whitegrid")
-sns.set_context("paper", font_scale=1.5)
+def percent_fmt(y, pos=None):
+    # show integers like 40%, 55%, 100% (mathtext so it matches your style)
+    return fr"${int(round(y))}$"
+
+def pretty_percent_y(ax, major_step=10):
+    ax.yaxis.set_major_locator(MultipleLocator(major_step))
+    ax.yaxis.set_major_formatter(FuncFormatter(percent_fmt))
+    ax.tick_params(which='major', left=True)    
+    
+def pretty_log_y(ax, base=10):
+    ax.set_yscale('log', base=base)
+    ax.yaxis.set_major_locator(LogLocator(base=base))
+    ax.yaxis.set_major_formatter(FuncFormatter(_fmt_kmb))
+    ax.yaxis.set_minor_locator(NullLocator())
+    ax.yaxis.set_minor_formatter(NullFormatter())    
+
+
+def fmt_commas(x, pos=None):
+    # integers with thousands separators, rendered in mathtext
+    return fr"${int(x):,}$"
+
+def pretty_linear_x_commas(ax, ticks=None, integer=True):
+    """
+    Linear x with 1,000-style formatting.
+    If `ticks` is given, it fixes them; otherwise uses a nice integer locator.
+    """
+    if ticks is not None:
+        ax.xaxis.set_major_locator(FixedLocator(ticks))
+    elif integer:
+        ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+    ax.xaxis.set_major_formatter(FuncFormatter(fmt_commas))
+
+def pretty_linear_x_kmb(ax):
+    """
+    Linear x but with K/M/B suffix (same style as your log version).
+    """
+    ax.xaxis.set_major_formatter(FuncFormatter(_fmt_kmb))
+
+    
 matplotlib.rcParams.update({
-    # 'text.usetex': True,
-    # 'font.family': 'serif',
-    # 'font.serif': ['Computer Modern Roman'],
     'axes.labelsize': 19,
     'font.size': 14,
-    'legend.fontsize': 15,
-    'xtick.labelsize': 16,
-    'ytick.labelsize': 16,
-})
+    'legend.fontsize': 17,
+    'legend.title_fontsize': 17,
+    'xtick.labelsize': 18,
+    'ytick.labelsize': 18,
+    'text.color': 'black',        
+    'legend.labelcolor': 'black', 
+    })
 plt.rc('axes', labelcolor='black')
 plt.rc('ytick', color='black')
 plt.rc('xtick', labelcolor='black')
@@ -75,7 +111,7 @@ method_dirs_m = [
     r"diff_M/bad_teacher",
     r"diff_M/gradient_ascent",
     r"diff_M/salun",
-    r"diff_M/boundary_shrink",
+    #r"diff_M/boundary_shrink",
 ]
 method_dirs_n = [
     r"diff_N/delete",
@@ -83,7 +119,7 @@ method_dirs_n = [
     r"diff_N/bad_teacher",
     r"diff_N/gradient_ascent",
     r"diff_N/salun",
-    r"diff_N/boundary_shrink",
+    #r"diff_N/boundary_shrink",
 ]
 csv_glob_pattern = "*.csv"
 
@@ -92,7 +128,7 @@ METHOD_MAP = {
     "boundary_shrink": "Boundary Shrink",
     "delete": "DELETE",
     "random_label": "Random Label",
-    "salun": "Saliency Unlearn",
+    "salun": "SalUn",
     "gradient_ascent": "Negative Gradient",
 }
 
@@ -127,6 +163,10 @@ def plot_with_black_box(plot_obj, filename):
             plt.gcf().add_artist(rect)
     os.makedirs(os.path.dirname(filename), exist_ok=True)
     plt.savefig(f"{filename}.png", dpi=600, bbox_inches='tight')
+    plt.savefig(f"{filename}.svg", bbox_inches="tight", transparent=True)
+    plt.savefig(f"{filename}.pdf", bbox_inches="tight", transparent=True)
+    
+    
     plt.show()
 
 # ===================== HELPERS =====================
@@ -424,7 +464,7 @@ import re
 # 1) Hard rules per architecture name (case-insensitive substrings or regex)
 ARCH_YMIN_RULES = [
     (re.compile(r'\b(vit|deit)\b', re.I), 80),
-    (re.compile(r'\bresnet', re.I),       39),
+    (re.compile(r'\bresnet', re.I),       19),
     # add more as needed:
     # (re.compile(r'\bmamba|vmamba\b', re.I), 55),
 ]
@@ -468,13 +508,11 @@ for arch in sorted(arches):
         ax_m_a.tick_params(which='major', bottom=True, left=True)
         ax_m_a.tick_params(which='minor', bottom=True)
         set_arch_ylim(ax_m_a,      arch)
-        ax_m_a.yaxis.set_major_locator(MultipleLocator(10))
-        ax_m_a.yaxis.set_major_formatter(ScalarFormatter())
-        xticks = sorted(m_long_a[m_xcol].unique())
-        want = [300, 400]
-        xticks = sorted(set(xticks).union(want))
-        ax_m_a.set_xticks(xticks)
-        ax_m_a.set_xticklabels([f'{int(x):,}' if x >= 1 else f'{x:.3g}' for x in xticks])
+        # ax_m_a.yaxis.set_major_locator(MultipleLocator(10))
+        # ax_m_a.yaxis.set_major_formatter(ScalarFormatter())
+        pretty_percent_y(ax_m_a, major_step=10)
+        xticks = sorted(set(m_long_a[m_xcol].unique()) | {300, 400})
+        pretty_linear_x_commas(ax_m_a, ticks=xticks)
         ax_m_a.grid(True)
     else:
         ax_m_a.set_visible(False)
@@ -493,8 +531,9 @@ for arch in sorted(arches):
         ax_n_a.tick_params(which='major', bottom=True, left=True)
         ax_n_a.tick_params(which='minor', bottom=True)
         set_arch_ylim(ax_n_a,      arch)
-        ax_n_a.yaxis.set_major_locator(MultipleLocator(10))
-        ax_n_a.yaxis.set_major_formatter(ScalarFormatter())
+        # ax_n_a.yaxis.set_major_locator(MultipleLocator(10))
+        # ax_n_a.yaxis.set_major_formatter(ScalarFormatter())
+        pretty_percent_y(ax_n_a, major_step=10)
         pretty_log_x(ax_n_a)
         ax_n_a.grid(True)
     else:
@@ -530,19 +569,17 @@ for arch in sorted(arches):
                 marker="o", linewidth=3, ax=ax_m_forget, legend=False
             )
         #ax_m_forget.set_title("Forget accuracy")
-        ax_m_forget.set_xlabel("M")
-        ax_m_forget.set_ylabel("Forget Accuracy (%)")
+        ax_m_forget.set_xlabel("$M$")
+        ax_m_forget.set_ylabel("Forget Test Accuracy ($\%$)")
         #ax_m_forget.minorticks_on()
         ax_m_forget.tick_params(which='major', bottom=True, left=True)
         ax_m_forget.tick_params(which='minor', bottom=True)
         set_arch_ylim(ax_m_forget, arch)
-        ax_m_forget.yaxis.set_major_locator(MultipleLocator(10))
-        ax_m_forget.yaxis.set_major_formatter(ScalarFormatter())
-        xticks_m = sorted(m_long_a[m_xcol].unique())
-        want = [300, 400]
-        xticks_m = sorted(set(xticks_m).union(want))
-        ax_m_forget.set_xticks(xticks_m)
-        ax_m_forget.set_xticklabels([f'{int(x):,}' if x >= 1 else f'{x:.3g}' for x in xticks_m])
+        # ax_m_forget.yaxis.set_major_locator(MultipleLocator(10))
+        # ax_m_forget.yaxis.set_major_formatter(ScalarFormatter())
+        pretty_percent_y(ax_m_forget, major_step=10)
+        xticks = sorted(set(m_long_a[m_xcol].unique()) | {300, 400})
+        pretty_linear_x_commas(ax_m_forget, ticks=xticks)
         ax_m_forget.grid(True)
 
         # RIGHT: Retain
@@ -555,20 +592,17 @@ for arch in sorted(arches):
             )
         #ax_m_retain.set_title("Retain accuracy")
         leg = ax_m_retain.legend(loc='lower right', title="Method")
-        ax_m_retain.set_xlabel("M")
-        ax_m_retain.set_ylabel("Retain Accuracy (%)")
+        ax_m_retain.set_xlabel("$M$")
+        ax_m_retain.set_ylabel("Retain Test Accuracy ($\%$)")
         #ax_m_retain.minorticks_on()
         ax_m_retain.tick_params(which='major', bottom=True, left=True)
         ax_m_retain.tick_params(which='minor', bottom=True)
         set_arch_ylim(ax_m_retain, arch)
-        ax_m_retain.yaxis.set_major_locator(MultipleLocator(10))
-        ax_m_retain.yaxis.set_major_formatter(ScalarFormatter())
-        xticks_mr = sorted(m_long_a[m_xcol].unique())
-        want = [300, 400]
-        xticks_mr = sorted(set(xticks_mr).union(want))
-        ax_m_retain.set_xticks(xticks_mr)
-        ax_m_retain.set_xticks(xticks_mr)
-        ax_m_retain.set_xticklabels([f'{int(x):,}' if x >= 1 else f'{x:.3g}' for x in xticks_mr])
+        # ax_m_retain.yaxis.set_major_locator(MultipleLocator(10))
+        # ax_m_retain.yaxis.set_major_formatter(ScalarFormatter())
+        pretty_percent_y(ax_m_retain, major_step=10)
+        xticks = sorted(set(m_long_a[m_xcol].unique()) | {300, 400})
+        pretty_linear_x_commas(ax_m_retain, ticks=xticks)
         ax_m_retain.grid(True)
 
 
@@ -590,16 +624,18 @@ for arch in sorted(arches):
                 marker="o", linewidth=3, ax=ax_n_forget, legend=False
             )
         #ax_n_forget.set_title("Forget accuracy")
-        ax_n_forget.set_xlabel("N")
-        ax_n_forget.set_ylabel("Forget Accuracy (%)")
+        ax_n_forget.set_xlabel("$N$")
+        ax_n_forget.set_ylabel("Forget Test Accuracy ($\%$)")
         ax_n_forget.set_xscale('log', base=10)
         pretty_log_x(ax_n_forget)
         #ax_n_forget.minorticks_on()
         ax_n_forget.tick_params(which='major', bottom=True, left=True)
         ax_n_forget.tick_params(which='minor', bottom=True)
         set_arch_ylim(ax_n_forget, arch)
-        ax_n_forget.yaxis.set_major_locator(MultipleLocator(10))
-        ax_n_forget.yaxis.set_major_formatter(ScalarFormatter())
+        # ax_n_forget.yaxis.set_major_locator(MultipleLocator(10))
+        # ax_n_forget.yaxis.set_major_formatter(ScalarFormatter())
+        pretty_percent_y(ax_n_forget, major_step=10)
+
         ax_n_forget.grid(True)
 
         # RIGHT: Retain (log-x)
@@ -612,16 +648,17 @@ for arch in sorted(arches):
             )
         #ax_n_retain.set_title("Retain accuracy")
         leg = ax_n_retain.legend(loc='lower right')
-        ax_n_retain.set_xlabel("N")
-        ax_n_retain.set_ylabel("Retain Accuracy (%)")
+        ax_n_retain.set_xlabel("$N$")
+        ax_n_retain.set_ylabel("Retain Test Accuracy ($\%$)")
         ax_n_retain.set_xscale('log', base=10)
         pretty_log_x(ax_n_retain)
         #ax_n_retain.minorticks_on()
         ax_n_retain.tick_params(which='major', bottom=True, left=True)
         ax_n_retain.tick_params(which='minor', bottom=True)
         set_arch_ylim(ax_n_retain, arch)
-        ax_n_retain.yaxis.set_major_locator(MultipleLocator(10))
-        ax_n_retain.yaxis.set_major_formatter(ScalarFormatter())
+        # ax_n_retain.yaxis.set_major_locator(MultipleLocator(10))
+        # ax_n_retain.yaxis.set_major_formatter(ScalarFormatter())
+        pretty_percent_y(ax_n_retain, major_step=10)
         ax_n_retain.grid(True)
         tweak_axes([ax_n_forget, ax_n_retain], line_alpha=1.0, marker_size=8, collections_alpha=0.1)
         plt.tight_layout()
@@ -654,18 +691,16 @@ for arch in sorted(arches):
             sns.lineplot(data=m_forget, x=m_xcol, y="value", style="Method",
                          hue="Method", hue_order=order_m, palette=PALETTE_GLOBAL,
                          marker="o", linewidth=3, dashes=True, ax=ax_m_f, legend=False)
-        ax_m_f.set_xlabel("M"); ax_m_f.set_ylabel("Forget Accuracy (%)")
+        ax_m_f.set_xlabel("$M$"); ax_m_f.set_ylabel("Forget Test Accuracy ($\%$)")
         #ax_m_f.minorticks_on()
         ax_m_f.tick_params(which='major', bottom=True, left=True)
         ax_m_f.tick_params(which='minor', bottom=True)
         set_arch_ylim(ax_m_f, arch)
-        ax_m_f.yaxis.set_major_locator(MultipleLocator(10))
-        ax_m_f.yaxis.set_major_formatter(ScalarFormatter())
-        xticks_m_f = sorted(m_long_a[m_xcol].unique())
-        want = [300, 400]
-        xticks_m_f = sorted(set(xticks_m_f).union(want))
-        ax_m_f.set_xticks(xticks_m_f)
-        ax_m_f.set_xticklabels([f'{int(x):,}' if x >= 1 else f'{x:.3g}' for x in xticks_m])
+        # ax_m_f.yaxis.set_major_locator(MultipleLocator(10))
+        # ax_m_f.yaxis.set_major_formatter(ScalarFormatter())
+        pretty_percent_y(ax_m_f, major_step=10)
+        xticks = sorted(set(m_long_a[m_xcol].unique()) | {300, 400})
+        pretty_linear_x_commas(ax_m_a, ticks=xticks)
         ax_m_f.grid(True)
 
         # Retain
@@ -674,19 +709,18 @@ for arch in sorted(arches):
             sns.lineplot(data=m_retain, x=m_xcol, y="value", style="Method",
                          hue="Method", hue_order=order_m, palette=PALETTE_GLOBAL,
                          marker="o", linewidth=3, dashes=True, ax=ax_m_r, legend=True)
-        ax_m_r.legend(loc="lower right", title="Method")
-        ax_m_r.set_xlabel("M"); ax_m_r.set_ylabel("Retain Accuracy (%)")
+        #ax_m_r.legend(loc="lower right", title="Method")
+        ax_m_r.legend(loc="lower right")
+        ax_m_r.set_xlabel("$M$"); ax_m_r.set_ylabel("Retain Test Accuracy ($\%$)")
         #ax_m_r.minorticks_on()
         ax_m_r.tick_params(which='major', bottom=True, left=True)
         ax_m_r.tick_params(which='minor', bottom=True)
         set_arch_ylim(ax_m_r, arch)
-        ax_m_r.yaxis.set_major_locator(MultipleLocator(10))
-        ax_m_r.yaxis.set_major_formatter(ScalarFormatter())
-        xticks_m_r = sorted(m_long_a[m_xcol].unique())
-        want = [300, 400]
-        xticks_m_r = sorted(set(xticks_m_r).union(want))
-        ax_m_r.set_xticks(xticks_m_r)
-        ax_m_r.set_xticklabels([f'{int(x):,}' if x >= 1 else f'{x:.3g}' for x in xticks_m])
+        # ax_m_r.yaxis.set_major_locator(MultipleLocator(10))
+        # ax_m_r.yaxis.set_major_formatter(ScalarFormatter())
+        pretty_percent_y(ax_m_r, major_step=10)
+        xticks = sorted(set(m_long_a[m_xcol].unique()) | {300, 400})
+        pretty_linear_x_commas(ax_m_r, ticks=xticks)
         ax_m_r.grid(True)
     else:
         ax_m_f.set_visible(False); ax_m_r.set_visible(False)
@@ -701,15 +735,17 @@ for arch in sorted(arches):
             sns.lineplot(data=n_forget, x=n_xcol, y="value", style="Method",
                          hue="Method", hue_order=order_n, palette=PALETTE_GLOBAL,
                          marker="o", linewidth=3, dashes=True, ax=ax_n_f, legend=False)
-        ax_n_f.set_xlabel("N"); ax_n_f.set_ylabel("Forget Accuracy (%)")
+        ax_n_f.set_xlabel("$N$"); ax_n_f.set_ylabel("Forget Test Accuracy ($\%$)")
         ax_n_f.set_xscale('log', base=10); pretty_log_x(ax_n_f)
         pretty_log_x(ax_n_f)
         #ax_n_retain.minorticks_on()
         ax_n_f.tick_params(which='major', bottom=True, left=True)
         ax_n_f.tick_params(which='minor', bottom=True)
         set_arch_ylim(ax_n_f, arch)
-        ax_n_f.yaxis.set_major_locator(MultipleLocator(10))
-        ax_n_f.yaxis.set_major_formatter(ScalarFormatter())
+        # ax_n_f.yaxis.set_major_locator(MultipleLocator(10))
+        # ax_n_f.yaxis.set_major_formatter(ScalarFormatter())
+        pretty_percent_y(ax_n_f, major_step=10)
+
         ax_n_f.grid(True)
 
         # Retain
@@ -718,11 +754,13 @@ for arch in sorted(arches):
             sns.lineplot(data=n_retain, x=n_xcol, y="value", style="Method",
                          hue="Method", hue_order=order_n, palette=PALETTE_GLOBAL,
                          marker="o", linewidth=3, dashes=True, ax=ax_n_r, legend=False)
-        ax_n_r.set_xlabel("N"); ax_n_r.set_ylabel("Retain Accuracy (%)")
+        ax_n_r.set_xlabel("$N$"); ax_n_r.set_ylabel("Retain Test Accuracy ($\%$)")
         ax_n_r.set_xscale('log', base=10); pretty_log_x(ax_n_r)
         set_arch_ylim(ax_n_r, arch)
-        ax_n_r.yaxis.set_major_locator(MultipleLocator(10))
-        ax_n_r.yaxis.set_major_formatter(ScalarFormatter())
+        # ax_n_r.yaxis.set_major_locator(MultipleLocator(10))
+        # ax_n_r.yaxis.set_major_formatter(ScalarFormatter())
+        pretty_percent_y(ax_n_r, major_step=10)
+
         pretty_log_x(ax_n_r)
         #ax_n_retain.minorticks_on()
         ax_n_r.tick_params(which='major', bottom=True, left=True)

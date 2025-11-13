@@ -192,7 +192,7 @@ def _radar_plot(labels, orig, un, re, title="", save_path=None, annotate=True):
     rmax = 100.0
     ax.set_ylim(-1, rmax)
     radii = [20, 40, 60, 80, 100]
-    ax.set_rgrids(radii, labels=[f"{r}%" for r in radii], angle=180)
+    ax.set_rgrids(radii, labels=[f"${r}\%$" for r in radii], angle=180)
 
 
     ax.set_rlabel_position(180)

@@ -646,7 +646,7 @@ def wrap_with_resizebox(latex_src: str, caption: str, label: str,
                         star: bool = True, width: str = r"\textwidth") -> str:
     env = "table*" if star else "table"
     return (
-        f"\\begin{{{env}}}[t]\n"
+        f"\\begin{{{env}}}[!htbp]\n"
         f"\\centering\n"
         f"\\caption{{{caption}}}\n"
         f"\\label{{{label}}}\n"
@@ -679,10 +679,10 @@ method_name_and_ref = {
 def _latex_model_name(mdl: str) -> str:
     mapping = {
         "resnet18": "ResNet-18",
-        "vit-s-16": "ViT-S-16",
-        "vit-b-16": "ViT-B-16",
+        "vit-s-16": "ViT-S/16",
+        "vit-b-16": "ViT-B/16",
         "swin-t":   "Swin-T",
-        "vgg16":    "VGGNet-16",
+        "vgg16":    "VGG-16",
     }
     return mapping.get(mdl, mdl)
 
@@ -1051,11 +1051,13 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
         ds_names = ", ".join(_latex_dataset_name(d) for d in datasets[:-1]) + f", and {_latex_dataset_name(datasets[-1])}"
 
     caption = (
-        f"Class revival results of single-class unlearning on {ds_names} for {mdl_latex}. "
+        f"The results of the proposed class revival applied to single-class unlearned models  {ds_names} for {mdl_latex}. "
         "For retain accuracy $\\mathcal{{A}}^t_r$ and unlearned-model forget accuracy "
         "$\\mathcal{{A}}^t_f$ we report \\emph{{mean}}$\\pm$\\emph{{std}}. "
-        "For the revival-model forget accuracy, we report $(\\min,\\max)$ of $\\mathcal{{A}}^t_f$ and "
-        "for RS is the maximum revival observed."
+        "For the revival-model forget accuracy, we report $(\\min,\\max)$ of $\\mathcal{{A}}^t_f$ over all possible forget classes -as specified in the setting-, and "
+        "the RS is based on the maximum revival observed. For each dataset block, \textbf{bold} indicates the highest RS and"
+        r"\underline{underlined}"
+        "indicates the second-highest RS."
     )
     label   = f"tab:{slugify(mdl_latex)}_single_class_all_datasets"
 
