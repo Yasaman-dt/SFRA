@@ -1,4 +1,3 @@
-# build_synth_pool.py
 import os, math, argparse, torch
 import torch.nn.functional as F
 import torch.nn as nn
