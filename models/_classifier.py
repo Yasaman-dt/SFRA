@@ -1,6 +1,4 @@
 """ Classifier head and layer factory
-
-Hacked together by / Copyright 2020 Ross Wightman
 """
 from collections import OrderedDict
 from functools import partial

@@ -28,7 +28,6 @@ from timm.data import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
 from timm.layers import PatchEmbed, Mlp, DropPath, to_2tuple, to_ntuple, trunc_normal_, \
     _assert, use_fused_attn, resize_rel_pos_bias_table, resample_patch_embed, ndgrid
 
-# NOTE: import method 
 from ._classifier import ClassifierHead, create_classifier
 # import models._classifier
 
@@ -39,7 +38,6 @@ from timm.models._manipulate import checkpoint_seq, named_apply
 from timm.models._registry import generate_default_cfgs, register_model, register_model_deprecations
 from timm.models.vision_transformer import get_init_weights_vit
 
-# NOTE: slight modification
 __all__ = ['SwinTransformer', "swin_tiny_patch4_window7_224"]  # model_registry will add each entrypoint fn to this
 
 _logger = logging.getLogger(__name__)
