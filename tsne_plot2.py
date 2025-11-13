@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 t-SNE of real samples: pre-FC embeddings vs. post-FC probabilities.
 
