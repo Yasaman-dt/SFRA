@@ -1,34 +1,47 @@
+Python 3.10.13
+
+conda create -y -p /projets/Zdehghani/torch_env python=3.10
 conda activate /projets/Zdehghani/torch_env
+python -m pip install -r requirements.txt
+
 
 Train the ORIGINAL model from scratch:
-CUDA_VISIBLE_DEVICES=2 python main.py  --method pass  --dataset_name tiny_imagenet  --model_name vit-b-16  --train_from_scratch   --use_pretrained
+CUDA_VISIBLE_DEVICES=2 python main.py  --method pass  --dataset_name tiny_imagenet  --model_name swin-t  --train_from_scratch   --use_pretrained
 
 
+single_class:
 Retrain-from-scratch baseline without the forget class:
-CUDA_VISIBLE_DEVICES=1 python main.py  --classes "0,1,2,3,4,5,6,7,8,9"   --method pass  --dataset_name cifar10  	--model_name resnet18    --retrain_from_scratch		--use_pretrained
-CUDA_VISIBLE_DEVICES=1 python main.py  --classes "0,20,40,60,80"   	 --method pass  --dataset_name cifar100  	--model_name vit-b-16    --retrain_from_scratch  	--use_pretrained
-CUDA_VISIBLE_DEVICES=2 python main.py  --classes "160"   	 --method pass  --dataset_name tiny_imagenet  	--model_name resnet18    --retrain_from_scratch		--use_pretrained
+CUDA_VISIBLE_DEVICES=1 python main.py  --classes "0,1,2,3,4,5,6,7,8,9"   --method pass  --dataset_name cifar10  	--model_name resnet18    --retrain_from_scratch
+CUDA_VISIBLE_DEVICES=3 python main.py  --classes "60,80"   	 --method pass  --dataset_name cifar100  	--model_name vit-b-16    --retrain_from_scratch  	--use_pretrained
+CUDA_VISIBLE_DEVICES=2 python main.py  --classes "0,40,80,120,160"   	 --method pass  --dataset_name tiny_imagenet  	--model_name swin-t    --retrain_from_scratch		--use_pretrained
 
+multi_class:
+CUDA_VISIBLE_DEVICES=3 python main.py  --forget_class 3   --method pass  --dataset_name cifar10  	--model_name vit-s-16    --retrain_from_scratch
 
-
+single_class:
 Run unlearning method to forget a class: 
-CUDA_VISIBLE_DEVICES=2 python main.py  --dataset_name cifar10  		--classes "0,1,2,3,4,5,6,7,8,9" --model_name resnet18  --method neggrad_plus    --unlearn_rate 5e-1  --description lr_5e-1
-CUDA_VISIBLE_DEVICES=3 python main.py  --dataset_name cifar100 		--classes "0,20,40,60,80" 	--model_name resnet18  --method delete    --unlearn_rate 1e-3  --description lr_1e-3
-CUDA_VISIBLE_DEVICES=1 python main.py  --dataset_name tiny_imagenet  	--classes "0,40,80,120,160" 	--model_name resnet18  --method gradient_ascent    --unlearn_rate 5e-5  --description lr_5e-5
+CUDA_VISIBLE_DEVICES=1 python main.py  --dataset_name cifar10  		--classes "0,1,2,3,4,5,6,7,8,9" --model_name  vit-b-16  --method l2ul_adv    --unlearn_rate 2e-6  --description lr_2e-6  --batch_size 128
+CUDA_VISIBLE_DEVICES=0 python main.py  --dataset_name cifar100 		--classes "0,20,40,60,80" 	--model_name vit-b-16 --method boundary_shrink    	--unlearn_rate 1e-3  --description lr_1e-3  
+CUDA_VISIBLE_DEVICES=0 python main.py  --dataset_name tiny_imagenet  	--classes "0,40,80,120,160" 	--model_name swin-t  --method boundary_shrink    --unlearn_rate 1e-2  --description lr_1e-2
+
+multi_class:
+CUDA_VISIBLE_DEVICES=0 python main.py  --dataset_name cifar100 		--forget_class 2 	--model_name resnet18   --method random_label  --retain_data True  --unlearn_rate 1e-4  --description lr_1e-4
 
 
 wood_fisher, salun, bad_teacher:
-CUDA_VISIBLE_DEVICES=2 python main.py  --dataset_name cifar10  		--classes "0,1,2,3,4,5,6,7,8,9" --model_name resnet18  --retain_data True --method bad_teacher  --unlearn_rate 1e-5  --description lr_1e-5
-CUDA_VISIBLE_DEVICES=2 python main.py  --dataset_name cifar100  	--classes "80" 	--model_name resnet18  --retain_data True --method bad_teacher  --unlearn_rate 1e-3  --description lr_1e-3
-CUDA_VISIBLE_DEVICES=3 python main.py  --dataset_name tiny_imagenet  	--classes "0,40,80,120,160" 	--model_name vgg16  --retain_data True --method salun  --unlearn_rate 1e-5  --description lr_1e-5
-
-
+CUDA_VISIBLE_DEVICES=0 python main.py  --dataset_name cifar10  		--classes "0,1,2,3,4,5,6,7,8,9" --model_name swin-t  --retain_data True --method random_label  --unlearn_rate 1e-2 --description lr_1e-2
+CUDA_VISIBLE_DEVICES=1 python main.py  --dataset_name cifar10  		--classes "0,1,2,3,4,5,6,7,8,9" --model_name resnet18  --retain_data True --method wood_fisher   --alpha        6.0     --description lr_6.0  --unlearn_rate 6.0
+CUDA_VISIBLE_DEVICES=3 python main.py  --dataset_name cifar100  	--classes "0,20,40,60,80" 	--model_name resnet18  --retain_data True --method salun  --unlearn_rate 1e-1  --description lr_1e-1
+CUDA_VISIBLE_DEVICES=0 python main.py  --dataset_name cifar100  	--classes "0,20,40,60,80" 	--model_name resnet18  --retain_data True --method wood_fisher   --alpha        25.0     --description lr_25.0  --unlearn_rate 25.0
+CUDA_VISIBLE_DEVICES=1 python main.py  --dataset_name tiny_imagenet  	--classes "0,40,80,120,160" 	--model_name resnet18  --retain_data True --method salun  --unlearn_rate 1e-3  --description lr_1e-3
+CUDA_VISIBLE_DEVICES=1 python main.py  --dataset_name tiny_imagenet  	--classes "0,40,80,120,160" 	--model_name resnet18  --retain_data True --method wood_fisher  --alpha        5.0     --description lr_5.0  --unlearn_rate 5.0
 CUDA_VISIBLE_DEVICES=2 python test_original_model.py --datasets cifar10 	--model-name resnet18	--forget-classes 0 1 2 3 4 5 6 7 8 9
-CUDA_VISIBLE_DEVICES=0 python test_original_model.py --datasets cifar100 	--model-name resnet18	--forget-classes 0 20 40 60 80
-CUDA_VISIBLE_DEVICES=2 python test_original_model.py --datasets tiny_imagenet 	--model-name resnet18  	--forget-classes 0 40 80 120 160
+CUDA_VISIBLE_DEVICES=2 python test_original_model.py --datasets cifar100 	--model-name swin-t	--forget-classes 0 20 40 60 80
+CUDA_VISIBLE_DEVICES=2 python test_original_model.py --datasets tiny_imagenet 	--model-name swin-t  	--forget-classes 0 40 80 120 160
 
 
-
+CUDA_VISIBLE_DEVICES=0 python test_original_model.py --datasets cifar10 	--model-name resnet18	--forget-set 1 6
+CUDA_VISIBLE_DEVICES=3 python test_original_model.py --datasets cifar100 	--model-name resnet18	--forget-set 25 58
 
 # Unlearn on CIFAR10
 # Most of the methods here are configured with their recommended (or best) settings. If the performance is not as expected, you may need to adjust the parameters as described in the Supplementary Material.
@@ -39,7 +52,7 @@ python main.py  --method boundary_shrink --unlearn_rate 5e-5  --description lr_5
 python main.py  --method boundary_expand --unlearn_rate 8e-4  --description lr_8e-4
 python main.py  --method delete          --unlearn_rate 1e-3  --description lr_1e-3
 python main.py  --method fisher          --alpha        1e-7  --description lr_1e-7
-python main.py  --method wood_fisher     --alpha        1     --description lr_1
+python main.py  --method wood_fisher     --alpha        1    --unlearn_rate 1 --description lr_1
 python main.py  --method l2ul_adv        --unlearn_rate 1e-5  --description lr_1e-5
 python main.py  --method l2ul_imp        --unlearn_rate 1e-5  --description lr_1e-5
 python main.py  --method scrub           --unlearn_rate 1e-4  --description lr_1e-4
@@ -48,21 +61,91 @@ python main.py  --method neggrad_plus    --unlearn_rate 1e-1  --description lr_1
 for s in $(screen -ls | grep Detached | awk '{print $1}'); do screen -S "$s" -X quit; done
 
 
-CUDA_VISIBLE_DEVICES=2 python revival.py  				--method bad_teacher  --model_name resnet18 	--dataset cifar10 --lr 5e-1  --epochs 200  --forget 0,1,2,3,4,5,6,7,8,9  --cpr 500 --tpr 500000
 CUDA_VISIBLE_DEVICES=3 python revival_resnet18_beforelastcnv.py  	--method bad_teacher  --model_name resnet18 	--dataset cifar10 --lr 1e-3  --epochs 200  --forget 0,1,2,3,4,5,6,7,8,9  --cpr 500 --tpr 500000
 CUDA_VISIBLE_DEVICES=3 python revival_vgg16_beforelastcnv.py  		--method bad_teacher  --model_name resnet18 	--dataset cifar10 --lr 1e-4  --epochs 200  --forget 0,1,2,3,4,5,6,7,8,9  --cpr 500 --tpr 500000
 
 
-CUDA_VISIBLE_DEVICES=0 python revival.py 	--method neggrad_plus  --model_name vit-b-16 	--dataset cifar10 		--lr 5e-1  	--epochs 200  --forget 2,4  	--cpr 500 --tpr 500000
-CUDA_VISIBLE_DEVICES=2 python revival.py 	--method gradient_ascent  --model_name resnet18 	--dataset cifar100 		--lr 5e-5  	--epochs 200  --forget 0  		--cpr 55 --tpr 50000
-CUDA_VISIBLE_DEVICES=2 python revival.py 	--method bad_teacher  --model_name resnet18 	--dataset tiny_imagenet 	--lr 5e-1  	--epochs 200  --forget 0,40,80,120,160  	--cpr 500 --tpr 500000
+CUDA_VISIBLE_DEVICES=2 python revival_singleclass.py 	--method gradient_ascent  --model_name resnet18 --dataset cifar10	    --lr 1e-2 --epochs 500  --forget 0    --retain_per_class 500   --forget_per_class 500   --tpr 500000
+CUDA_VISIBLE_DEVICES=1 python revival_singleclass.py 	--method bad_teacher  --model_name resnet18 --dataset cifar100	    --lr 1e-3 --epochs 500  --forget 0,20,40,60,80    --retain_per_class 100   --forget_per_class 100   --tpr 100000
+CUDA_VISIBLE_DEVICES=1 python revival_singleclass.py 	--method finetune  	--model_name vit-b-16 	--dataset tiny_imagenet 	--lr 5e-2 	--epochs 200  --forget 0,40,80,120,160  --retain_per_class 25   --forget_per_class 25 	--tpr 50000
 
 
-CUDA_VISIBLE_DEVICES=2 python revival.py  --method retrained --model_name resnet18 --dataset cifar10 	 --epochs 200  --forget 0,1,2,3,4,5,6,7,8,9  	--cpr 500 --tpr 500000
-CUDA_VISIBLE_DEVICES=0 python revival.py  --method retrained --model_name vgg16 --dataset cifar100 	 --epochs 200  --forget 0  		--cpr 55 --tpr 500000
-CUDA_VISIBLE_DEVICES=2 python revival.py  --method retrained --model_name vgg16 --dataset tiny_imagenet  --epochs 200  --forget 0,40,80,120,160  	--cpr 500 --tpr 500000
 
-CUDA_VISIBLE_DEVICES=1 python eval_unlearned_model.py   --dataset_name tiny_imagenet  --model_name resnet18   --method original   --forget_id 0   --unlearn_rate 0.1  --exps_dir ~/classification/exps   --batch_size 256   --num_workers 8
+CUDA_VISIBLE_DEVICES=2 python revival_singleclass.py  --method retrained --model_name vit-s-16 --dataset cifar10 	 --epochs 500  --forget 0  	--retain_per_class 500   --forget_per_class 500   --tpr 500000
+CUDA_VISIBLE_DEVICES=0 python revival_singleclass.py  --method retrained --model_name resnet18 --dataset cifar100 	 --epochs 200  --forget 0,20,40,60,80  	--retain_per_class 100   --forget_per_class 100   --tpr 100000
+CUDA_VISIBLE_DEVICES=0 python revival_singleclass.py  --method retrained --model_name vgg16 --dataset tiny_imagenet  --epochs 200  --forget 0,40,80,120,160  --retain_per_class 25   --forget_per_class 25 	--tpr 50000
+
+
+
+CUDA_VISIBLE_DEVICES=0 python revival_multiclass.py  --dataset cifar10   --model resnet18   --method finetune  --lr 2e-2   --epochs 200   --forget 1,6   --tpr 500000   --retain_per_class 500   --forget_per_class 500
+CUDA_VISIBLE_DEVICES=0 python revival_multiclass.py  --dataset cifar100   --model resnet18   --method finetune --lr 2e-2   --epochs 200   --forget 25,58   --tpr 50000   --retain_per_class 200   --forget_per_class 200
+
+CUDA_VISIBLE_DEVICES=1 python eval_unlearned_model.py   --dataset_name cifar10  --model_name resnet18  --method boundary_shrink   --forget_id 0 --unlearn_rate 2e-05  --exps_dir ~/classification/exps   --batch_size 256   --num_workers 8
+CUDA_VISIBLE_DEVICES=3 python eval_unlearned_model.py   --dataset_name cifar100  --model_name renset18   --method retrained   --forget_set 25 58    --exps_dir ~/classification/exps   --batch_size 128   --num_workers 8
+
+
+CUDA_VISIBLE_DEVICES=0 python revival_singleclass_threshold.py  --dataset cifar10  --model vit-b-16   --method random_label   --forget 0   --lr 1e-3 --cpr 500  --forget_threshold 0.50   --max_tries 200   --epochs 200
+CUDA_VISIBLE_DEVICES=0 python revival_singleclass.py 	--method delete  --model_name resnet18 	--dataset cifar10 --lr 1e-3  	--epochs 1000  --forget 0  --retain_per_class 50 --forget_per_class 50 --tpr 500000
+CUDA_VISIBLE_DEVICES=0 python revival_singleclass.py 	--method random_label  --model_name vit-b-16 	--dataset cifar10 --lr 1e-3  	--epochs 1000  --forget 0  --retain_per_class 200 --forget_per_class 200 --tpr 500000
+
+CUDA_VISIBLE_DEVICES=0 python build_synth_pool.py  --dataset cifar10 --model_name resnet18 --method delete  --per_class 500000   --forget_class 9   --lr 1e-3
+CUDA_VISIBLE_DEVICES=1 python revival_singleclass_ablation.py    --pool_path synth_pools/cifar10_resnet18_delete_fg9_lr0.001_pool_500000perclass_10cls_emb512_seed0.pt  --pool_take_per_class 500000  --dataset cifar10   --model_name resnet18   --method delete   --retain_per_class 400   --forget_per_class 400  --lr 0.001  --forget 9
+
+CUDA_VISIBLE_DEVICES=0 python build_synth_pool.py  --dataset cifar10 --model_name resnet18 --method salun  --per_class 500000   --forget_class 9   --lr 1e-3
+CUDA_VISIBLE_DEVICES=1 python revival_singleclass_ablation.py    --pool_path synth_pools/cifar10_resnet18_salun_fg9_lr0.001_pool_500000perclass_10cls_emb512_seed0.pt  --pool_take_per_class 500000  --dataset cifar10   --model_name resnet18   --method salun   --retain_per_class 400   --forget_per_class 400  --lr 0.001  --forget 9
+ 
+
+CUDA_VISIBLE_DEVICES=0 python build_synth_pool.py  --dataset cifar10 --model_name resnet18 --method random_label  --per_class 500000   --forget_class 9   --lr 1e-7
+CUDA_VISIBLE_DEVICES=3 python revival_singleclass_ablation.py    --pool_path synth_pools/cifar10_resnet18_random_label_fg9_lr1e-07_pool_500000perclass_10cls_emb512_seed0.pt  --pool_take_per_class 500000  --dataset cifar10   --model_name resnet18   --method random_label   --retain_per_class 300   --forget_per_class 300  --lr 1e-07  --forget 9  --epochs 2000
+
+CUDA_VISIBLE_DEVICES=0 python build_synth_pool.py  --dataset cifar10 --model_name resnet18 --method bad_teacher  --per_class 500000   --forget_class 9   --lr 1e-3
+CUDA_VISIBLE_DEVICES=2 python revival_singleclass_ablation.py    --pool_path synth_pools/cifar10_resnet18_bad_teacher_fg9_lr0.001_pool_500000perclass_10cls_emb512_seed0.pt  --pool_take_per_class 500000  --dataset cifar10   --model_name resnet18   --method bad_teacher   --retain_per_class 400   --forget_per_class 400  --lr 1e-03  --forget 9
+
+CUDA_VISIBLE_DEVICES=2 python build_synth_pool.py  --dataset cifar10 --model_name resnet18 --method gradient_ascent  --per_class 500000   --forget_class 9   --lr 5e-5
+CUDA_VISIBLE_DEVICES=2 python revival_singleclass_ablation.py    --pool_path synth_pools/cifar10_resnet18_gradient_ascent_fg9_lr5e-05_pool_500000perclass_10cls_emb512_seed0.pt  --pool_take_per_class 500000  --dataset cifar10   --model_name resnet18   --method gradient_ascent   --retain_per_class 300   --forget_per_class 300  --lr 5e-05  --forget 9
+
+
+CUDA_VISIBLE_DEVICES=0 python build_synth_pool.py  --dataset cifar10 --model_name vit-b-16 --method random_label  --per_class 500000   --forget_class 9   --lr 1e-3
+CUDA_VISIBLE_DEVICES=2 python revival_singleclass_ablation.py    --pool_path synth_pools/cifar10_vit-b-16_random_label_fg9_lr0.001_pool_500000perclass_10cls_emb768_seed0.pt  --pool_take_per_class 500000  --dataset cifar10   --model_name vit-b-16   --method random_label   --retain_per_class 300   --forget_per_class 300  --lr 0.001  --forget 9
+
+CUDA_VISIBLE_DEVICES=0 python build_synth_pool.py  --dataset cifar10 --model_name vit-b-16 --method delete  --per_class 500000   --forget_class 9   --lr 1e-3
+CUDA_VISIBLE_DEVICES=3 python revival_singleclass_ablation.py    --pool_path synth_pools/cifar10_vit-b-16_delete_fg9_lr0.001_pool_500000perclass_10cls_emb768_seed0.pt  --pool_take_per_class 500000  --dataset cifar10   --model_name vit-b-16   --method delete   --retain_per_class 300   --forget_per_class 300  --lr 0.001  --forget 9
+
+CUDA_VISIBLE_DEVICES=0 python build_synth_pool.py  --dataset cifar10 --model_name vit-b-16 --method gradient_ascent  --per_class 500000   --forget_class 9   --lr 1e-5
+CUDA_VISIBLE_DEVICES=1 python revival_singleclass_ablation.py    --pool_path synth_pools/cifar10_vit-b-16_gradient_ascent_fg9_lr1e-05_pool_500000perclass_10cls_emb768_seed0.pt  --pool_take_per_class 500000  --dataset cifar10   --model_name vit-b-16   --method gradient_ascent   --retain_per_class 300   --forget_per_class 300  --lr 0.00001  --forget 9
+
+CUDA_VISIBLE_DEVICES=0 python build_synth_pool.py  --dataset cifar10 --model_name vit-b-16 --method salun  --per_class 500000   --forget_class 9   --lr 1e-3
+CUDA_VISIBLE_DEVICES=1 python revival_singleclass_ablation.py    --pool_path synth_pools/cifar10_vit-b-16_salun_fg9_lr0.001_pool_500000perclass_10cls_emb768_seed0.pt  --pool_take_per_class 500000  --dataset cifar10   --model_name vit-b-16   --method salun   --retain_per_class 300   --forget_per_class 300  --lr 0.001  --forget 9
+
+CUDA_VISIBLE_DEVICES=0 python build_synth_pool.py  --dataset cifar10 --model_name vit-b-16 --method bad_teacher  --per_class 500000   --forget_class 9   --lr 1e-3
+CUDA_VISIBLE_DEVICES=2 python revival_singleclass_ablation.py    --pool_path synth_pools/cifar10_vit-b-16_bad_teacher_fg9_lr0.001_pool_500000perclass_10cls_emb768_seed0.pt  --pool_take_per_class 500000  --dataset cifar10   --model_name vit-b-16   --method bad_teacher   --retain_per_class 300   --forget_per_class 300  --lr 0.001  --forget 9
+
+
+
+CUDA_VISIBLE_DEVICES=0 python tsne_plot1.py --dataset cifar10 --model_name resnet18  --method neggrad_plus --forget_class 7 --lr 0.5  --split test --autoname
+CUDA_VISIBLE_DEVICES=1 python tsne_plot2.py   --dataset cifar10 --model_name resnet18   --method badteacher --forget_class 7 --lr 0.001  --forget "7"   --split test --max_per_class 500 --perplexity 30   --autoname
+CUDA_VISIBLE_DEVICES=2 python tsne_framework.py   --dataset cifar10 --model_name vit-b-16   --method l2ul_adv --forget_class 0 --lr 0.00001    --split test   --autoname
+
+
+CUDA_VISIBLE_DEVICES=2 python build_synth_pool.py  --dataset cifar10 --model_name resnet18 --method scrub  --per_class 500000   --forget_class 7   --lr 1e-3
+CUDA_VISIBLE_DEVICES=2 python revival_singleclass_ablation.py    --pool_path synth_pools/cifar10_resnet18_delete_fg7_lr0.001_pool_500000perclass_10cls_emb512_seed0.pt  --pool_take_per_class 500000  --dataset cifar10   --model_name resnet18   --method delete   --retain_per_class 500   --forget_per_class 500  --lr 0.001  --forget 7   --save_synth_dir results/delete/synth_pt  --save_real_dir  results/delete/real_pt  --save_ckpt_dir results/delete/
+CUDA_VISIBLE_DEVICES=2 python tsne_framework.py --dataset cifar10 --model_name resnet18  --method delete --forget_class 7 --lr 0.001  --split test --autoname
+
+
+CUDA_VISIBLE_DEVICES=2 python build_synth_pool.py  --dataset cifar10 --model_name resnet18 --method bad_teacher  --per_class 500000   --forget_class 7   --lr 1e-3
+CUDA_VISIBLE_DEVICES=2 python revival_singleclass_ablation.py    --pool_path synth_pools/cifar10_resnet18_bad_teacher_fg7_lr0.001_pool_500000perclass_10cls_emb512_seed0.pt  --pool_take_per_class 500000  --dataset cifar10   --model_name resnet18   --method bad_teacher   --retain_per_class 500   --forget_per_class 500  --lr 0.001  --forget 7   --save_synth_dir results/bad_teacher/synth_pt  --save_real_dir  results/bad_teacher/real_pt  --save_ckpt_dir results/bad_teacher/
+CUDA_VISIBLE_DEVICES=2 python tsne_real_vs_synth.py  --real_pt  results/bad_teacher/real_pt/real_fg7.pt  --synth_pt results/bad_teacher/synth_pt/synth_fg7.pt  --out      tsne_fg7.png   --per_class_real 500  --per_class_synth 500
+
+
+CUDA_VISIBLE_DEVICES=0 python build_synth_pool.py  --dataset cifar10 --model_name resnet18 --method neggrad_plus  --per_class 500000   --forget_class 7   --lr 5e-1
+CUDA_VISIBLE_DEVICES=2 python revival_singleclass_ablation.py    --pool_path synth_pools/cifar10_resnet18_neggrad_plus_fg7_lr0.5_pool_500000perclass_10cls_emb512_seed0.pt  --pool_take_per_class 500000  --dataset cifar10   --model_name resnet18   --method neggrad_plus   --retain_per_class 500   --forget_per_class 500  --lr 0.5  --forget 7   --save_synth_dir results/neggrad_plus/synth_pt  --save_real_dir  results/neggrad_plus/real_pt  --save_ckpt_dir results/neggrad_plus/
+CUDA_VISIBLE_DEVICES=2 python tsne_real_vs_synth.py  --real_pt  results/neggrad_plus/real_pt/real_fg7.pt  --synth_pt results/neggrad_plus/synth_pt/synth_fg7.pt  --out      tsne_fg7.png   --per_class_real 500  --per_class_synth 500
+
+
+CUDA_VISIBLE_DEVICES=2 python build_synth_pool.py  --dataset cifar10 --model_name vit-b-16 --method l2ul_adv  --per_class 500000   --forget_class 8   --lr 1e-5
+CUDA_VISIBLE_DEVICES=2 python revival_singleclass_ablation.py    --pool_path synth_pools/cifar10_vit-b-16_l2ul_adv_fg0_lr1e-05_pool_500000perclass_10cls_emb768_seed0.pt  --pool_take_per_class 500000  --dataset cifar10   --model_name vit-b-16   --method l2ul_adv   --retain_per_class 500   --forget_per_class 500  --lr 1e-5  --forget 0  --save_synth_dir results/l2ul_adv/synth_pt  --save_real_dir  results/l2ul_adv/real_pt  --save_ckpt_dir results/l2ul_adv/
+CUDA_VISIBLE_DEVICES=2 python tsne_real_vs_synth.py  --real_pt  results/l2ul_adv/real_pt/real_fg8.pt  --synth_pt results/l2ul_adv/synth_pt/synth_fg8.pt  --out      tsne_fg8.png   --per_class_real 500  --per_class_synth 500
+
 
 
 model_name:  resnet18, vit-s-16, vit-b-16, swin-t, vgg16

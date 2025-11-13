@@ -737,7 +737,7 @@ def render_table_for(ds: str, mdl: str, df_src: pd.DataFrame):
         agg_cols = agg_cols + ["RS2"]
     g = df.groupby(["method","phase"], dropna=False)[agg_cols].agg(["mean"])
     
-    # -------- NEW: collect RS means per method (from revival) and rank them --------
+    # -------- collect RS means per method (from revival) and rank them --------
     rs_by_method = {}
     if has_rs:
         for m in df["method"].unique():
@@ -939,7 +939,7 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
     extras  = sorted(set(df["method"].unique()) - set(present))
     method_list = present + extras
 
-    # ---------- NEW: Pass 1 — collect RS means per dataset & method and rank ----------
+    # ---------- Pass 1 — collect RS means per dataset & method and rank ----------
     rs_per_ds = { _latex_dataset_name(ds): {} for ds in datasets }
     for ds in datasets:
         dsl = _latex_dataset_name(ds)
@@ -1051,7 +1051,7 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
 
     mdl_latex = _latex_model_name(mdl)
 
-    # ---- NEW: dataset suffix for label/filename (e.g., c10_c100) ----
+    # ---- dataset suffix for label/filename (e.g., c10_c100) ----
     ds_short = "_".join(["c10" if d=="cifar10" else "c100" if d=="cifar100" else slugify(d) for d in datasets])
 
     if len(datasets) == 1:
@@ -1063,7 +1063,7 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
                 r"\underline{underlined}."
                 )
 
-    # ---- CHANGED: unique label per dataset selection ----
+    # ---- unique label per dataset selection ----
     label   = f"tab:{slugify(mdl_latex)}_multi_class"
 
     latex = wrap_with_resizebox(latex, caption, label, star=True, width=r"\columnwidth")
