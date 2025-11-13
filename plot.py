@@ -88,12 +88,12 @@ def pretty_linear_x_kmb(ax):
 
     
 matplotlib.rcParams.update({
-    'axes.labelsize': 19,
-    'font.size': 14,
-    'legend.fontsize': 17,
-    'legend.title_fontsize': 17,
-    'xtick.labelsize': 18,
-    'ytick.labelsize': 18,
+    'axes.labelsize': 20,
+    'font.size': 15,
+    'legend.fontsize': 18,
+    'legend.title_fontsize': 18,
+    'xtick.labelsize': 19,
+    'ytick.labelsize': 19,
     'text.color': 'black',        
     'legend.labelcolor': 'black', 
     })
