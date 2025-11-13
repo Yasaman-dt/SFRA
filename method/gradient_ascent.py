@@ -21,7 +21,6 @@ def gradient_ascent(ori_model, train_forget_loader,
                     logger, console_handler,
                     loader_dict, experiment_path,
                     eval_opt = eval_opt, disable_bn = False,
-                    ##############salun
                     with_l1=False, no_l1_epochs=float("inf"), alpha=0,
                     early_stop_patience=30,
                     ):

@@ -46,7 +46,7 @@ def boundary_expand(ori_model, train_forget_loader,
     unlearn_model = copy.deepcopy(ori_model)
     unlearn_model.fc = nn.Linear(featuer_dim, num_classes + 1)
     init_params(unlearn_model.fc)
-    unlearn_model = unlearn_model.to("cuda")    # 将fc放在cuda上
+    unlearn_model = unlearn_model.to("cuda")   
 
     for name, params in ori_model.fc.named_parameters():
         print(f"{name} has been loaded")
