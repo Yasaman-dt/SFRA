@@ -135,7 +135,7 @@ def random_label(   ori_model, train_forget_loader, num_classes,
     # gather_and_write_metrics_csv(
     #     csv_path=str(results_csv),
     #     model=unlearn_model,
-    #     method="boundary_shrink",
+    #     method="random_label",
     #     forget_class=forget_class,                   
     #     train_retain_loader=loader_dict["train_remain"],
     #     train_forget_loader=loader_dict["train_forget"],

@@ -48,7 +48,7 @@ def PM(logit, target):#[128,10], [128]
         eye = torch.eye(10).cuda() #[10, 10]
     else:
         eye = torch.eye(11).cuda()
-    # tmp1 = eye[target]#转one-hot
+    # tmp1 = eye[target]#one-hot
     # tmp2 = logit.softmax(1)#【128，10】
     # tmp3 = tmp1*tmp2
     # tmp3 = tmp3.sum(1)
