@@ -3,9 +3,10 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
-from typing import List, Dict, Tuple
+from typing import List, Tuple
 import matplotlib as mpl
 import re
+import math
 
 mpl.rcParams.update({
     "font.size": 5,        
@@ -106,7 +107,6 @@ def _get_original_forget_acc(df: pd.DataFrame) -> float:
         d0 = df[(df["method"] == "original")]
     return float(d0["test_forget_acc"].mean()) if not d0.empty else np.nan
 
-import math
 
 def two_line(name: str) -> str:
     """Split a label into ~two equal lines (uses first space if only two words)."""

@@ -5,16 +5,12 @@ import seaborn as sns
 import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
-from matplotlib.ticker import LogFormatterSciNotation, MaxNLocator, FormatStrFormatter
 from matplotlib.lines import Line2D
-from matplotlib.ticker import FuncFormatter, LogLocator, NullFormatter
-from matplotlib.ticker import NullLocator, ScalarFormatter, MultipleLocator
+from matplotlib.ticker import FuncFormatter, LogLocator, NullFormatter, MaxNLocator
+from matplotlib.ticker import NullLocator, ScalarFormatter, MultipleLocator, FixedLocator
 import matplotlib as mpl
-from matplotlib.ticker import FixedLocator, FuncFormatter, MaxNLocator
 
-
-       
-    
+           
 sns.set_theme(style="whitegrid", rc={
     "font.family": "serif",
     "font.serif": ["Times New Roman", "Times", "Nimbus Roman No9 L"],
@@ -105,6 +101,8 @@ plt.rc('axes', edgecolor='black')
 plt.rc('legend', labelcolor='black')
 
 # ===================== CONFIG =====================
+BASE_DIR = r"C:\Users\AT56170\Desktop\Codes\Machine Unlearning - Classification\class_unlearning"
+
 method_dirs_m = [
     r"diff_M/delete",
     r"diff_M/random_label",
@@ -121,6 +119,10 @@ method_dirs_n = [
     r"diff_N/salun",
     #r"diff_N/boundary_shrink",
 ]
+
+method_dirs_m = [os.path.join(BASE_DIR, d) for d in method_dirs_m]
+method_dirs_n = [os.path.join(BASE_DIR, d) for d in method_dirs_n]
+
 csv_glob_pattern = "*.csv"
 
 METHOD_MAP = {
@@ -403,7 +405,6 @@ def _legend_methods_only(ax, methods, palette):
         handles.append(h); labels.append(m)
     ax.legend(handles, labels, title="Method", loc="best", frameon=True)
 
-from matplotlib.lines import Line2D
 
 # --- replace your legends with these helpers ---
 
@@ -458,8 +459,7 @@ def add_combined_entries(ax, methods, palette,
             labels.append(f"{m} — {'Retain' if 'Retain' in s else 'Forget'}")
     ax.legend(handles, labels, title="Method × Metric", loc="best", frameon=True)
 
-import math
-import re
+
 
 # 1) Hard rules per architecture name (case-insensitive substrings or regex)
 ARCH_YMIN_RULES = [
