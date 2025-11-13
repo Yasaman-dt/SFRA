@@ -3,6 +3,7 @@ import re
 import numpy as np
 from pathlib import Path
 from typing import Optional, List
+from itertools import product
 
 # ----------------- Config -----------------
 base_dir = Path("C:/Users/AT56170/Desktop/Codes/Machine Unlearning - Classification/class_unlearning/results_multi_class/")
@@ -115,9 +116,7 @@ def compute_rs_for_revival1(df_rev: pd.DataFrame, df_un: Optional[pd.DataFrame])
     m["RS1"] = rs
     return m
 
-from typing import Optional
-import pandas as pd
-import numpy as np
+
 def slugify(s: Optional[str]) -> str:
     """Safe tag for filenames/labels: keep letters/numbers/dashes; replace the rest with '_'."""
     if s is None:
@@ -852,7 +851,6 @@ def render_table_for(ds: str, mdl: str, df_src: pd.DataFrame):
 
 # ---- choose the models you want, and the dataset (here: cifar10) ----
    
-from itertools import product
 for ds, mdl in product(["cifar10", "cifar100", "tiny_imagenet"], MODELS):
     render_table_for(ds, mdl, df_all)
     

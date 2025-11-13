@@ -26,13 +26,13 @@ def _fmt_kmb(x, pos=None):
         return "0"
     ax = abs(x)
     if ax >= 1e9:
-        s = f"{x/1e9:g}B"
+        s = f"${x/1e9:g}B$"
     elif ax >= 1e6:
-        s = f"{x/1e6:g}M"
+        s = f"${x/1e6:g}M$"
     elif ax >= 1e3:
-        s = f"{x/1e3:g}K"
+        s = f"${x/1e3:g}K$"
     elif ax >= 1:
-        s = f"{int(x):,}"
+        s = f"${int(x):,}$"
     else:
         s = f"{x:.3g}"
     return s
@@ -92,12 +92,12 @@ def arch_ytick_step(arch: str, default: int = 10) -> int:
     return default      # fallback for others
     
 matplotlib.rcParams.update({
-    'axes.labelsize': 20,
+    'axes.labelsize': 24,
     'font.size': 15,
     'legend.fontsize': 18,
     'legend.title_fontsize': 18,
-    'xtick.labelsize': 19,
-    'ytick.labelsize': 19,
+    'xtick.labelsize': 20,
+    'ytick.labelsize': 20,
     'text.color': 'black',        
     'legend.labelcolor': 'black', 
     })
