@@ -24,11 +24,15 @@ Tested with:
 - **Python:** 3.10.13
 
 Create and activate environment:
+```bash
 conda create  -y -n torch_env python=3.10
 conda activate torch_env
+```
 
 Install dependencies:
+```bash
 python -m pip install -r requirements.txt
+```
 
 ---
 
