@@ -21,16 +21,13 @@ It supports:
 ## 1. Environment Setup
 
 Tested with:
-
 - **Python:** 3.10.13
 
-Recommended setup with conda:
-
-# Create and activate environment
+Create and activate environment:
 conda create  -y -n torch_env python=3.10
 conda activate torch_env
 
-# Install dependencies
+Install dependencies:
 python -m pip install -r requirements.txt
 
 ---
