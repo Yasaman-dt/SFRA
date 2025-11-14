@@ -23,12 +23,12 @@ CUDA_VISIBLE_DEVICES=0 python main.py  --forget_class 3   --method pass  --datas
 
 single_class:
 Run unlearning method to forget a class: 
-
 CUDA_VISIBLE_DEVICES=0 python main.py  --dataset_name cifar10  		--classes "0,1,2,3,4,5,6,7,8,9" --model_name resnet18  --retain_data True --method bad_teacher  	--unlearn_rate 1e-3 	--description lr_1e-3
 CUDA_VISIBLE_DEVICES=0 python main.py  --dataset_name cifar100  	--classes "0,20,40,60,80" 	--model_name resnet18  --retain_data True --method bad_teacher  	--unlearn_rate 1e-3  	--description lr_1e-3
 CUDA_VISIBLE_DEVICES=0 python main.py  --dataset_name tiny_imagenet  	--classes "0,40,80,120,160" 	--model_name resnet18  --retain_data True --method bad_teacher  	--unlearn_rate 1e-3  	--description lr_1e-3
 
 multi_class:
+Run unlearning method to forget 2 classes based on the  config:
 CUDA_VISIBLE_DEVICES=0 python main.py  --dataset_name cifar100 		--forget_class 2 	--model_name resnet18   --method bad_teacher  --retain_data True  --unlearn_rate 1e-3  --description lr_1e-3
 
 
