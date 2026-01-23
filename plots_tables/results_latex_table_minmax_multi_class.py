@@ -823,7 +823,7 @@ def render_table_for(ds: str, mdl: str, df_src: pd.DataFrame):
     latex = table_df.to_latex(index=False, escape=False, column_format=column_format)
     
     # change "Phase" header to "Model state" (only the first header hit)
-    latex = latex.replace(" & Phase & ", " & Model state & ", 1)
+    latex = latex.replace(" & Phase & ", " & Model Variant & ", 1)
 
     #latex = inject_rs2_multicolumn(latex, n_metric_cols=len(OUT_METRIC_COLS))
 
@@ -1042,7 +1042,7 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
                               multicolumn_format="c", column_format=column_format)
 
     latex = center_method_phase_headers(latex, dataset_labels)
-    latex = latex.replace(r"\multirow{2}{*}{Phase}", r"\multirow{2}{*}{Model state}")
+    latex = latex.replace(r"\multirow{2}{*}{Phase}", r"\multirow{2}{*}{Model Variant}")
 
     latex = add_group_vertical_bars(latex, datasets)
     latex = add_midrules_between_methods(latex)
@@ -1057,9 +1057,13 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
     else:
         ds_names = ", ".join(_latex_dataset_name(d) for d in datasets[:-1]) + f" and {_latex_dataset_name(datasets[-1])}"
 
-    caption = (f"Class revival results of multi-class unlearning on {ds_names} for {mdl_latex}. In each dataset block, the highest RS is bolded and the second-highest is "
-                r"\underline{underlined}."
-                )
+    caption = (
+        "The results of the proposed class revival applied to multiclass unlearned models on "
+        "CIFAR-10 and CIFAR-100 for ResNet-18. "
+        "For each dataset, \\textbf{bold} indicates the highest RS and "
+        "\\underline{underlined} indicates the second-highest RS."
+    )
+
 
     # ---- unique label per dataset selection ----
     label   = f"tab:{slugify(mdl_latex)}_multi_class"

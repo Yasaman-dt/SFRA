@@ -1037,7 +1037,7 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
                               multicolumn_format="c", column_format=column_format)
 
     latex = center_method_phase_headers(latex, dataset_labels)
-    latex = latex.replace(r"\multirow{2}{*}{Phase}", r"\multirow{2}{*}{Model state}")
+    latex = latex.replace(r"\multirow{2}{*}{Phase}", r"\multirow{2}{*}{Model Variant}")
 
     latex = add_group_vertical_bars(latex, datasets)
     latex = add_midrules_between_methods(latex)
@@ -1053,9 +1053,7 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
         "For retain accuracy $\\mathcal{{A}}^t_r$ and unlearned-model forget accuracy "
         "$\\mathcal{{A}}^t_f$ we report \\emph{{mean}}$\\pm$\\emph{{std}}. "
         "For the revival-model forget accuracy, we report $(\\min,\\max)$ of $\\mathcal{{A}}^t_f$ over all possible forget classes -as specified in the setting-, and "
-        "the RS is based on the maximum revival observed. For each dataset block, \textbf{bold} indicates the highest RS and"
-        r"\underline{underlined}"
-        "indicates the second-highest RS."
+        r"the RS is based on the maximum revival observed. For each dataset block, \textbf{bold} indicates the highest RS and \underline{underlined} indicates the second-highest RS."
     )
     label   = f"tab:{slugify(mdl_latex)}_single_class_all_datasets"
 
