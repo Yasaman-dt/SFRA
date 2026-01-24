@@ -868,7 +868,7 @@ def center_method_phase_headers(latex_src: str, dataset_labels: List[str]) -> st
     ncols = 1 + len(OUT_METRIC_COLS)  # RS + metrics
     group_bits = [rf"\multicolumn{{{ncols}}}{{c}}{{\textbf{{{ds}}}}}" for ds in dataset_labels]
     new_h1 = (
-        r"\multirow{2}{*}{Method} & \multirow{2}{*}{Phase} & "
+        r"\multirow{2}{*}{Unlearning Method} & \multirow{2}{*}{Phase} & "
         + " & ".join(group_bits)
         + r" \\"
     )
@@ -1011,7 +1011,7 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
         rows.append(row_rev)
 
     # ---------- build final DataFrame with MultiIndex columns ----------
-    ordered_cols = [("","Method"), ("","Phase")]
+    ordered_cols = [("","Unlearning Method"), ("","Phase")]
     for dsl in dataset_labels:
         for c in OUT_METRIC_COLS:
             ordered_cols.append((dsl, COL_LABELS[c]))
@@ -1020,11 +1020,11 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
     table_df = pd.DataFrame(rows)
     table_df["Method"] = table_df["Method"].map(_method_label)
 
-    table_df = table_df.rename(columns={"Method": ("","Method"), "Phase": ("","Phase")})
+    table_df = table_df.rename(columns={"Method": ("","Unlearning Method"), "Phase": ("","Phase")})
     table_df.columns = pd.MultiIndex.from_tuples(table_df.columns)
     table_df = table_df[ordered_cols]
 
-    for col in [("","Method"), ("","Phase")]:
+    for col in [("","Unlearning Method"), ("","Phase")]:
         table_df[col] = (table_df[col].astype(str)
                          .str.replace("_", r"\_", regex=False)
                          .str.replace("&", r"\&", regex=False)
