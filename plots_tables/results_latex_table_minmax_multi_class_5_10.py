@@ -375,6 +375,10 @@ def compute_rs_for_revival2(df_rev: pd.DataFrame, df_un: Optional[pd.DataFrame])
     out["RS2"] = (1.0 - retain_drop) * forget_gain
     return out
 
+def get_k_from_setting(s):
+    m = re.search(r"forget(\d+)", str(s))
+    return m.group(1) if m else None
+
 # ===================== FILE DISCOVERY + LOADING =====================
 
 def parse_filename(path: Path):
@@ -568,6 +572,33 @@ def center_method_phase_headers_settings(latex_src: str, group_labels: List[str]
 
     return "\n".join(lines)
 
+def wrap_with_wraptable(
+    latex_src: str,
+    caption: str,
+    label: str,
+    width: str = r"0.5\columnwidth",
+    placement: str = "r",          # r = right, l = left
+    vspace_top: str = r"-0.5\baselineskip",
+    vspace_bottom: str = r"-0.5\baselineskip",
+) -> str:
+    """
+    Wraps a tabular in a wraptable + resizebox(width) + \\small.
+    NOTE: wrapfig package must be loaded in LaTeX: \\usepackage{wrapfig}
+    """
+    top = f"\\vspace{{{vspace_top}}}\n" if vspace_top else ""
+    bot = f"\\vspace{{{vspace_bottom}}}\n" if vspace_bottom else ""
+
+    return (
+        f"\\begin{{wraptable}}{{{placement}}}{{{width}}}\n"
+        f"{top}"
+        f"\\centering\n"
+        f"\\small\n"
+        f"\\caption{{{caption}}}\n"
+        f"\\label{{{label}}}\n"
+        f"\\resizebox{{{width}}}{{!}}{{%\n{latex_src}\n}}\n"
+        f"{bot}"
+        f"\\end{{wraptable}}\n"
+    )
 
 def add_cmidrules_for_groups(latex_src: str, n_groups: int, group_width: int, start_col: int = 3) -> str:
     """
@@ -714,12 +745,22 @@ def render_joint_table_same_dataset(mdl: str, df_src: pd.DataFrame, dataset: str
     mdl_latex = _latex_model_name(mdl)
     ds_latex  = _latex_dataset_name(dataset)
     caption = (
-        f"Multi-class unlearning results on {ds_latex} for {mdl_latex}, comparing 5-class vs 10-class settings. "
+        f"Multi-class unlearning results on {ds_latex} for {mdl_latex} for 5-Classes vs 10-Classes settings. "
         "Within each setting, \\textbf{bold} indicates the highest RS and "
         "\\underline{underlined} indicates the second-highest RS."
     )
     label = f"tab:{slugify(ds_latex)}_{slugify(mdl_latex)}_5v10"
-    latex = wrap_with_resizebox(latex, caption, label, width=r"\columnwidth")
+    #latex = wrap_with_resizebox(latex, caption, label, width=r"\columnwidth")
+
+    latex = wrap_with_wraptable(
+        latex, caption, label,
+        width=r"0.5\columnwidth",
+        placement="r",          # "l" if you want it on the left
+        vspace_top=r"-1.2cm",
+        vspace_bottom=r"-1.2cm",
+    )
+    
+
 
     out_dir.mkdir(parents=True, exist_ok=True)
     out = out_dir / f"latex_table_{slugify(dataset)}_{slugify(mdl)}_5v10.tex"
@@ -728,6 +769,13 @@ def render_joint_table_same_dataset(mdl: str, df_src: pd.DataFrame, dataset: str
     return out
 
 # ===================== MAIN PIPELINE =====================
+def make_forget_id_from_forget_class(x, setting):
+    s = "" if pd.isna(x) else str(x)
+    # if it's an explicit list of forgotten classes, keep it
+    if "," in s:
+        return s
+    # otherwise fall back to the setting (forget5/forget10)
+    return setting
 
 def autodetect_setting_dirs(root: Path) -> Dict[str, Path]:
     # if user didn't set valid dirs, try to find subfolders containing 5/10
@@ -738,6 +786,32 @@ def autodetect_setting_dirs(root: Path) -> Dict[str, Path]:
     if pick5: out["5-class"] = pick5
     if pick10: out["10-class"] = pick10
     return out
+
+def normalize_retrained_keys(df: pd.DataFrame, phase: str) -> pd.DataFrame:
+    df = df.copy()
+
+    # 1) Ensure setting exists for revival_multi (it has list strings)
+    if "setting" not in df.columns or (df["setting"] == "unknown").any():
+        if "forget_class" in df.columns:
+            df["setting"] = df["forget_class"].apply(infer_setting_from_forget_class_value)
+
+    # 2) For retrained revival: convert list-string -> K (5/10) so it matches unlearned
+    if phase == "revival" and "forget_class" in df.columns:
+        k = get_k_from_setting(df["setting"].iloc[0])  # "5" or "10"
+        if k is not None:
+            df["forget_class"] = str(k)
+
+    # 3) For retrained unlearned: force forget_class also to "5"/"10" (string)
+    if phase == "unlearned":
+        if "forget" in df.columns and "forget_class" in df.columns:
+            df["forget_class"] = df["forget"].astype(str)
+        else:
+            df["forget_class"] = df["forget_class"].astype(str)
+
+    # Always string-ify for merge stability
+    df["forget_class"] = df["forget_class"].astype(str)
+
+    return df
 
 def collect_all_rows(setting_name: str, base_dir: Path) -> List[pd.DataFrame]:
     all_rows = []
@@ -783,6 +857,7 @@ def collect_all_rows(setting_name: str, base_dir: Path) -> List[pd.DataFrame]:
                     except Exception as e:
                         print(f"[ERROR] original failed {setting_name} {ds}/{mdl}: {original_path}\n{e}")
                     continue
+                
 
                 # ---------- NON-ORIGINAL ----------
                 method_dir = base_dir / mth
@@ -809,6 +884,8 @@ def collect_all_rows(setting_name: str, base_dir: Path) -> List[pd.DataFrame]:
                     try:
                         df_f = load_forget_csv(forget_path, ds_hint=ds, mdl_hint=mdl, mth_hint=mth)
                         df_f["phase"] = "unlearned"
+                    
+                        
                         df_f["forget_class"] = df_f["forget_class"].astype(str)
                         df_f = _apply_forget_filter(df_f, ds)
                         all_rows.append(df_f)
@@ -824,7 +901,18 @@ def collect_all_rows(setting_name: str, base_dir: Path) -> List[pd.DataFrame]:
                         df_r = load_revival_csv(revival_path, ds_hint=ds, mdl_hint=mdl, mth_hint=mth)
                         df_r["phase"] = "revival"
                         df_r["forget_class"] = df_r["forget_class"].astype(str)
-                
+
+                                        
+                                        
+                        if mth == "retrained":
+                            if (df_r["setting"] == "unknown").any():
+                                df_r["setting"] = df_r["forget_class"].apply(infer_setting_from_forget_class_value)
+                        
+                            # ✅ FIX: per-row forget_class (not iloc[0])
+                            df_r["forget_class"] = df_r["setting"].apply(get_k_from_setting).astype(str)
+                            
+                        
+
                         if df_f_all is None or df_f_all.empty:
                             df_r["RS1"] = pd.NA
                             df_r["RS2"] = pd.NA
@@ -832,6 +920,19 @@ def collect_all_rows(setting_name: str, base_dir: Path) -> List[pd.DataFrame]:
                             # match RS using BOTH setting + forget_class + dataset + model + method
                             df_r = compute_rs_for_revival1(df_r, df_f_all)
                             df_r = compute_rs_for_revival2(df_r, df_f_all)
+                
+                        # --- Fix key mismatch for retrained (do NOT change RS functions) ---
+                        if mth == "retrained":
+                            # ensure setting is known (if needed)
+                            if (df_r["setting"] == "unknown").any():
+                                df_r["setting"] = df_r["forget_class"].apply(infer_setting_from_forget_class_value)
+                
+                            k = get_k_from_setting(df_r["setting"].iloc[0])
+                            if k is not None:
+                                df_r["forget_class"] = str(k)
+                        # ---------------------------------------------------------------                
+                
+                
                 
                         df_r = _apply_forget_filter(df_r, ds)
                         all_rows.append(df_r)

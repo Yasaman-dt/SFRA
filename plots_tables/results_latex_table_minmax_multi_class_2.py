@@ -930,6 +930,34 @@ def center_method_phase_headers(latex_src: str, dataset_labels: List[str]) -> st
     lines[h2] = _join_cells(h2_cells, h2_trail)
     return "\n".join(lines)
 
+def wrap_with_wraptable(
+    latex_src: str,
+    caption: str,
+    label: str,
+    width: str = r"0.5\columnwidth",
+    placement: str = "r",          # r = right, l = left
+    vspace_top: str = r"-0.5\baselineskip",
+    vspace_bottom: str = r"-0.5\baselineskip",
+) -> str:
+    """
+    Wraps a tabular in a wraptable + resizebox(width) + \\small.
+    NOTE: wrapfig package must be loaded in LaTeX: \\usepackage{wrapfig}
+    """
+    top = f"\\vspace{{{vspace_top}}}\n" if vspace_top else ""
+    bot = f"\\vspace{{{vspace_bottom}}}\n" if vspace_bottom else ""
+
+    return (
+        f"\\begin{{wraptable}}{{{placement}}}{{{width}}}\n"
+        f"{top}"
+        f"\\centering\n"
+        f"\\small\n"
+        f"\\caption{{{caption}}}\n"
+        f"\\label{{{label}}}\n"
+        f"\\resizebox{{{width}}}{{!}}{{%\n{latex_src}\n}}\n"
+        f"{bot}"
+        f"\\end{{wraptable}}\n"
+    )
+
 
     
 def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[str]) -> Optional[Path]:
@@ -1084,8 +1112,16 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
     # ---- unique label per dataset selection ----
     label   = f"tab:{slugify(mdl_latex)}_multi_class"
 
-    latex = wrap_with_resizebox(latex, caption, label, star=True, width=r"\columnwidth")
-
+    #latex = wrap_with_resizebox(latex, caption, label, star=True, width=r"\columnwidth")
+    latex = wrap_with_wraptable(
+        latex, caption, label,
+        width=r"0.5\columnwidth",
+        placement="r",          # "l" if you want it on the left
+        vspace_top=r"-0.5\baselineskip",
+        vspace_bottom=r"-0.5\baselineskip",
+    )
+    
+    
     # ---- unique filename per dataset selection ----
     out = base_dir / f"latex_table_{slugify(mdl)}_multi_class.tex"
     with open(out, "w", encoding="utf-8") as f:
