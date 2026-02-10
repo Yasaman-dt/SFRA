@@ -10,6 +10,7 @@ base_dir = Path("C:/Users/AT56170/Desktop/Codes/Machine Unlearning - Classificat
 
 DATASETS = ["cifar10", "cifar100", "tiny_imagenet"]
 
+
 # include ORIGINAL as a method
 methods = [
     "original", "retrained",
