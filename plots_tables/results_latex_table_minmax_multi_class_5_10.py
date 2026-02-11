@@ -744,11 +744,10 @@ def render_joint_table_same_dataset(mdl: str, df_src: pd.DataFrame, dataset: str
 
     mdl_latex = _latex_model_name(mdl)
     ds_latex  = _latex_dataset_name(dataset)
-    caption = (
-        f"Multi-class unlearning results on {ds_latex} for {mdl_latex} for 5-Classes vs 10-Classes settings. "
-        "Within each setting, \\textbf{bold} indicates the highest RS and "
-        "\\underline{underlined} indicates the second-highest RS."
-    )
+    caption = (rf"The results of the proposed class revival applied to multi-class "
+               rf"(5-Classes and 10-Classes) unlearned models on CIFAR-100 for ResNet-18. "
+               rf"For each dataset, \textbf{{bold}} indicates the highest RS and "
+               rf"\underline{{underlined}} indicates the second-highest RS.")
     label = f"tab:{slugify(ds_latex)}_{slugify(mdl_latex)}_5v10"
     #latex = wrap_with_resizebox(latex, caption, label, width=r"\columnwidth")
 
@@ -757,7 +756,7 @@ def render_joint_table_same_dataset(mdl: str, df_src: pd.DataFrame, dataset: str
         width=r"0.5\columnwidth",
         placement="r",          # "l" if you want it on the left
         vspace_top=r"-1.2cm",
-        vspace_bottom=r"-1.2cm",
+        vspace_bottom=r"-1cm",
     )
     
 
