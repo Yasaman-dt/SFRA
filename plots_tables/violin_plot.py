@@ -3,18 +3,21 @@ import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
 import matplotlib as mpl
+import matplotlib.colors as mcolors
 from matplotlib.ticker import MultipleLocator, FormatStrFormatter
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 # --------------------------
 # Style (keep it simple + paper friendly)
 # --------------------------
 mpl.rcParams.update({
-    "font.size": 10,
-    "axes.labelsize": 12,
-    "axes.titlesize": 12,
-    "xtick.labelsize": 9,
-    "ytick.labelsize": 10,
-    "legend.fontsize": 10,
+    "font.size": 12,
+    "axes.labelsize": 17,
+    "axes.titlesize": 17,
+    "xtick.labelsize": 14,
+    "ytick.labelsize": 14,
+    "legend.fontsize": 13,
     "text.color": "black",
     "axes.labelcolor": "black",
     "xtick.color": "black",
@@ -39,10 +42,10 @@ OUT_DIR.mkdir(parents=True, exist_ok=True)
 SAVE_PNG_TOO = True
 
 DATASETS = ["cifar10", "cifar100", "tiny_imagenet"]
-DATASET_PRETTY = {"cifar10":"CIFAR-10", "cifar100":"CIFAR-100", "tiny_imagenet":"TinyImageNet"}
+DATASET_PRETTY = {"cifar10": "CIFAR-10", "cifar100": "CIFAR-100", "tiny_imagenet": "TinyImageNet"}
 
 MODELS = ["resnet18", "vit-s-16", "vit-b-16", "swin-t", "vgg16"]
-MODEL_PRETTY = {"resnet18":"ResNet-18", "vit-s-16":"ViT-S/16", "vit-b-16":"ViT-B/16", "swin-t":"Swin-T", "vgg16":"VGG-16"}
+MODEL_PRETTY = {"resnet18": "ResNet-18", "vit-s-16": "ViT-S/16", "vit-b-16": "ViT-B/16", "swin-t": "Swin-T", "vgg16": "VGG-16"}
 
 PANEL_TAGS = {
     "resnet18": "(a) ResNet-18",
@@ -51,13 +54,11 @@ PANEL_TAGS = {
     "swin-t": "(d) Swin-T",
 }
 
-
 METHOD_ORDER = [
     "retrained", "finetune",
     "gradient_ascent", "neggrad_plus", "random_label",
-    "boundary_shrink", "boundary_expand",
-    "l2ul_adv", "l2ul_imp",
-    "fisher", "wood_fisher",
+    "boundary_shrink", 
+    "l2ul_adv", 
     "scrub", "bad_teacher", "salun", "delete",
 ]
 
@@ -68,11 +69,7 @@ METHOD_LABEL_SHORT = {
     "neggrad_plus": "Negative Gradient+",
     "random_label": "Random Label",
     "boundary_shrink": "Boundary Shrink",
-    "boundary_expand": "Boundary Expand",
     "l2ul_adv": "Learn to Unlearn",
-    "l2ul_imp": "Learn to Unlearn Adv+IMP",
-    "fisher": "Fisher",
-    "wood_fisher": "WoodFisher",
     "scrub": "SCRUB",
     "bad_teacher": "Bad Teacher",
     "salun": "SalUn",
@@ -87,16 +84,64 @@ def ordered_methods(present_methods):
     extras = sorted(set(present_methods) - set(present))
     return present + extras
 
-def style_violin(ax, parts, alpha=0.35, lw=0.8):
-    # Style bodies
-    for pc in parts["bodies"]:
-        pc.set_alpha(alpha)
-        pc.set_linewidth(lw)
+# --------------------------
+# Colors (consistent with ablation)
+# --------------------------
+TAB10 = sns.color_palette("tab20", 20)
 
-    # If present, style summary lines
-    for key in ["cmeans", "cmedians", "cbars", "cmins", "cmaxes"]:
-        if key in parts:
-            parts[key].set_linewidth(lw)
+# Force the 5 ablation methods to match the ablation figure exactly
+FIXED_KEY_COLORS = {
+    "bad_teacher":      TAB10[0],  # blue
+    "delete":           TAB10[1],  # orange
+    "gradient_ascent":  TAB10[2],  # green
+    "random_label":     TAB10[3],  # red
+    "salun":            TAB10[4],  # purple
+}
+
+
+# Fill remaining methods with colors that DON'T collide with the fixed ones
+pool = sns.color_palette("tab20", 20) + sns.color_palette("tab10", 10)
+used = {tuple(c) for c in FIXED_KEY_COLORS.values()}
+pool_it = (c for c in pool if tuple(c) not in used)
+
+
+# One canonical palette for all plots (pick any base palette you like)
+TAB20 = sns.color_palette("tab20", 20)   # for extra distinct colors
+
+
+METHOD_COLOR = {
+    "bad_teacher":      mcolors.to_hex(TAB20[0]),  # blue
+    "delete":           mcolors.to_hex(TAB20[2]),  # orange
+    "gradient_ascent":  mcolors.to_hex(TAB20[4]),  # green
+    "random_label":     mcolors.to_hex(TAB20[6]),  # red
+    "salun":            mcolors.to_hex(TAB20[8]),  # purple
+
+    # add the rest ONCE (examples below — choose indices you like and keep fixed)
+    "retrained":        mcolors.to_hex(TAB20[10]),
+    "finetune":         mcolors.to_hex(TAB20[12]),
+    "boundary_shrink":  mcolors.to_hex(TAB20[14]),
+    "l2ul_adv":         mcolors.to_hex(TAB20[16]),
+    "scrub":            mcolors.to_hex(TAB20[18]),
+    "neggrad_plus":     mcolors.to_hex(TAB20[1]),
+}
+
+def get_method_color(method_key: str) -> str:
+    return METHOD_COLOR.get(method_key, "#555555")
+
+
+def style_violin(ax, parts, facecolors, alpha=0.28, edge_lw=0.9, edge_alpha=0.95):
+    # color each violin body
+    for pc, fc in zip(parts["bodies"], facecolors):
+        pc.set_facecolor(fc)
+        pc.set_edgecolor(mcolors.to_rgba(fc, edge_alpha))
+        pc.set_alpha(alpha)
+        pc.set_linewidth(edge_lw)
+
+    # make the median line readable
+    if "cmedians" in parts:
+        parts["cmedians"].set_color("black")
+        parts["cmedians"].set_linewidth(1.1)
+        parts["cmedians"].set_alpha(0.9)
 
 # --------------------------
 # Load
@@ -109,6 +154,9 @@ df_all["RS2"] = pd.to_numeric(df_all["RS2"], errors="coerce")
 # Keep only what we need
 df_all = df_all.dropna(subset=["dataset", "model", "phase", "method", "forget_class", "RS2"])
 df_all = df_all[df_all["phase"] == "revival"].copy()
+
+# Reproducible jitter
+rng = np.random.default_rng(0)
 
 # --------------------------
 # Build one figure per model
@@ -153,10 +201,10 @@ for mdl in MODELS:
         # Methods present in this dataset, ordered by global order
         present = [m for m in methods_global if m in set(d["method"].unique())]
 
-        # Build arrays + Ns
+        # Build arrays + labels
         data = []
         labels = []
-        ns = []
+        methods_used = []
         for m in present:
             vals = d.loc[d["method"] == m, "RS2"].values
             vals = vals[np.isfinite(vals)]
@@ -164,11 +212,13 @@ for mdl in MODELS:
                 continue
             data.append(vals)
             labels.append(nice_name(m))
-            ns.append(len(vals))
+            methods_used.append(m)
 
         if len(data) == 0:
             ax.set_axis_off()
             continue
+
+        facecolors = [get_method_color(m) for m in methods_used]
 
         parts = ax.violinplot(
             data,
@@ -179,43 +229,59 @@ for mdl in MODELS:
             points=200,
             bw_method="scott",
         )
-        style_violin(ax, parts, alpha=0.35, lw=0.8)
+        style_violin(ax, parts, facecolors=facecolors, alpha=0.7, edge_lw=0.8, edge_alpha=1)
 
-        # Also plot a thin jittered strip of points (helps reviewers see spread)
-        # (Turn off if too dense)
-        for xi, vals in enumerate(data, start=1):
-            x = xi + 0.08 * (np.random.rand(len(vals)) - 0.5)
-            ax.plot(x, vals, marker=".", linestyle="None", markersize=1.8, alpha=0.25)
+        # Jittered points (match violin color)
+        for xi, (vals, fc) in enumerate(zip(data, facecolors), start=1):
+            # If too dense, optionally subsample (uncomment)
+            # if len(vals) > 1500:
+            #     idx = rng.choice(len(vals), size=1500, replace=False)
+            #     vals_plot = vals[idx]
+            # else:
+            #     vals_plot = vals
+
+            vals_plot = vals
+            x = xi + 0.10 * (rng.random(len(vals_plot)) - 0.5)
+            ax.scatter(
+                x, vals_plot,
+                s=8,
+                c=fc,
+                alpha=1,
+                linewidths=0,
+                rasterized=True  # helps keep PDF size reasonable
+            )
 
         ax.set_xticks(range(1, len(labels) + 1))
         ax.set_xticklabels(labels, rotation=45, ha="right")
 
+        # Paper-friendly grid + order
+        ax.set_axisbelow(True)
+        ax.grid(True, axis="y", linestyle="--", linewidth=0.6, alpha=0.25)
 
-        ax.grid(True, axis="y", linestyle="--", linewidth=0.6, alpha=0.4)
-        
         # y axis formatting (same for all)
         ax.set_ylim(-0.02, 1.02)
         ax.yaxis.set_major_locator(MultipleLocator(0.2))
         ax.yaxis.set_major_formatter(FormatStrFormatter('%.1f'))
-        
+
+
         # show y tick labels ONLY on the left subplot
         if j == 0:
             ax.tick_params(axis="y", which="both", left=True, labelleft=True)
             ax.set_ylabel(r"$\mathrm{RS}$")
         else:
-            ax.tick_params(axis="y", which="both", left=False, labelleft=False)  # hide ticks + labels
+            ax.tick_params(axis="y", which="both", left=False, labelleft=False)
+
+        ax.set_title(DATASET_PRETTY.get(ds, ds), fontweight="bold")
 
 
-        ax.set_title(DATASET_PRETTY.get(ds, ds), fontweight="bold", fontsize=12)
-
-    #fig.suptitle(f"{MODEL_PRETTY.get(mdl, mdl)}", y=1.02, fontsize=13)
+        ax.set_xlabel("Unlearning Method")
+        
 
     panel = PANEL_TAGS.get(mdl, f"{MODEL_PRETTY.get(mdl, mdl)}")
-
 
     out_pdf = OUT_DIR / f"fig_RS_violin_{mdl}.pdf"
     if SAVE_PNG_TOO:
         fig.savefig(out_pdf.with_suffix(".png"), dpi=300, bbox_inches="tight")
-    plt.close(fig)
 
+    plt.close(fig)
     print("[OK] saved", out_pdf)

@@ -936,8 +936,8 @@ def wrap_with_wraptable(
     label: str,
     width: str = r"0.5\columnwidth",
     placement: str = "r",          # r = right, l = left
-    vspace_top: str = r"-0.5\baselineskip",
-    vspace_bottom: str = r"-0.5\baselineskip",
+    vspace_top: str = r"-0.5pt",
+    vspace_bottom: str = r"-0.8pt",
 ) -> str:
     """
     Wraps a tabular in a wraptable + resizebox(width) + \\small.
@@ -1117,8 +1117,8 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
         latex, caption, label,
         width=r"0.5\columnwidth",
         placement="r",          # "l" if you want it on the left
-        vspace_top=r"-0.5\baselineskip",
-        vspace_bottom=r"-0.5\baselineskip",
+        vspace_top=r"-8.0pt",
+        vspace_bottom=r"-8.0pt",
     )
     
     

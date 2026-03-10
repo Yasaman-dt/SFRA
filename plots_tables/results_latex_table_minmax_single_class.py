@@ -10,7 +10,6 @@ base_dir = Path("C:/Users/AT56170/Desktop/Codes/Machine Unlearning - Classificat
 
 DATASETS = ["cifar10", "cifar100", "tiny_imagenet"]
 
-
 # include ORIGINAL as a method
 methods = [
     "original", "retrained",
@@ -158,9 +157,25 @@ def compute_rs_for_revival2(df_rev: pd.DataFrame, df_un: Optional[pd.DataFrame])
     max_val = pd.concat([out[c] for c in req_cols], axis=0).max(skipna=True)
     S = 100.0 if (pd.notna(max_val) and max_val > 1.5) else 1.0
 
-    d_retain = (out["test_retain_acc_un"] - out["test_retain_acc"]).abs() / S
-    d_forget = (out["test_forget_acc_un"] - out["test_forget_acc"]).abs() / S
-    out["RS2"] = ((1.0 - d_retain) * d_forget).clip(lower=0.0, upper=1.0)
+    #d_retain = (out["test_retain_acc_un"] - out["test_retain_acc"]).abs() / S
+    #d_forget = (out["test_forget_acc_un"] - out["test_forget_acc"]).abs() / S
+    #out["RS2"] = ((1.0 - d_retain) * d_forget).clip(lower=0.0, upper=1.0)
+    
+    # normalize to [0,1]
+    Ar_un = out["test_retain_acc_un"] / S
+    Ar_re = out["test_retain_acc"]    / S
+    Af_un = out["test_forget_acc_un"] / S
+    Af_re = out["test_forget_acc"]    / S
+
+    # NEW RS2:
+    # retain term penalizes only retain drops: max(0, Ar_un - Ar_re)
+    retain_drop = (Ar_un - Ar_re).clip(lower=0.0)
+
+    # forget term rewards only forget improvement: max(0, Af_re - Af_un)
+    forget_gain = (Af_re - Af_un).clip(lower=0.0)
+
+    out["RS2"] = (1.0 - retain_drop) * forget_gain
+        
     return out
 
 
@@ -646,7 +661,7 @@ def wrap_with_resizebox(latex_src: str, caption: str, label: str,
                         star: bool = True, width: str = r"\textwidth") -> str:
     env = "table*" if star else "table"
     return (
-        f"\\begin{{{env}}}[!htbp]\n"
+        f"\\begin{{{env}}}[t]\n"
         f"\\centering\n"
         f"\\caption{{{caption}}}\n"
         f"\\label{{{label}}}\n"

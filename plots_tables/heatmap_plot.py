@@ -2,6 +2,23 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
+import matplotlib as mpl
+from matplotlib.ticker import MultipleLocator, FormatStrFormatter
+
+
+mpl.rcParams.update({
+    "font.size": 12,
+    "axes.labelsize": 17,
+    "axes.titlesize": 17,
+    "xtick.labelsize": 14,
+    "ytick.labelsize": 14,
+    "legend.fontsize": 13,
+    "text.color": "black",
+    "axes.labelcolor": "black",
+    "xtick.color": "black",
+    "ytick.color": "black",
+})
+
 
 base_dir = Path(r"C:/Users/AT56170/Desktop/Codes/Machine Unlearning - Classification/class_unlearning/results_single_class/")
 merged_path = base_dir / "z_standardized_selected_all_methods.csv"
@@ -91,9 +108,39 @@ for mdl in MODELS:
         ax.imshow(
             pivot.values,
             aspect="auto",
-            vmin=0.0, vmax=1.0,
-            interpolation="nearest"  # crisp blocks, avoids white seams
+            vmin=0.0, vmax=1.0, 
+            interpolation="nearest",  # crisp blocks, avoids white seams
+            cmap="coolwarm"
         )
+
+
+        # --- annotate cells with values ---
+        vals = pivot.values
+        nrows, ncols = vals.shape
+        
+        # choose a font size that scales a bit with matrix size
+        fs = 10 if (nrows <= 20 and ncols <= 20) else 7
+        
+        for i in range(nrows):
+            for k in range(ncols):
+                v = vals[i, k]
+                if np.isnan(v):
+                    continue
+        
+                # pick text color based on the cell brightness
+                # (threshold at mid of vmin/vmax; here 0.5 since [0,1])
+                txt_color = "white" if v > 0.6 else "black"
+        
+                ax.text(
+                    k, i, f"{v:.2f}",     # 2 decimals
+                    ha="center", va="center",
+                    color=txt_color,
+                    fontsize=fs
+                )
+
+
+
+
 
         # X ticks
         ax.set_xticks(range(len(pivot.columns)))
@@ -103,7 +150,7 @@ for mdl in MODELS:
         # Y ticks: only show labels on left subplot
         if j == 0:
             ax.set_yticks(range(len(pivot.index)))
-            ax.set_yticklabels([nice_method(m) for m in pivot.index], fontsize=10)
+            ax.set_yticklabels([nice_method(m) for m in pivot.index])
             ax.set_ylabel("Unlearning method")
         else:
             ax.tick_params(labelleft=False)  # ✅ hide labels without deleting shared ticks

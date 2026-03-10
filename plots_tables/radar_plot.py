@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -203,9 +202,9 @@ def _radar_plot(labels, orig, un, re, title="", save_path=None, annotate=True):
     pads = [0.25] * len(labels)
     # # push "Negative Gradient+" a bit further out
     if "neggrad_plus" in methods:
-        pads[methods.index("neggrad_plus")] = 0.45  
+        pads[methods.index("neggrad_plus")] = 0.50  
     if "random_label" in methods:
-        pads[methods.index("random_label")] = 0.35 
+        pads[methods.index("random_label")] = 0.40 
     if "finetune" in methods:
         pads[methods.index("finetune")] = 0.15
     if "scrub" in methods:
@@ -213,7 +212,7 @@ def _radar_plot(labels, orig, un, re, title="", save_path=None, annotate=True):
     if "l2ul_adv" in methods:
         pads[methods.index("l2ul_adv")] = 0.20 
     if "bad_teacher" in methods:
-        pads[methods.index("bad_teacher")] = 0.30 
+        pads[methods.index("bad_teacher")] = 0.35 
     if "delete" in methods:
         pads[methods.index("delete")] = 0.20 
     # if "gradient_ascent" in methods:
@@ -257,7 +256,7 @@ def _radar_plot(labels, orig, un, re, title="", save_path=None, annotate=True):
         #_annotate_series(re,       off2, color="green")
 
     # --- Bigger legend + actually show the title you computed ---
-    leg = ax.legend(loc="upper left", title="Model state", bbox_to_anchor=(1.15, 1.15), fontsize=12)
+    leg = ax.legend(loc="upper left", bbox_to_anchor=(1.15, 1.15), fontsize=14)
     #leg.get_title().set_fontweight("bold")
 
 
