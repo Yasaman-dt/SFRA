@@ -1,4 +1,4 @@
-# Source-Free Class Revival: Diagnosing Forgetting in Machine Unlearning
+# Source-Free Class Revival: Diagnosing Forgetting in Class Unlearning
 
 
 It supports:
