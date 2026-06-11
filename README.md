@@ -46,12 +46,12 @@ CUDA_VISIBLE_DEVICES=0 python main.py  --method pass  --dataset_name tiny_imagen
 
 ## 3. Apply Retrain-from-scratch baseline without the forget class:
 
-Single-class:
+**Single class setting:**
 ```bash
 CUDA_VISIBLE_DEVICES=0 python main.py  --classes "0,1,2,3,4,5,6,7,8,9" --method pass  --dataset_name cifar10 --model_name resnet18 --retrain_from_scratch
 ```
 
-Multi_class:
+**Multi class setting:**
 ```bash
 CUDA_VISIBLE_DEVICES=0 python main.py  --forget_class 2   --method pass  --dataset_name cifar10  	--model_name resnet18 --retrain_from_scratch
 ```
@@ -60,25 +60,25 @@ CUDA_VISIBLE_DEVICES=0 python main.py  --forget_class 2   --method pass  --datas
 
 ## 4. Apply unelarning methods:
 
-Single_class:
+**Single class setting:**
 ```bash
 CUDA_VISIBLE_DEVICES=0 python test_original_model.py --datasets cifar10 	--model-name resnet18	--forget-classes 0 1 2 3 4 5 6 7 8 9
 ```
 
-Multi_class:
+**multi class unlearning:**
 ```bash
 CUDA_VISIBLE_DEVICES=0 python test_original_model.py --datasets cifar10 	--model-name resnet18	--forget-set 1 6
 ```
 
 Evaluate the unlearn model:
 
-Single-class:
+**Single class setting:**
 ```bash
 CUDA_VISIBLE_DEVICES=0 python eval_unlearned_model.py   --dataset_name cifar10  	--model_name resnet18  	--method bad_teacher   		--forget_id 0 		--unlearn_rate 1e-03  --exps_dir ~/classification/exps   --batch_size 256   --num_workers 8
 ```
 
 
-Multi_class:
+**multi class unlearning:**
 ```bash
 CUDA_VISIBLE_DEVICES=0 python eval_unlearned_model.py   --dataset_name cifar100  	--model_name renset18   --method bad_teacher  		--forget_set 25 58    	--unlearn_rate 1e-03  --exps_dir ~/classification/exps   --batch_size 128   --num_workers 8
 ```
@@ -87,13 +87,13 @@ CUDA_VISIBLE_DEVICES=0 python eval_unlearned_model.py   --dataset_name cifar100 
 
 ## 5. Run our class revival method:
 
-Single-class:
+**Single class setting:**
 ```bash
 CUDA_VISIBLE_DEVICES=0 python revival_singleclass.py 	--method bad_teacher  --model_name resnet18 	--dataset cifar10	    	--lr 1e-3 	--epochs 500  --forget 0,1,2,3,4,5,6,7,8,9    	--retain_per_class 500   	--forget_per_class 500   --tpr 500000
 ```
 
 
-Multi_class:
+**multi class unlearning:**
 ```bash
 CUDA_VISIBLE_DEVICES=0 python revival_multiclass.py  --dataset cifar10   	--model resnet18   --method bad_teacher  --lr 2e-2   --epochs 200   --forget 1,6   	--tpr 500000   	--retain_per_class 500   --forget_per_class 500
 ```
