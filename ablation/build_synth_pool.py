@@ -2,8 +2,6 @@ import os, math, argparse, torch
 import torch.nn.functional as F
 import torch.nn as nn
 from pathlib import Path
-import sys
-sys.path.append(str(Path(__file__).resolve().parent.parent))
 from trainer import *  # load_model
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
