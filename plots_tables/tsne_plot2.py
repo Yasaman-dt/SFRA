@@ -25,6 +25,8 @@ from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 import matplotlib.pyplot as plt
 
+import sys
+sys.path.append(str(Path(__file__).resolve().parent.parent))
 from utils import get_transforms, get_dataset
 from trainer import *  # must provide load_model(ckpt, model_name, dataset, num_classes)
 
