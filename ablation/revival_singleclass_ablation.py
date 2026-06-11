@@ -9,7 +9,8 @@ import torch.nn.functional as F
 from torch.utils.data import TensorDataset, DataLoader
 
 import sys
-sys.path.append(str(Path(__file__).resolve().parent.parent))
+ROOT = Path(__file__).resolve().parents[1]  # Source_Free_Class_Revival
+sys.path.insert(0, str(ROOT))
 from method.utils import *
 from utils import get_transforms, get_dataset, get_dataloader, get_unlearn_loader
 from trainer import *  # assumes load_model is here
