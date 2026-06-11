@@ -30,7 +30,7 @@ plt.rcParams.update({
 })
 
 # ----------------- USER CONFIG -----------------
-base_dir   = Path(r"C:/Users/AT56170/Desktop/Codes/Machine Unlearning - Classification/class_unlearning/results_single_class/")
+base_dir   = Path(r"C:/Users/AT56170/Desktop/Codes/Machine Unlearning - Classification/Source_Free_Class_Revival/results_single_class/")
 DATASET    = "tiny_imagenet"
 MODEL      = "vit-b-16"
 FORGET_C   = "160"          # accept "9" or 9
@@ -293,7 +293,7 @@ if __name__ == "__main__":
     title = f"{DATASET.upper()} / {MODEL} — forget class {FORGET_C}"
     
     # build a FILE path, not a directory
-    save_dir  = Path(r"C:/Users/AT56170/Desktop/Codes/Machine Unlearning - Classification/class_unlearning/Radar_Plots")
+    save_dir  = Path(r"C:/Users/AT56170/Desktop/Codes/Machine Unlearning - Classification/Source_Free_Class_Revival/Radar_Plots")
     save_dir.mkdir(parents=True, exist_ok=True)
     save_path = save_dir / OUT_NAME   # e.g., .../Radar_Plots/radar_cifar10_resnet18_forget8.png
     

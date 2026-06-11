@@ -33,7 +33,7 @@ plt.rcParams.update({
 # --------------------------
 # Config
 # --------------------------
-base_dir = Path(r"C:/Users/AT56170/Desktop/Codes/Machine Unlearning - Classification/class_unlearning/results_single_class/")
+base_dir = Path(r"C:/Users/AT56170/Desktop/Codes/Machine Unlearning - Classification/Source_Free_Class_Revival/results_single_class/")
 merged_path = base_dir / "z_standardized_selected_all_methods.csv"
 
 OUT_DIR = base_dir / "plots_distribution_grid"

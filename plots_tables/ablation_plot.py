@@ -109,7 +109,7 @@ plt.rc('axes', edgecolor='black')
 plt.rc('legend', labelcolor='black')
 
 # ===================== CONFIG =====================
-BASE_DIR = r"C:\Users\AT56170\Desktop\Codes\Machine Unlearning - Classification\class_unlearning"
+BASE_DIR = r"C:\Users\AT56170\Desktop\Codes\Machine Unlearning - Classification\Source_Free_Class_Revival"
 
 method_dirs_m = [
     r"diff_M/delete",

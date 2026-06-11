@@ -6,7 +6,7 @@ from typing import Optional, List
 from itertools import product
 
 # ----------------- Config -----------------
-base_dir = Path("C:/Users/AT56170/Desktop/Codes/Machine Unlearning - Classification/class_unlearning/results_single_class/")
+base_dir = Path("C:/Users/AT56170/Desktop/Codes/Machine Unlearning - Classification/Source_Free_Class_Revival/results_single_class/")
 
 DATASETS = ["cifar10", "cifar100", "tiny_imagenet"]
 

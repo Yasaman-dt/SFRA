@@ -8,7 +8,7 @@ from itertools import product
 # ===================== CONFIG =====================
 
 # Root directory that contains the two settings (5-class / 10-class) OR everything mixed.
-ROOT_DIR = Path(r"C:/Users/AT56170/Desktop/Codes/Machine Unlearning - Classification/class_unlearning/results_multi_class_5_10/")
+ROOT_DIR = Path(r"C:/Users/AT56170/Desktop/Codes/Machine Unlearning - Classification/Source_Free_Class_Revival/results_multi_class_5_10/")
 
 # --- IMPORTANT: Set these to YOUR actual folders (best & safest) ---
 # Each should contain method subfolders (finetune/, scrub/, ...) and optionally original/
