@@ -102,9 +102,8 @@ CUDA_VISIBLE_DEVICES=0 python revival_multiclass.py  --dataset cifar10   	--mode
 
 ## 6. ablation on different M and N:
 ```bash
-cd rebuttal
-CUDA_VISIBLE_DEVICES=0 python build_synth_pool.py  			--dataset cifar10 	--model_name resnet18 	--method delete  --per_class 500000   --forget_class 9   --lr 1e-3
-CUDA_VISIBLE_DEVICES=0 python revival_singleclass_ablation.py    	--pool_path synth_pools/cifar10_resnet18_bad_teacher_fg9_lr0.001_pool_500000perclass_10cls_emb512_seed0.pt  --pool_take_per_class 500000  --dataset cifar10   --model_name resnet18   --method bad_teacher   --retain_per_class 500   --forget_per_class 500  --lr 0.001  --forget 9
+CUDA_VISIBLE_DEVICES=0 python -m ablation.build_synth_pool  			--dataset cifar10 	--model_name resnet18 	--method bad_teacher  --per_class 500000   --forget_class 9   --lr 1e-3
+CUDA_VISIBLE_DEVICES=0 python -m ablation.revival_singleclass_ablation    	--pool_path synth_pools/cifar10_resnet18_bad_teacher_fg9_lr0.001_pool_500000perclass_10cls_emb512_seed0.pt  --pool_take_per_class 500000  --dataset cifar10   --model_name resnet18   --method bad_teacher   --retain_per_class 500   --forget_per_class 500  --lr 0.001  --forget 9
 ```
 
 ---
