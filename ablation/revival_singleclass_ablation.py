@@ -7,9 +7,10 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 from torch.utils.data import TensorDataset, DataLoader
-from method.utils import *
 
-# your helpers
+import sys
+sys.path.append(str(Path(__file__).resolve().parent.parent))
+from method.utils import *
 from utils import get_transforms, get_dataset, get_dataloader, get_unlearn_loader
 from trainer import *  # assumes load_model is here
 
