@@ -6,7 +6,9 @@ from typing import Optional, List
 from itertools import product
 
 # ----------------- Config -----------------
-base_dir = Path("C:/Users/AT56170/Desktop/Codes/Machine Unlearning - Classification/Source_Free_Class_Revival/results_single_class/")
+# Resolve the results directory relative to this repo so the script works on
+# Linux/macOS/Windows without editing the path by hand.
+base_dir = Path(__file__).resolve().parents[1] / "results_single_class"
 
 DATASETS = ["cifar10", "cifar100", "tiny_imagenet"]
 
@@ -330,6 +332,33 @@ def load_original_csv(path: Path, ds_hint: Optional[str]=None, mdl_hint: Optiona
                  "train_retain_acc","train_forget_acc","test_retain_acc","test_forget_acc"]
     return d[keep_cols].copy()
 
+
+def load_pra_csv(path: Path, ds_hint: Optional[str]=None, mdl_hint: Optional[str]=None, mth_hint: Optional[str]=None) -> pd.DataFrame:
+    ds_p, mdl_p, _, _ = parse_filename(path)
+    ds = _pick(ds_p, ds_hint, "dataset", path)
+    mdl = _pick(mdl_p, mdl_hint, "model", path)
+    mth = mth_hint or "pra"
+
+    d = pd.read_csv(path)
+    rename_map = {
+        "acc_r": "test_retain_acc",
+        "acc_f": "test_forget_acc",
+    }
+    d = d.rename(columns=rename_map)
+    for col in ["test_retain_acc", "test_forget_acc"]:
+        if col not in d.columns:
+            d[col] = pd.NA
+        d[col] = pd.to_numeric(d[col], errors="coerce")
+
+    d["dataset"] = ds
+    d["model"] = mdl
+    d["method"] = mth
+    if "forget_class" not in d.columns:
+        d["forget_class"] = pd.NA
+
+    keep_cols = ["forget_class", "dataset", "model", "method", "test_retain_acc", "test_forget_acc"]
+    return d[keep_cols].copy()
+
 def _rank_styles(values):
     """
     Given a list of numeric RS values (may contain NaN), return two thresholds:
@@ -557,13 +586,12 @@ def fmt_mu_sigma(mu, sigma):
 
 def add_midrules_between_methods(latex_src: str) -> str:
     """
-    Post-process the pandas LaTeX table to:
-      1) add a double rule at the very top,
-      2) add a double rule between header and the first data row,
-      3) insert \midrule after each method block (after Revival rows),
-         with a double rule after the 'Retrained & Revival' row,
-      4) add a double rule right after the 'Original' row.
-    Requires \\usepackage{booktabs}.
+    Formatting:
+      - double line at the top
+      - double line below the header
+      - double line after Original
+      - one line between unlearning-method blocks
+      - after the final method: one midrule + pandas bottomrule
     """
     lines = latex_src.splitlines()
     out = []
@@ -575,36 +603,34 @@ def add_midrules_between_methods(latex_src: str) -> str:
         stripped = line.strip()
         out.append(line)
 
-        # 1) Double rule at very top of the tabular
+        # Double line at the top
         if stripped.startswith(r"\toprule") and not duplicated_toprule:
-            out.append(r"\toprule")        # If you prefer thin lines, use r"\midrule" instead.
+            out.append(r"\toprule")
             duplicated_toprule = True
             continue
 
-        # 2) Double rule between header and data (pandas emits the first \midrule here)
+        # Double line below the table header
         if stripped.startswith(r"\midrule") and not duplicated_header_sep:
             out.append(r"\midrule")
             duplicated_header_sep = True
             continue
 
-        # 3) & 4) Within the body, add separators after specific rows
-        if line.rstrip().endswith(r"\\"):
+        if not line.rstrip().endswith(r"\\"):
+            continue
 
-            if re.search(r"^\s*Original\s*&", line):
-                out.append(r"\midrule")
-                out.append(r"\midrule")
-                continue
-                        
+        # Double separator after Original
+        if re.search(r"^\s*Original\s*&", line):
+            out.append(r"\midrule")
+            out.append(r"\midrule")
+            continue
 
-            if " & Revival &" in line:
-                # Double rule for Retrained's revival row
-                if "Retrained" in line or re.search(r"\\multirow\{2\}\{\*\}\{Retrained\}", "\n".join(out[-3:])):
-                    out.append(r"\midrule"); out.append(r"\midrule")
-                else:
-                    out.append(r"\midrule")
+        # One separator after every method block.
+        # For DELETE, pandas adds \bottomrule afterward,
+        # so the bottom of the table contains exactly two lines.
+        if re.search(r"&\s*Revival\s*\(ours\)", line):
+            out.append(r"\midrule")
 
     return "\n".join(out)
-
 
 def apply_multirow(table_df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -665,6 +691,7 @@ def wrap_with_resizebox(latex_src: str, caption: str, label: str,
         f"\\centering\n"
         f"\\caption{{{caption}}}\n"
         f"\\label{{{label}}}\n"
+        f"\\vspace{{-0.2cm}}\n"
         f"\\resizebox{{{width}}}{{!}}{{%\n{latex_src}\n}}\n"
         f"\\end{{{env}}}\n"
     )
@@ -764,6 +791,20 @@ def render_table_for(ds: str, mdl: str, df_src: pd.DataFrame):
                     mu, sd = np.nan, np.nan
                 row[col] = fmt_mu_sigma(mu, sd)
             rows.append(row)
+            # Special Baseline row for ResNet-18: show average retain (mean±std)
+            # and forget accuracy as a (min,max) range, similar to revival rows.
+            if mdl == "resnet18":
+                baseline_phase = "unlearned"
+                if ("retrained", baseline_phase) in g.index:
+                    # compute mean±std for retain, min/max for forget
+                    mu_ret = g.loc[("retrained", baseline_phase), ("test_retain_acc", "mean")]
+                    sd_ret = g.loc[("retrained", baseline_phase), ("test_retain_acc", "std")]
+                    min_fgt = g.loc[("retrained", baseline_phase), ("test_forget_acc", "min")]
+                    max_fgt = g.loc[("retrained", baseline_phase), ("test_forget_acc", "max")]
+                    baseline_row = {"Method": "Baseline", "Phase": "Baseline"}
+                    baseline_row["test_retain_acc"] = fmt_mu_sigma(mu_ret, sd_ret)
+                    baseline_row["test_forget_acc"] = fmt_min_max(min_fgt, max_fgt)
+                    rows.append(baseline_row)
         else:
             for phase in PHASE_ORDER:  # "forget", "revival"
                 row = {"Method": m, "Phase": phase.title()}
@@ -978,22 +1019,69 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
             rows.append(row)
             continue
 
-        # Unlearned (prints RS with multirow)
-        row_un = {"Method": rf"\multirow{{2}}{{*}}{{{pretty}}}", "Phase": "Unlearned"}
+        # ---------------------------------------------------------
+        # Build the PRA row first so it can be displayed before ours.
+        # ---------------------------------------------------------
+        pra_row = {"Method": "", "Phase": r"PRA \cite{ha2025unlearning}"}
+        has_pra_data = False
+
+        for ds in datasets:
+            dsl = _latex_dataset_name(ds)
+            pra_path = base_dir.parent / "pra" / m / f"{ds}_{mdl}.csv"
+
+            # Initialize all PRA cells for this dataset.
+            for col in OUT_METRIC_COLS:
+                pra_row[(dsl, COL_LABELS[col])] = "-"
+            pra_row[(dsl, "RS")] = "-"
+
+            if pra_path.is_file():
+                try:
+                    df_pra = load_pra_csv(
+                        pra_path,
+                        ds_hint=ds,
+                        mdl_hint=mdl,
+                        mth_hint=m,
+                    )
+
+                    acc_r = pd.to_numeric(
+                        df_pra["test_retain_acc"], errors="coerce"
+                    )
+                    acc_f = pd.to_numeric(
+                        df_pra["test_forget_acc"], errors="coerce"
+                    )
+
+                    pra_row[(dsl, COL_LABELS["test_retain_acc"])] = (
+                        fmt_mu_sigma(acc_r.mean(), acc_r.std())
+                    )
+                    pra_row[(dsl, COL_LABELS["test_forget_acc"])] = (
+                        fmt_min_max(acc_f.min(), acc_f.max())
+                    )
+                    has_pra_data = True
+
+                except Exception as e:
+                    print(
+                        f"[WARN] Failed to load PRA results for "
+                        f"method={m}, dataset={ds}, model={mdl}: {e}"
+                    )
+
+        # The method label spans three rows when PRA is available;
+        # otherwise it spans only Unlearned and Revival (ours).
+        method_row_span = 3 if has_pra_data else 2
+
+        # ---------------------------------------------------------
+        # 1) Unlearned model
+        # ---------------------------------------------------------
+        row_un = {
+            "Method": rf"\multirow{{{method_row_span}}}{{*}}{{{pretty}}}",
+            "Phase": "Unlearned",
+        }
+
         for ds in datasets:
             dsl = _latex_dataset_name(ds)
 
-            # Style RS using per-dataset thresholds
-            raw_rs = rs_per_ds[dsl].get(m, np.nan)
-            max_v, second_v = rs_rank_thresholds[dsl]
-            if pd.notna(raw_rs):
-                styled = _style_rs(raw_rs, max_v, second_v)
-            else:
-                styled = "-"
+            # RS is shown on the Revival (ours) row only.
+            row_un[(dsl, "RS")] = ""
 
-            row_un[(dsl, "RS")] = rf"\multirow{{2}}{{*}}{{{styled}}}"
-
-            # Unlearned metrics: mean±std
             if (ds, m, "unlearned") in g.index:
                 for col in OUT_METRIC_COLS:
                     mu = g.loc[(ds, m, "unlearned"), (col, "mean")]
@@ -1005,21 +1093,43 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
 
         rows.append(row_un)
 
-        # Revival
-        row_rev = {"Method": "", "Phase": "Revival"}
+        # ---------------------------------------------------------
+        # 2) PRA baseline attack
+        # ---------------------------------------------------------
+        if has_pra_data:
+            rows.append(pra_row)
+
+        # ---------------------------------------------------------
+        # 3) Our revival method
+        # ---------------------------------------------------------
+        row_rev = {"Method": "", "Phase": "Revival (ours)"}
+
         for ds in datasets:
             dsl = _latex_dataset_name(ds)
-            row_rev[(dsl, "RS")] = ""  # continues multirow
+            raw_rs = rs_per_ds[dsl].get(m, np.nan)
+            max_v, second_v = rs_rank_thresholds[dsl]
+
+            if pd.notna(raw_rs):
+                row_rev[(dsl, "RS")] = _style_rs(
+                    raw_rs, max_v, second_v
+                )
+            else:
+                row_rev[(dsl, "RS")] = "-"
+
             if (ds, m, "revival") in g.index:
                 for col in OUT_METRIC_COLS:
                     if col in ("train_forget_acc", "test_forget_acc"):
                         vmin = g.loc[(ds, m, "revival"), (col, "min")]
                         vmax = g.loc[(ds, m, "revival"), (col, "max")]
-                        row_rev[(dsl, COL_LABELS[col])] = fmt_min_max(vmin, vmax)
+                        row_rev[(dsl, COL_LABELS[col])] = fmt_min_max(
+                            vmin, vmax
+                        )
                     else:
                         mu = g.loc[(ds, m, "revival"), (col, "mean")]
                         sd = g.loc[(ds, m, "revival"), (col, "std")]
-                        row_rev[(dsl, COL_LABELS[col])] = fmt_mu_sigma(mu, sd)
+                        row_rev[(dsl, COL_LABELS[col])] = fmt_mu_sigma(
+                            mu, sd
+                        )
             else:
                 for col in OUT_METRIC_COLS:
                     row_rev[(dsl, COL_LABELS[col])] = "-"

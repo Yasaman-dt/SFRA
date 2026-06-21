@@ -358,6 +358,7 @@ def render_four_group_table(mdl, df_src, out_dir):
         r"\small" + "\n"
         rf"\caption{{{caption}}}" + "\n"
         rf"\label{{tab:class_revival_{slugify(mdl)}_cifar10_cifar100}}" + "\n"
+        r"\vspace{-0.2cm}" + "\n"
         r"\resizebox{\textwidth}{!}{%" + "\n"
         + tabular + "\n"
         r"}" + "\n"
