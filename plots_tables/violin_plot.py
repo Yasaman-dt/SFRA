@@ -267,7 +267,7 @@ for mdl in MODELS:
         # show y tick labels ONLY on the left subplot
         if j == 0:
             ax.tick_params(axis="y", which="both", left=True, labelleft=True)
-            ax.set_ylabel(r"$\mathrm{RS}$")
+            ax.set_ylabel("RS")
         else:
             ax.tick_params(axis="y", which="both", left=False, labelleft=False)
 
@@ -285,3 +285,165 @@ for mdl in MODELS:
 
     plt.close(fig)
     print("[OK] saved", out_pdf)
+
+
+# --------------------------
+# Separate single violin plot:
+# ResNet-18 + CIFAR-10
+# --------------------------
+
+import re
+
+def label_two_lines(name):
+    return re.sub(r'\s*\(', r'\n(', name)
+
+METHOD_LABEL_SHORT = {
+    "retrained": "Retrained",
+    "finetune": "Finetune (CVPR 2020)",
+    "gradient_ascent": "Negative Gradient (CVPR 2020)",
+    "neggrad_plus": "Negative Gradient+ (NeurIPS 2023)",
+    "random_label": "Random Label (AAAI 2021)",
+    "boundary_shrink": "Boundary Shrink (CVPR 2023)",
+    "l2ul_adv": "Learn to Unlearn (AAAI 2024)",
+    "scrub": "SCRUB (NeurIPS 2023)",
+    "bad_teacher": "Bad Teacher (AAAI 2023)",
+    "salun": "SalUn (ICLR 2024)",
+    "delete": "DELETE (CVPR 2025)",
+}
+
+mdl = "resnet18"
+ds = "cifar10"
+
+d_single = df_all[
+    (df_all["model"] == mdl) &
+    (df_all["dataset"] == ds)
+].copy()
+
+if d_single.empty:
+    print(f"[WARN] No data for model={mdl}, dataset={ds}")
+else:
+    present_methods = set(d_single["method"].unique())
+    methods_single = ordered_methods(present_methods)
+
+    data = []
+    labels = []
+    methods_used = []
+
+    for m in methods_single:
+        vals = d_single.loc[d_single["method"] == m, "RS2"].values
+        vals = vals[np.isfinite(vals)]
+
+        if len(vals) == 0:
+            continue
+
+        data.append(vals)
+        labels.append(label_two_lines(nice_name(m)))
+        methods_used.append(m)
+
+    if len(data) == 0:
+        print(f"[WARN] No valid RS2 values for model={mdl}, dataset={ds}")
+    else:
+        facecolors = [get_method_color(m) for m in methods_used]
+
+        fig, ax = plt.subplots(
+            nrows=1,
+            ncols=1,
+            figsize=(7.5, 4.2),
+            constrained_layout=True
+        )
+
+        parts = ax.violinplot(
+            data,
+            showmeans=False,
+            showmedians=True,
+            showextrema=False,
+            widths=0.85,
+            points=200,
+            bw_method="scott",
+        )
+
+        style_violin(
+            ax,
+            parts,
+            facecolors=facecolors,
+            alpha=0.7,
+            edge_lw=0.8,
+            edge_alpha=1
+        )
+
+        # Jittered points
+        for xi, (vals, fc) in enumerate(zip(data, facecolors), start=1):
+            vals_plot = vals
+            x = xi + 0.10 * (rng.random(len(vals_plot)) - 0.5)
+
+            ax.scatter(
+                x,
+                vals_plot,
+                s=8,
+                c=fc,
+                alpha=1,
+                linewidths=0,
+                rasterized=True
+            )
+
+        
+        ax.set_xticks(range(1, len(labels) + 1))
+        ax.set_xticklabels([])
+        
+    for i, lab in enumerate(labels, start=1):
+        lines = lab.split("\n")
+    
+        # --- Method name (BIGGER + BOLD) ---
+        ax.text(
+            i,
+            -0.05,
+            lines[0],
+            transform=ax.get_xaxis_transform(),
+            rotation=45,
+            ha="right",
+            va="top",
+            fontsize=11,          # bigger
+            fontweight="bold"
+        )
+    
+        # --- Conference name (SMALLER) ---
+        if len(lines) > 1:
+            ax.text(
+                i,
+                -0.10,
+                lines[1],
+                transform=ax.get_xaxis_transform(),
+                rotation=45,
+                ha="right",
+                va="top",
+                fontsize=7           # smaller
+            )
+                                            
+        for t in ax.get_xticklabels():
+            t.set_fontsize(10)
+            t.set_ha("center")
+
+        ax.set_ylim(-0.02, 1.02)
+        ax.yaxis.set_major_locator(MultipleLocator(0.2))
+        ax.yaxis.set_major_formatter(FormatStrFormatter("%.1f"))
+
+        ax.set_ylabel("RS")
+        ax.set_xlabel("Unlearning Method", fontsize=12)
+        ax.xaxis.set_label_coords(0.5, -0.4)
+        
+
+        ax.set_axisbelow(True)
+        ax.grid(True, axis="y", linestyle="--", linewidth=0.6, alpha=0.25)
+
+        out_png = OUT_DIR / f"fig_RS_violin_{mdl}_{ds}_single.png"
+
+        fig.savefig(out_pdf, bbox_inches="tight")
+
+        if SAVE_PNG_TOO:
+            fig.savefig(out_png, dpi=300, bbox_inches="tight")
+
+        plt.close(fig)
+
+        print("[OK] saved", out_pdf)
+        if SAVE_PNG_TOO:
+            print("[OK] saved", out_png)
