@@ -168,3 +168,82 @@ for mdl in MODELS:
     fig.savefig(out, dpi=300, bbox_inches="tight")
     plt.close(fig)
     print("[OK] saved", out)
+
+
+
+# --------------------------
+# Separate single heatmap:
+# ResNet-18 + CIFAR-10
+# --------------------------
+mdl = "resnet18"
+ds = "cifar10"
+
+d_single = df[(df["model"] == mdl) & (df["dataset"] == ds)].copy()
+
+if d_single.empty:
+    print(f"[WARN] No data for model={mdl}, dataset={ds}")
+else:
+    methods_single = ordered_methods(list(d_single["method"].unique()))
+
+    pivot = (
+        d_single.groupby(["method", "forget_class_num"])["RS2"]
+        .mean()
+        .unstack("forget_class_num")
+    )
+    pivot = pivot.reindex(methods_single)
+    pivot = pivot.reindex(sorted(pivot.columns), axis=1)
+
+    fig, ax = plt.subplots(1, 1, figsize=(8, 6))
+    fig.subplots_adjust(left=0.32, right=0.92, top=0.88, bottom=0.16)
+
+    im = ax.imshow(
+        pivot.values,
+        aspect="auto",
+        vmin=0.0, vmax=1.0,
+        interpolation="nearest",
+        cmap="coolwarm"
+    )
+
+    # Annotate cells
+    vals = pivot.values
+    nrows, ncols = vals.shape
+    fs = 10 if (nrows <= 20 and ncols <= 20) else 7
+
+    for i in range(nrows):
+        for k in range(ncols):
+            v = vals[i, k]
+            if np.isnan(v):
+                continue
+
+            txt_color = "white" if v > 0.6 else "black"
+            ax.text(
+                k, i, f"{v:.2f}",
+                ha="center", va="center",
+                color=txt_color,
+                fontsize=fs
+            )
+
+    # X ticks
+    ax.set_xticks(range(len(pivot.columns)))
+    ax.set_xticklabels([str(int(c)) for c in pivot.columns], rotation=0)
+    ax.set_xlabel("Forget class")
+
+    # Y ticks
+    ax.set_yticks(range(len(pivot.index)))
+    ax.set_yticklabels([nice_method(m) for m in pivot.index])
+    ax.set_ylabel("Unlearning method")
+
+    # Remove spines and tick marks
+    ax.grid(False)
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+    ax.tick_params(axis="both", length=0)
+
+    # Colorbar
+    cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    cbar.set_label("RS")
+
+    out = OUT_DIR / f"heatmap_RS_{mdl}_{ds}.png"
+    fig.savefig(out, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+    print("[OK] saved", out)
