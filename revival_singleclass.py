@@ -35,6 +35,9 @@ parser.add_argument('--model', '--model_name', dest='model_name', type=str, defa
 parser.add_argument('--dataset', type=str, required=True)
 parser.add_argument('--lr', type=float, default=5e-5)
 parser.add_argument('--epochs', type=int, default=500)
+parser.add_argument('--base-dir', type=str, default='/export/livia/home/vision/Zdehghani/classification/exps',
+                    help='Base directory where checkpoints and experiment folders are stored')
+
 parser.add_argument(
     '--forget',
     type=str,
@@ -93,7 +96,7 @@ except KeyError:
 
 
 # ------------------ Load Pre-Trained ResNet-18 and Run the Function ------------------
-DIR = "/export/livia/home/vision/Zdehghani/classification/exps"
+DIR = args.base_dir
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 seed=42
