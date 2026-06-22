@@ -1433,18 +1433,19 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
         ds_names = ", ".join(_latex_dataset_name(d) for d in datasets[:-1]) + f", and {_latex_dataset_name(datasets[-1])}"
 
     caption = (
-        f"Comparison of the proposed source-free class revival audit and "
-        f"PRA on single-class-unlearned {mdl_latex} models evaluated on "
-        f"{ds_names}."
-        f"For retain accuracy $\\mathcal{{A}}^t_r$, we report "
-        f"mean$\\pm$std across forget classes. For post-attack/revival forget "
+        f"Comparison of different unlearning methods under the proposed "
+        f"source-free class revival audit and the source-dependent PRA baseline "
+        f"on single-class-unlearned {mdl_latex} models evaluated on {ds_names}. "
+        f"For retain accuracy $\\mathcal{{A}}^t_r$ and unlearned-model forget "
+        f"accuracy $\\mathcal{{A}}^t_f$, we report mean$\\pm$std across forget "
+        f"For post-attack/revival forget. "
         f"accuracy $\\mathcal{{A}}^t_f$, we report $(\\min,\\max)$ across "
         f"forget classes. RS is computed using the same definition for PRA "
         f"and our method and reports the maximum per-class value. For each "
         r"dataset block, \textbf{bold} indicates the highest RS of our "
         r"source-free audit and \underline{underlined} indicates the "
         r"second-highest."
-    )
+        )
     label   = f"tab:{slugify(mdl_latex)}_single_class_all_datasets"
 
     latex = wrap_with_resizebox(latex, caption, label, star=True, width=r"\textwidth")
