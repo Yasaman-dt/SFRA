@@ -5,37 +5,95 @@ import numpy as np
 import os
 import random
 import torch.nn.functional as F
+import torch.nn as nn
 from torch.utils.data import Subset
 
 from models import load_model
 from utils import get_transforms, get_dataset
 
 
-def extract_features(model, images):
-    if hasattr(model, 'features') and hasattr(model, 'avg_pool'):
-        feats = model.avg_pool(model.features(images))
-        return feats.view(feats.size(0), -1)
+def _last_linear(module):
+    """Return the last nn.Linear contained in a module."""
+    if isinstance(module, nn.Linear):
+        return module
+    linear_layers = [m for m in module.modules() if isinstance(m, nn.Linear)]
+    return linear_layers[-1] if linear_layers else None
 
-    if hasattr(model, 'features') and hasattr(model, 'avgpool'):
-        feats = model.avgpool(model.features(images))
-        return feats.view(feats.size(0), -1)
 
-    if hasattr(model, 'avgpool') and hasattr(model, 'layer4'):
-        x = model.conv1(images)
-        if hasattr(model, 'bn1'):
-            x = model.bn1(x)
-        if hasattr(model, 'relu'):
-            x = model.relu(x)
-        if hasattr(model, 'maxpool'):
-            x = model.maxpool(x)
-        x = model.layer1(x)
-        x = model.layer2(x)
-        x = model.layer3(x)
-        x = model.layer4(x)
-        x = model.avgpool(x)
-        return torch.flatten(x, 1)
+def get_active_classifier(model):
+    """
+    Locate the linear layer that is actually used to produce logits.
 
-    raise AttributeError(f'Unsupported model architecture for feature extraction: {type(model).__name__}')
+    Order matters: the custom Swin model contains both `head.fc` (active)
+    and a separate `fc` attribute that is not used by forward().
+    """
+    base = model.module if hasattr(model, "module") else model
+
+    # Custom/timm-style Swin: forward() uses model.head.fc.
+    if hasattr(base, "head") and hasattr(base.head, "fc"):
+        if isinstance(base.head.fc, nn.Linear):
+            return base.head.fc
+
+    # ViT_16_mod and torchvision-style ViTs.
+    if hasattr(base, "heads"):
+        layer = _last_linear(base.heads)
+        if layer is not None:
+            return layer
+
+    # ResNet, VGG, custom VisionTransformer, or Sequential ResNet head.
+    if hasattr(base, "fc"):
+        layer = _last_linear(base.fc)
+        if layer is not None:
+            return layer
+
+    # Generic fallback.
+    if hasattr(base, "classifier"):
+        layer = _last_linear(base.classifier)
+        if layer is not None:
+            return layer
+
+    raise AttributeError(
+        f"Could not locate the active classifier for {type(base).__name__}."
+    )
+
+
+def extract_features(model, images, classifier=None):
+    """
+    Capture the exact tensor entering the active final linear classifier.
+
+    A forward pre-hook makes this architecture-independent and guarantees
+    that the prototype dimension matches classifier.in_features.
+    """
+    classifier = classifier or get_active_classifier(model)
+    captured = {}
+
+    def _capture_input(_module, inputs):
+        if not inputs:
+            raise RuntimeError("The classifier pre-hook received no input.")
+        captured["features"] = inputs[0].detach()
+
+    handle = classifier.register_forward_pre_hook(_capture_input)
+    try:
+        _ = model(images)
+    finally:
+        handle.remove()
+
+    if "features" not in captured:
+        raise RuntimeError(
+            f"Failed to capture features for {type(model).__name__}."
+        )
+
+    feats = captured["features"]
+    if feats.ndim != 2:
+        feats = torch.flatten(feats, 1)
+
+    if feats.shape[1] != classifier.in_features:
+        raise RuntimeError(
+            "Feature/classifier mismatch after extraction: "
+            f"features={tuple(feats.shape)}, "
+            f"classifier.in_features={classifier.in_features}."
+        )
+    return feats
 
 
 def update_fc_with_prototypes(
@@ -51,13 +109,20 @@ def update_fc_with_prototypes(
     model = model.to(device)
     model.eval()
 
+    classifier = get_active_classifier(model)
+    print(
+        f"Active classifier: {classifier} "
+        f"(in_features={classifier.in_features}, "
+        f"out_features={classifier.out_features})"
+    )
+
     feature_dict = {c: [] for c in unlearn_classes}
     counts = {c: 0 for c in unlearn_classes}
 
     with torch.no_grad():
         for images, labels in attack_loader:
             images, labels = images.to(device), labels.to(device)
-            feats = extract_features(model, images)
+            feats = extract_features(model, images, classifier)
 
             for feat, lbl in zip(feats, labels):
                 c = int(lbl.item())
@@ -68,32 +133,207 @@ def update_fc_with_prototypes(
             if all(counts[c] >= num_samples_per_class for c in unlearn_classes):
                 break
 
+    missing = [
+        c for c in unlearn_classes
+        if len(feature_dict[c]) < num_samples_per_class
+    ]
+    if missing:
+        raise RuntimeError(
+            "Not enough attack samples for classes "
+            f"{missing}. Collected counts: {counts}"
+        )
+
     proto_dict = {}
     for c, flist in feature_dict.items():
-        if len(flist) == 0:
-            continue
         proto = torch.stack(flist, dim=0).mean(dim=0)
         if normalize_proto:
             proto = F.normalize(proto, p=2, dim=0)
         proto_dict[c] = proto.to(device)
 
-    orig_w = model.fc.weight.data.clone()
-    orig_b = model.fc.bias.data.clone() if model.fc.bias is not None else torch.zeros(orig_w.size(0), device=device)
+    orig_w = classifier.weight.detach().clone()
+    if classifier.bias is not None:
+        orig_b = classifier.bias.detach().clone()
+    else:
+        orig_b = torch.zeros(
+            classifier.out_features,
+            device=device,
+            dtype=orig_w.dtype,
+        )
 
-    for c, proto in proto_dict.items():
-        if metric == 'l2':
-            w_proto = 2.0 * proto
-            b_proto = -proto.pow(2).sum()
-        else:
-            w_proto = proto
-            b_proto = torch.tensor(0.0, device=device)
+    with torch.no_grad():
+        for c, proto in proto_dict.items():
+            if proto.numel() != classifier.in_features:
+                raise RuntimeError(
+                    f"Class {c}: prototype dimension {proto.numel()} does "
+                    f"not match classifier dimension {classifier.in_features}."
+                )
 
-        w_new = alpha * w_proto + (1 - alpha) * orig_w[c]
-        b_new = alpha * b_proto + (1 - alpha) * orig_b[c]
-        model.fc.weight.data[c] = w_new
-        model.fc.bias.data[c] = b_new
+            if metric == 'l2':
+                w_proto = 2.0 * proto
+                b_proto = -proto.pow(2).sum()
+            elif metric == 'cosine':
+                w_proto = proto
+                b_proto = torch.tensor(
+                    0.0, device=device, dtype=orig_w.dtype
+                )
+            else:
+                raise ValueError(f"Unsupported PRA metric: {metric}")
+
+            w_new = alpha * w_proto + (1.0 - alpha) * orig_w[c]
+            b_new = alpha * b_proto + (1.0 - alpha) * orig_b[c]
+
+            classifier.weight[c].copy_(w_new)
+            if classifier.bias is not None:
+                classifier.bias[c].copy_(b_new)
 
     return model
+
+
+
+def collect_prototypes(
+    model,
+    attack_loader,
+    unlearn_classes,
+    num_samples_per_class=5,
+    normalize_proto=True,
+    device='cuda',
+):
+    """
+    Extract exactly k real support examples per forget class and compute
+    one pre-head prototype per class. The same prototypes are reused for
+    every alpha candidate, ensuring a fair alpha comparison.
+    """
+    model = model.to(device).eval()
+    classifier = get_active_classifier(model)
+
+    feature_dict = {c: [] for c in unlearn_classes}
+    counts = {c: 0 for c in unlearn_classes}
+
+    with torch.no_grad():
+        for images, labels in attack_loader:
+            images = images.to(device)
+            labels = labels.to(device)
+            feats = extract_features(model, images, classifier)
+
+            for feat, label in zip(feats, labels):
+                c = int(label.item())
+                if c in counts and counts[c] < num_samples_per_class:
+                    feature_dict[c].append(feat.detach().clone())
+                    counts[c] += 1
+
+            if all(counts[c] >= num_samples_per_class for c in unlearn_classes):
+                break
+
+    missing = [
+        c for c in unlearn_classes
+        if counts[c] < num_samples_per_class
+    ]
+    if missing:
+        raise RuntimeError(
+            f"Could not collect {num_samples_per_class} support samples "
+            f"for classes {missing}. Collected counts: {counts}"
+        )
+
+    prototypes = {}
+    for c, features in feature_dict.items():
+        proto = torch.stack(features, dim=0).mean(dim=0)
+        if normalize_proto:
+            proto = F.normalize(proto, p=2, dim=0)
+        prototypes[c] = proto.to(device)
+
+    return prototypes, counts
+
+
+def save_classifier_state(classifier):
+    weight = classifier.weight.detach().clone()
+    bias = (
+        classifier.bias.detach().clone()
+        if classifier.bias is not None
+        else None
+    )
+    return weight, bias
+
+
+def restore_classifier_state(classifier, weight, bias):
+    with torch.no_grad():
+        classifier.weight.copy_(weight)
+        if classifier.bias is not None and bias is not None:
+            classifier.bias.copy_(bias)
+
+
+def apply_prototypes_to_classifier(
+    classifier,
+    prototypes,
+    original_weight,
+    original_bias,
+    alpha,
+    metric='cosine',
+):
+    """Apply PRA to forget-class rows only."""
+    with torch.no_grad():
+        for c, proto in prototypes.items():
+            if proto.numel() != classifier.in_features:
+                raise RuntimeError(
+                    f"Class {c}: prototype dimension {proto.numel()} does "
+                    f"not match classifier dimension {classifier.in_features}."
+                )
+
+            if metric == 'cosine':
+                w_proto = proto
+                b_proto = torch.tensor(
+                    0.0,
+                    device=original_weight.device,
+                    dtype=original_weight.dtype,
+                )
+            elif metric == 'l2':
+                w_proto = 2.0 * proto
+                b_proto = -proto.pow(2).sum()
+            else:
+                raise ValueError(f"Unsupported PRA metric: {metric}")
+
+            classifier.weight[c].copy_(
+                alpha * w_proto + (1.0 - alpha) * original_weight[c]
+            )
+            if classifier.bias is not None:
+                old_bias = original_bias[c]
+                classifier.bias[c].copy_(
+                    alpha * b_proto + (1.0 - alpha) * old_bias
+                )
+
+
+def loader_accuracy(model, loader, device):
+    """Overall percentage accuracy on one loader."""
+    model.eval()
+    correct = 0
+    total = 0
+    with torch.no_grad():
+        for images, labels in loader:
+            images = images.to(device)
+            labels = labels.to(device)
+            predictions = model(images).argmax(dim=1)
+            correct += int((predictions == labels).sum().item())
+            total += int(labels.numel())
+    return 100.0 * correct / total if total > 0 else float('nan')
+
+
+def parse_alpha_grid(value):
+    values = []
+    for item in value.split(','):
+        item = item.strip()
+        if not item:
+            continue
+        alpha = float(item)
+        if not 0.0 <= alpha <= 1.0:
+            raise argparse.ArgumentTypeError(
+                f"Alpha must be in [0, 1], received {alpha}."
+            )
+        values.append(alpha)
+
+    if not values:
+        raise argparse.ArgumentTypeError("Alpha grid cannot be empty.")
+
+    # Highest alpha first; remove duplicates.
+    return sorted(set(values), reverse=True)
 
 
 def create_attack_loaders(
@@ -118,8 +358,23 @@ def create_attack_loaders(
     unlearn_subset = Subset(test_set, unlearn_idx)
     remain_subset = Subset(test_set, remain_idx)
 
-    unlearn_attack_loader = DataLoader(unlearn_subset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers)
-    remain_attack_loader = DataLoader(remain_subset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers)
+    generator = torch.Generator()
+    generator.manual_seed(0 if seed is None else seed)
+
+    unlearn_attack_loader = DataLoader(
+        unlearn_subset,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        num_workers=num_workers,
+        generator=generator,
+    )
+    remain_attack_loader = DataLoader(
+        remain_subset,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        num_workers=num_workers,
+        generator=generator,
+    )
 
     counts = {'unlearn': len(unlearn_idx), 'remain': len(remain_idx)}
     print(f"Attack subset size: {len(sampled_indices)}")
@@ -178,51 +433,241 @@ def per_class_accuracy(model, loader, device, num_classes):
     return acc
 
 
-def evaluate_one_checkpoint(checkpoint_path, args, forget_class, num_classes, device, testset, transform_train, transform_test):
-    remain_classes = [c for c in range(num_classes) if c != forget_class]
+def evaluate_one_checkpoint(
+    checkpoint_path,
+    args,
+    forget_class,
+    num_classes,
+    device,
+    attackset,
+    testset,
+    transform_train,
+    transform_test,
+):
+    remain_classes = [
+        c for c in range(num_classes)
+        if c != forget_class
+    ]
 
     print(f'Using checkpoint: {checkpoint_path}')
-    model = load_model(checkpoint_path, args.model_name, args.dataset, num_classes)
+    model = load_model(
+        checkpoint_path,
+        args.model_name,
+        args.dataset,
+        num_classes,
+    )
     model = model.to(device).eval()
 
-    attack_subset, unlearn_attack_loader, remain_attack_loader, counts = create_attack_loaders(
-        test_set=testset,
-        n_percent=args.n_percent,
-        unlearn_classes=[forget_class],
-        remain_classes=remain_classes,
-        batch_size=64,
-        shuffle=True,
-        num_workers=4,
-        seed=0,
+    _, unlearn_attack_loader, remain_attack_loader, counts = (
+        create_attack_loaders(
+            test_set=attackset,
+            n_percent=args.n_percent,
+            unlearn_classes=[forget_class],
+            remain_classes=remain_classes,
+            batch_size=64,
+            shuffle=True,
+            num_workers=4,
+            seed=args.support_seed,
+        )
     )
-
     print('Attack loader counts:', counts)
 
-    model_attacked = update_fc_with_prototypes(
+    test_loader = DataLoader(
+        testset,
+        batch_size=256,
+        shuffle=False,
+        num_workers=4,
+    )
+
+    # Unlearned-model test accuracies before PRA.
+    baseline_test_accs = per_class_accuracy(
+        model,
+        test_loader,
+        device,
+        num_classes,
+    )
+    baseline_forget_test = float(
+        baseline_test_accs[forget_class]
+    )
+    baseline_retain_test = float(np.nanmean([
+        baseline_test_accs[c] for c in remain_classes
+    ]))
+
+    # The paper constrains the post-PRA retain accuracy relative to the
+    # retain accuracy before PRA. We evaluate this constraint on the
+    # source-dependent attack split, not on the final test split.
+    baseline_retain_selection = loader_accuracy(
+        model,
+        remain_attack_loader,
+        device,
+    )
+
+    classifier = get_active_classifier(model)
+    original_weight, original_bias = save_classifier_state(classifier)
+
+    prototypes, support_counts = collect_prototypes(
         model=model,
         attack_loader=unlearn_attack_loader,
         unlearn_classes=[forget_class],
         num_samples_per_class=args.num_samples_per_class,
-        metric='cosine',
-        normalize_proto=True,
-        alpha=1.0,
+        normalize_proto=not args.no_normalize_proto,
         device=device,
     )
+    print('Prototype support counts:', support_counts)
 
-    test_loader = DataLoader(testset, batch_size=256, shuffle=False, num_workers=4)
-    accs = per_class_accuracy(model_attacked, test_loader, device, num_classes)
-    forget_acc = float(accs[forget_class])
-    retain_acc = float(np.nanmean([accs[c] for c in remain_classes])) if remain_classes else float('nan')
+    if args.pra_alpha is not None:
+        alpha_candidates = [args.pra_alpha]
+        automatic_selection = False
+    else:
+        alpha_candidates = args.alpha_grid
+        automatic_selection = True
 
-    print('\nPer-class test accuracy (attacked model):')
-    print(f'  forget class {forget_class}: {forget_acc:.2f}%')
-    print(f'  mean retain accuracy: {retain_acc:.2f}%')
+    candidate_results = []
+    for alpha in alpha_candidates:
+        restore_classifier_state(
+            classifier,
+            original_weight,
+            original_bias,
+        )
+        apply_prototypes_to_classifier(
+            classifier=classifier,
+            prototypes=prototypes,
+            original_weight=original_weight,
+            original_bias=original_bias,
+            alpha=alpha,
+            metric=args.pra_metric,
+        )
+
+        retain_after_selection = loader_accuracy(
+            model,
+            remain_attack_loader,
+            device,
+        )
+        retain_drop = (
+            baseline_retain_selection - retain_after_selection
+        )
+        valid = retain_drop <= args.max_retain_drop + 1e-12
+
+        candidate_results.append({
+            'alpha': float(alpha),
+            'retain_selection': float(retain_after_selection),
+            'retain_drop': float(retain_drop),
+            'valid': bool(valid),
+        })
+
+        status = 'valid' if valid else 'invalid'
+        print(
+            f'alpha={alpha:.3f}: selection-retain='
+            f'{retain_after_selection:.2f}% '
+            f'(drop={retain_drop:.2f} pp) -> {status}'
+        )
+
+    valid_results = [
+        result for result in candidate_results
+        if result['valid']
+    ]
+
+    if automatic_selection:
+        if not valid_results:
+            raise RuntimeError(
+                'No alpha satisfies the retain-accuracy constraint. '
+                'Include alpha=0 in --alpha-grid or increase '
+                '--max-retain-drop.'
+            )
+
+        # Choose the strongest interpolation that satisfies the paper's
+        # retain-accuracy constraint.
+        selected = max(
+            valid_results,
+            key=lambda result: result['alpha'],
+        )
+    else:
+        selected = candidate_results[0]
+        if not selected['valid']:
+            print(
+                'WARNING: the fixed alpha violates the requested '
+                'retain-accuracy-drop constraint.'
+            )
+
+    selected_alpha = selected['alpha']
+    print(
+        f'Selected alpha={selected_alpha:.3f} '
+        f'with retain drop={selected["retain_drop"]:.2f} pp.'
+    )
+
+    # Restore the clean unlearned head, then apply the selected PRA once.
+    restore_classifier_state(
+        classifier,
+        original_weight,
+        original_bias,
+    )
+    apply_prototypes_to_classifier(
+        classifier=classifier,
+        prototypes=prototypes,
+        original_weight=original_weight,
+        original_bias=original_bias,
+        alpha=selected_alpha,
+        metric=args.pra_metric,
+    )
+
+    # Training/attack-split metrics correspond to Proto-Acc_f and Acc_r*
+    # in the PRA paper. Test metrics are suitable for your WACV table.
+    pra_forget_selection = loader_accuracy(
+        model,
+        unlearn_attack_loader,
+        device,
+    )
+    pra_retain_selection = loader_accuracy(
+        model,
+        remain_attack_loader,
+        device,
+    )
+
+    attacked_test_accs = per_class_accuracy(
+        model,
+        test_loader,
+        device,
+        num_classes,
+    )
+    pra_forget_test = float(attacked_test_accs[forget_class])
+    pra_retain_test = float(np.nanmean([
+        attacked_test_accs[c] for c in remain_classes
+    ]))
+
+    print('\nPRA result:')
+    print(
+        f'  selected alpha: {selected_alpha:.3f}'
+    )
+    print(
+        f'  selection forget accuracy: '
+        f'{pra_forget_selection:.2f}%'
+    )
+    print(
+        f'  selection retain accuracy: '
+        f'{pra_retain_selection:.2f}%'
+    )
+    print(
+        f'  test forget accuracy: {pra_forget_test:.2f}%'
+    )
+    print(
+        f'  test retain accuracy: {pra_retain_test:.2f}%'
+    )
 
     return {
         'forget_class': forget_class,
         'checkpoint': checkpoint_path,
-        'acc_f': forget_acc,
-        'acc_r': retain_acc,
+        'support_seed': args.support_seed,
+        'selected_alpha': selected_alpha,
+        'baseline_acc_f_test': baseline_forget_test,
+        'baseline_acc_r_test': baseline_retain_test,
+        'acc_f': pra_forget_test,
+        'acc_r': pra_retain_test,
+        'acc_f_selection': pra_forget_selection,
+        'acc_r_selection_before': baseline_retain_selection,
+        'acc_r_selection_after': pra_retain_selection,
+        'retain_drop_selection': (
+            baseline_retain_selection - pra_retain_selection
+        ),
         'counts': counts,
     }
 
@@ -230,22 +675,62 @@ def evaluate_one_checkpoint(checkpoint_path, args, forget_class, num_classes, de
 def append_results_to_csv(results, args):
     out_dir = os.path.join('pra', args.method)
     os.makedirs(out_dir, exist_ok=True)
-    out_path = os.path.join(out_dir, f'{args.dataset}_{args.model_name}.csv')
+    out_path = os.path.join(
+        out_dir,
+        f'{args.dataset}_{args.model_name}.csv',
+    )
 
     import csv
 
-    fieldnames = ['forget_class', 'acc_f', 'acc_r', 'unlearn_count', 'remain_count']
+    fieldnames = [
+        'forget_class',
+        'support_seed',
+        'selected_alpha',
+        'baseline_acc_f_test',
+        'baseline_acc_r_test',
+        'pra_acc_f_test',
+        'pra_acc_r_test',
+        'pra_acc_f_selection',
+        'selection_acc_r_before',
+        'selection_acc_r_after',
+        'selection_retain_drop',
+        'unlearn_count',
+        'remain_count',
+    ]
 
     header_needed = not os.path.exists(out_path)
-    with open(out_path, 'a', newline='') as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
+    with open(out_path, 'a', newline='') as file:
+        writer = csv.DictWriter(file, fieldnames=fieldnames)
         if header_needed:
             writer.writeheader()
+
         for item in results:
             writer.writerow({
                 'forget_class': item['forget_class'],
-                'acc_f': f"{item['acc_f']:.4f}",
-                'acc_r': f"{item['acc_r']:.4f}",
+                'support_seed': item['support_seed'],
+                'selected_alpha': (
+                    f"{item['selected_alpha']:.4f}"
+                ),
+                'baseline_acc_f_test': (
+                    f"{item['baseline_acc_f_test']:.4f}"
+                ),
+                'baseline_acc_r_test': (
+                    f"{item['baseline_acc_r_test']:.4f}"
+                ),
+                'pra_acc_f_test': f"{item['acc_f']:.4f}",
+                'pra_acc_r_test': f"{item['acc_r']:.4f}",
+                'pra_acc_f_selection': (
+                    f"{item['acc_f_selection']:.4f}"
+                ),
+                'selection_acc_r_before': (
+                    f"{item['acc_r_selection_before']:.4f}"
+                ),
+                'selection_acc_r_after': (
+                    f"{item['acc_r_selection_after']:.4f}"
+                ),
+                'selection_retain_drop': (
+                    f"{item['retain_drop_selection']:.4f}"
+                ),
                 'unlearn_count': item['counts']['unlearn'],
                 'remain_count': item['counts']['remain'],
             })
@@ -273,6 +758,48 @@ def main():
                         help='Percent of test set to sample for attack loader (e.g., 1.0)')
     parser.add_argument('--num-samples-per-class', type=int, default=5,
                         help='Number of real samples per unlearn class to build prototype')
+    parser.add_argument(
+        '--pra-alpha',
+        type=float,
+        default=None,
+        help=(
+            'Use one fixed alpha. By default alpha is selected '
+            'automatically under the retain-drop constraint.'
+        ),
+    )
+    parser.add_argument(
+        '--alpha-grid',
+        type=parse_alpha_grid,
+        default=parse_alpha_grid(
+            '1.0,0.9,0.8,0.7,0.6,0.5,0.4,0.3,0.2,0.1,0.0'
+        ),
+        help=(
+            'Comma-separated alpha candidates for automatic selection. '
+            'The paper reports an ablation at 1.0,0.8,0.6,0.4,0.2, '
+            'but does not publish every Table-1 alpha.'
+        ),
+    )
+    parser.add_argument(
+        '--max-retain-drop',
+        type=float,
+        default=1.0,
+        help=(
+            'Maximum allowed retain-accuracy drop in percentage '
+            'points during alpha selection.'
+        ),
+    )
+    parser.add_argument(
+        '--support-seed',
+        type=int,
+        default=0,
+        help='Seed controlling selection of the real PRA support images.',
+    )
+    parser.add_argument('--pra-metric', choices=['cosine', 'l2'], default='cosine',
+                        help='Prototype-to-classifier conversion used by PRA')
+    parser.add_argument('--no-normalize-proto', action='store_true',
+                        help='Do not L2-normalize the class prototype')
+    parser.add_argument('--attack-split', choices=['train', 'test'], default='train',
+                        help='Dataset split used to obtain the real PRA support samples. Train avoids test leakage.')
     parser.add_argument('--device', default='cuda')
     args = parser.parse_args()
 
@@ -287,6 +814,8 @@ def main():
     # dataset
     transform_train, transform_test = get_transforms(args.dataset, args.model_name, wo_dataaug=True)
     trainset, testset = get_dataset(args.dataset, transform_train, transform_test)
+    attackset = trainset if args.attack_split == 'train' else testset
+    print(f'PRA support samples are drawn from the {args.attack_split} split.')
 
     results = []
     if args.checkpoint is not None:
@@ -294,17 +823,25 @@ def main():
             raise FileNotFoundError(f'Checkpoint not found: {args.checkpoint}')
         if len(forget_classes) != 1:
             print('A single explicit checkpoint was provided, so only the first forget class will be evaluated.')
-        results.append(evaluate_one_checkpoint(args.checkpoint, args, forget_classes[0], num_classes, device, testset, transform_train, transform_test))
+        results.append(evaluate_one_checkpoint(args.checkpoint, args, forget_classes[0], num_classes, device, attackset, testset, transform_train, transform_test))
     else:
         for forget_class in forget_classes:
             checkpoint_path = checkpoint_for(args.method, args.dataset, args.model_name, forget_class, args.lr, args.base_dir)
             if not os.path.isfile(checkpoint_path):
                 raise FileNotFoundError(f'Checkpoint not found: {checkpoint_path}')
-            results.append(evaluate_one_checkpoint(checkpoint_path, args, forget_class, num_classes, device, testset, transform_train, transform_test))
+            results.append(evaluate_one_checkpoint(checkpoint_path, args, forget_class, num_classes, device, attackset, testset, transform_train, transform_test))
 
     print('\nSummary')
     for item in results:
-        print(f"forget={item['forget_class']} acc_f={item['acc_f']:.2f}% acc_r={item['acc_r']:.2f}% checkpoint={item['checkpoint']}")
+        print(
+            f"forget={item['forget_class']} "
+            f"alpha={item['selected_alpha']:.3f} "
+            f"before_f={item['baseline_acc_f_test']:.2f}% "
+            f"before_r={item['baseline_acc_r_test']:.2f}% "
+            f"pra_f={item['acc_f']:.2f}% "
+            f"pra_r={item['acc_r']:.2f}% "
+            f"checkpoint={item['checkpoint']}"
+        )
 
     mean_acc_f = float(np.nanmean([item['acc_f'] for item in results]))
     mean_acc_r = float(np.nanmean([item['acc_r'] for item in results]))

@@ -333,31 +333,178 @@ def load_original_csv(path: Path, ds_hint: Optional[str]=None, mdl_hint: Optiona
     return d[keep_cols].copy()
 
 
-def load_pra_csv(path: Path, ds_hint: Optional[str]=None, mdl_hint: Optional[str]=None, mth_hint: Optional[str]=None) -> pd.DataFrame:
-    ds_p, mdl_p, _, _ = parse_filename(path)
-    ds = _pick(ds_p, ds_hint, "dataset", path)
-    mdl = _pick(mdl_p, mdl_hint, "model", path)
-    mth = mth_hint or "pra"
+def load_pra_csv(
+    path: Path,
+    ds_hint: Optional[str] = None,
+    mdl_hint: Optional[str] = None,
+    mth_hint: Optional[str] = None,
+) -> pd.DataFrame:
+    """
+    Load PRA results produced by run_pra_on_checkpoint_auto_alpha.py.
 
+    Supports both:
+      New format:
+        pra_acc_r_test, pra_acc_f_test,
+        baseline_acc_r_test, baseline_acc_f_test,
+        selected_alpha, support_seed
+
+      Legacy format:
+        acc_r, acc_f
+
+    PRA_RS uses the same RS definition as the proposed method:
+        (1 - retain_drop) * forget_gain
+    with accuracies normalized to [0, 1].
+    """
+    ds_p, mdl_p, _, _ = parse_filename(path)
+
+    # Prefer explicit hints. This is required for names such as
+    # tiny_imagenet_resnet18.csv, which cannot be parsed correctly by
+    # simply splitting on underscores.
+    ds = ds_hint or ds_p
+    mdl = mdl_hint or mdl_p
+    if ds is None:
+        raise ValueError(f"Cannot infer dataset for PRA file: {path}")
+    if mdl is None:
+        raise ValueError(f"Cannot infer model for PRA file: {path}")
+
+    mth = mth_hint or "pra"
     d = pd.read_csv(path)
-    rename_map = {
-        "acc_r": "test_retain_acc",
-        "acc_f": "test_forget_acc",
+
+    # New auto-alpha output.
+    new_format = {
+        "pra_acc_r_test",
+        "pra_acc_f_test",
+    }.issubset(d.columns)
+
+    if new_format:
+        d = d.rename(columns={
+            "pra_acc_r_test": "test_retain_acc",
+            "pra_acc_f_test": "test_forget_acc",
+            "baseline_acc_r_test": "test_retain_acc_un",
+            "baseline_acc_f_test": "test_forget_acc_un",
+        })
+    else:
+        # Backward compatibility with the older PRA CSV.
+        d = d.rename(columns={
+            "acc_r": "test_retain_acc",
+            "acc_f": "test_forget_acc",
+        })
+
+    numeric_cols = [
+        "forget_class",
+        "support_seed",
+        "selected_alpha",
+        "test_retain_acc",
+        "test_forget_acc",
+        "test_retain_acc_un",
+        "test_forget_acc_un",
+        "selection_retain_drop",
+    ]
+    for col in numeric_cols:
+        if col in d.columns:
+            d[col] = pd.to_numeric(d[col], errors="coerce")
+
+    if "forget_class" not in d.columns:
+        d["forget_class"] = pd.NA
+    if "support_seed" not in d.columns:
+        d["support_seed"] = 0
+    if "selected_alpha" not in d.columns:
+        d["selected_alpha"] = pd.NA
+
+    # Appended runs can create duplicates when a command is rerun.
+    # Keep the latest row for each forget-class/seed pair.
+    dedup_keys = [
+        col for col in ["forget_class", "support_seed"]
+        if col in d.columns
+    ]
+    if dedup_keys:
+        d = d.drop_duplicates(subset=dedup_keys, keep="last")
+
+    # Compute PRA RS only when the before-PRA accuracies are available.
+    required_for_rs = {
+        "test_retain_acc",
+        "test_forget_acc",
+        "test_retain_acc_un",
+        "test_forget_acc_un",
     }
-    d = d.rename(columns=rename_map)
-    for col in ["test_retain_acc", "test_forget_acc"]:
-        if col not in d.columns:
-            d[col] = pd.NA
-        d[col] = pd.to_numeric(d[col], errors="coerce")
+    if required_for_rs.issubset(d.columns):
+        vals = [
+            pd.to_numeric(d[col], errors="coerce")
+            for col in required_for_rs
+        ]
+        max_val = pd.concat(vals, axis=0).max(skipna=True)
+        scale = 100.0 if pd.notna(max_val) and max_val > 1.5 else 1.0
+
+        ar_un = d["test_retain_acc_un"] / scale
+        ar_pra = d["test_retain_acc"] / scale
+        af_un = d["test_forget_acc_un"] / scale
+        af_pra = d["test_forget_acc"] / scale
+
+        retain_drop = (ar_un - ar_pra).clip(lower=0.0)
+        forget_gain = (af_pra - af_un).clip(lower=0.0)
+        d["PRA_RS2"] = (1.0 - retain_drop) * forget_gain
+    else:
+        d["PRA_RS2"] = pd.NA
 
     d["dataset"] = ds
     d["model"] = mdl
     d["method"] = mth
-    if "forget_class" not in d.columns:
-        d["forget_class"] = pd.NA
 
-    keep_cols = ["forget_class", "dataset", "model", "method", "test_retain_acc", "test_forget_acc"]
+    keep_cols = [
+        "forget_class",
+        "support_seed",
+        "selected_alpha",
+        "dataset",
+        "model",
+        "method",
+        "test_retain_acc_un",
+        "test_forget_acc_un",
+        "test_retain_acc",
+        "test_forget_acc",
+        "PRA_RS2",
+    ]
+    for col in keep_cols:
+        if col not in d.columns:
+            d[col] = pd.NA
+
     return d[keep_cols].copy()
+
+
+def summarize_pra_results(
+    df_pra: pd.DataFrame,
+    dataset: str,
+) -> pd.DataFrame:
+    """
+    Average repeated support-seed runs within each forget class first.
+
+    This matches the intended reporting order:
+      1) average the repeated PRA trials for each forget class;
+      2) aggregate across forget classes for the table.
+    """
+    if df_pra is None or df_pra.empty:
+        return pd.DataFrame()
+
+    d = _apply_forget_filter(df_pra.copy(), dataset)
+
+    for col in [
+        "test_retain_acc",
+        "test_forget_acc",
+        "PRA_RS2",
+        "selected_alpha",
+    ]:
+        d[col] = pd.to_numeric(d[col], errors="coerce")
+
+    return (
+        d.groupby("forget_class", as_index=False, dropna=False)
+         .agg(
+             test_retain_acc=("test_retain_acc", "mean"),
+             test_forget_acc=("test_forget_acc", "mean"),
+             PRA_RS2=("PRA_RS2", "mean"),
+             selected_alpha=("selected_alpha", "mean"),
+             num_support_runs=("support_seed", "nunique"),
+         )
+    )
+
 
 def _rank_styles(values):
     """
@@ -806,23 +953,102 @@ def render_table_for(ds: str, mdl: str, df_src: pd.DataFrame):
                     baseline_row["test_forget_acc"] = fmt_min_max(min_fgt, max_fgt)
                     rows.append(baseline_row)
         else:
-            for phase in PHASE_ORDER:  # "forget", "revival"
-                row = {"Method": m, "Phase": phase.title()}
-                if (m, phase) in g.index:
-                    for col in OUT_METRIC_COLS:
-                        # Keep (min,max) formatting for revival forget-accuracy columns if present
-                        if phase == "revival" and col in ("train_forget_acc", "test_forget_acc"):
-                            vmin = g.loc[(m, phase), (col, "min")]
-                            vmax = g.loc[(m, phase), (col, "max")]
-                            row[col] = fmt_min_max(vmin, vmax)
-                        else:
-                            mu = g.loc[(m, phase), (col, "mean")]
-                            sd = g.loc[(m, phase), (col, "std")]
-                            row[col] = fmt_mu_sigma(mu, sd)
-                else:
-                    for col in OUT_METRIC_COLS:
-                        row[col] = "-"
-                rows.append(row)
+            # -----------------------------------------------------
+            # 1) Unlearned model
+            # -----------------------------------------------------
+            phase = "unlearned"
+            row = {"Method": m, "Phase": "Unlearned"}
+            if (m, phase) in g.index:
+                for col in OUT_METRIC_COLS:
+                    mu = g.loc[(m, phase), (col, "mean")]
+                    sd = g.loc[(m, phase), (col, "std")]
+                    row[col] = fmt_mu_sigma(mu, sd)
+            else:
+                for col in OUT_METRIC_COLS:
+                    row[col] = "-"
+            rows.append(row)
+
+            # -----------------------------------------------------
+            # 2) PRA baseline, when available
+            # -----------------------------------------------------
+            pra_path = (
+                base_dir.parent
+                / "pra"
+                / m
+                / f"{ds}_{mdl}.csv"
+            )
+            if pra_path.is_file():
+                try:
+                    df_pra = load_pra_csv(
+                        pra_path,
+                        ds_hint=ds,
+                        mdl_hint=mdl,
+                        mth_hint=m,
+                    )
+                    pra_summary = summarize_pra_results(
+                        df_pra,
+                        dataset=ds,
+                    )
+
+                    if not pra_summary.empty:
+                        pra_row = {
+                            "Method": m,
+                            "Phase": r"PRA \cite{ha2025unlearning}",
+                        }
+
+                        for col in OUT_METRIC_COLS:
+                            # PRA CSV contains test metrics only.
+                            if col == "test_retain_acc":
+                                values = pd.to_numeric(
+                                    pra_summary["test_retain_acc"],
+                                    errors="coerce",
+                                )
+                                pra_row[col] = fmt_mu_sigma(
+                                    values.mean(),
+                                    values.std(),
+                                )
+                            elif col == "test_forget_acc":
+                                values = pd.to_numeric(
+                                    pra_summary["test_forget_acc"],
+                                    errors="coerce",
+                                )
+                                pra_row[col] = fmt_min_max(
+                                    values.min(),
+                                    values.max(),
+                                )
+                            else:
+                                pra_row[col] = "-"
+
+                        rows.append(pra_row)
+
+                except Exception as exc:
+                    print(
+                        f"[WARN] Failed to add PRA row for "
+                        f"{m} {ds}/{mdl}: {exc}"
+                    )
+
+            # -----------------------------------------------------
+            # 3) Our source-free revival
+            # -----------------------------------------------------
+            phase = "revival"
+            row = {"Method": m, "Phase": "Revival (ours)"}
+            if (m, phase) in g.index:
+                for col in OUT_METRIC_COLS:
+                    if col in (
+                        "train_forget_acc",
+                        "test_forget_acc",
+                    ):
+                        vmin = g.loc[(m, phase), (col, "min")]
+                        vmax = g.loc[(m, phase), (col, "max")]
+                        row[col] = fmt_min_max(vmin, vmax)
+                    else:
+                        mu = g.loc[(m, phase), (col, "mean")]
+                        sd = g.loc[(m, phase), (col, "std")]
+                        row[col] = fmt_mu_sigma(mu, sd)
+            else:
+                for col in OUT_METRIC_COLS:
+                    row[col] = "-"
+            rows.append(row)
 
     table_df = pd.DataFrame(rows, columns=["Method","Phase"] + OUT_METRIC_COLS) \
                  .rename(columns={c: COL_LABELS[c] for c in OUT_METRIC_COLS})
@@ -851,13 +1077,21 @@ def render_table_for(ds: str, mdl: str, df_src: pd.DataFrame):
     ds_latex  = _latex_dataset_name(ds)
 
     if SHOW_TRAIN_METRICS:
-        cap = (f"{ds_latex} / {mdl_latex} — Revival results "
-               f"(mean$\\pm$std; Revival rows show $({{\\min}},{{\\max}})$ for "
-               f"$\\mathcal{{A}}^{{\\text{{train}}}}_{{f}}$ and $\\mathcal{{A}}^{{t}}_{{f}}$)")
+        cap = (
+            f"{ds_latex} / {mdl_latex} — Comparison of PRA and "
+            f"the proposed source-free revival audit. PRA uses five real "
+            f"forget-class samples and retain-constrained $\\alpha$ selection. "
+            f"Retain accuracy is mean$\\pm$std and post-attack/revival "
+            f"forget accuracy is reported as $({{\\min}},{{\\max}})$."
+        )
     else:
-        cap = (f"{ds_latex} / {mdl_latex} — Revival results "
-               f"(mean$\\pm$std; Revival rows show $({{\\min}},{{\\max}})$ for "
-               f"$\\mathcal{{A}}^{{t}}_{{f}}$)")
+        cap = (
+            f"{ds_latex} / {mdl_latex} — Comparison of PRA and "
+            f"the proposed source-free revival audit. PRA uses five real "
+            f"forget-class samples and retain-constrained $\\alpha$ selection. "
+            f"Retain accuracy is mean$\\pm$std and post-attack/revival "
+            f"forget accuracy is reported as $({{\\min}},{{\\max}})$."
+        )
 
     lab = f"tab:{slugify(ds_latex)}_{slugify(mdl_latex)}_ALL"
     latex = wrap_with_resizebox(latex, cap, lab, star=True, width=r"\textwidth")
@@ -1043,20 +1277,44 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
                         mth_hint=m,
                     )
 
-                    acc_r = pd.to_numeric(
-                        df_pra["test_retain_acc"], errors="coerce"
-                    )
-                    acc_f = pd.to_numeric(
-                        df_pra["test_forget_acc"], errors="coerce"
+                    pra_summary = summarize_pra_results(
+                        df_pra,
+                        dataset=ds,
                     )
 
-                    pra_row[(dsl, COL_LABELS["test_retain_acc"])] = (
-                        fmt_mu_sigma(acc_r.mean(), acc_r.std())
-                    )
-                    pra_row[(dsl, COL_LABELS["test_forget_acc"])] = (
-                        fmt_min_max(acc_f.min(), acc_f.max())
-                    )
-                    has_pra_data = True
+                    if not pra_summary.empty:
+                        acc_r = pd.to_numeric(
+                            pra_summary["test_retain_acc"],
+                            errors="coerce",
+                        )
+                        acc_f = pd.to_numeric(
+                            pra_summary["test_forget_acc"],
+                            errors="coerce",
+                        )
+                        pra_rs = pd.to_numeric(
+                            pra_summary["PRA_RS2"],
+                            errors="coerce",
+                        )
+
+                        # Match the table convention:
+                        # retain = mean±std across forget classes;
+                        # forget = min/max across forget classes;
+                        # RS = maximum per-class RS.
+                        pra_row[
+                            (dsl, COL_LABELS["test_retain_acc"])
+                        ] = fmt_mu_sigma(acc_r.mean(), acc_r.std())
+
+                        pra_row[
+                            (dsl, COL_LABELS["test_forget_acc"])
+                        ] = fmt_min_max(acc_f.min(), acc_f.max())
+
+                        pra_row[(dsl, "RS")] = (
+                            fmt_rs_max(pra_rs.max())
+                            if pra_rs.notna().any()
+                            else "-"
+                        )
+
+                        has_pra_data = True
 
                 except Exception as e:
                     print(
@@ -1175,11 +1433,17 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
         ds_names = ", ".join(_latex_dataset_name(d) for d in datasets[:-1]) + f", and {_latex_dataset_name(datasets[-1])}"
 
     caption = (
-        f"The results of the proposed class revival applied to single-class unlearned models  {ds_names} for {mdl_latex}. "
-        "For retain accuracy $\\mathcal{{A}}^t_r$ and unlearned-model forget accuracy "
-        "$\\mathcal{{A}}^t_f$ we report \\emph{{mean}}$\\pm$\\emph{{std}}. "
-        "For the revival-model forget accuracy, we report $(\\min,\\max)$ of $\\mathcal{{A}}^t_f$ over all possible forget classes -as specified in the setting-, and "
-        r"the RS is based on the maximum revival observed. For each dataset block, \textbf{bold} indicates the highest RS and \underline{underlined} indicates the second-highest RS."
+        f"Comparison of the proposed source-free class revival audit and "
+        f"PRA on single-class-unlearned {mdl_latex} models evaluated on "
+        f"{ds_names}."
+        f"For retain accuracy $\\mathcal{{A}}^t_r$, we report "
+        f"mean$\\pm$std across forget classes. For post-attack/revival forget "
+        f"accuracy $\\mathcal{{A}}^t_f$, we report $(\\min,\\max)$ across "
+        f"forget classes. RS is computed using the same definition for PRA "
+        f"and our method and reports the maximum per-class value. For each "
+        r"dataset block, \textbf{bold} indicates the highest RS of our "
+        r"source-free audit and \underline{underlined} indicates the "
+        r"second-highest."
     )
     label   = f"tab:{slugify(mdl_latex)}_single_class_all_datasets"
 
@@ -1192,6 +1456,84 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
     return out
 
 
+
+
+
+def write_pra_alpha_summary(
+    models: List[str],
+    datasets: List[str],
+) -> Optional[Path]:
+    """
+    Save the selected-alpha statistics separately instead of adding another
+    crowded column to the main paper table.
+    """
+    rows = []
+
+    for method in METHOD_ORDER:
+        if method == "original":
+            continue
+
+        for dataset in datasets:
+            for model in models:
+                pra_path = (
+                    base_dir.parent
+                    / "pra"
+                    / method
+                    / f"{dataset}_{model}.csv"
+                )
+                if not pra_path.is_file():
+                    continue
+
+                try:
+                    d = load_pra_csv(
+                        pra_path,
+                        ds_hint=dataset,
+                        mdl_hint=model,
+                        mth_hint=method,
+                    )
+                    summary = summarize_pra_results(d, dataset)
+                    if summary.empty:
+                        continue
+
+                    alpha = pd.to_numeric(
+                        summary["selected_alpha"],
+                        errors="coerce",
+                    )
+                    runs = pd.to_numeric(
+                        summary["num_support_runs"],
+                        errors="coerce",
+                    )
+
+                    rows.append({
+                        "dataset": dataset,
+                        "model": model,
+                        "method": method,
+                        "alpha_mean": alpha.mean(),
+                        "alpha_std": alpha.std(),
+                        "alpha_min": alpha.min(),
+                        "alpha_max": alpha.max(),
+                        "num_forget_classes": summary["forget_class"].nunique(),
+                        "min_support_runs_per_class": runs.min(),
+                        "max_support_runs_per_class": runs.max(),
+                    })
+                except Exception as exc:
+                    print(
+                        f"[WARN] Could not summarize PRA alpha for "
+                        f"{dataset}/{model}/{method}: {exc}"
+                    )
+
+    if not rows:
+        print("[WARN] No PRA alpha results were found.")
+        return None
+
+    out_df = pd.DataFrame(rows)
+    out_path = base_dir / "pra_selected_alpha_summary.csv"
+    out_df.to_csv(out_path, index=False)
+    print(f"[OK] wrote: {out_path}")
+    return out_path
+
+
+write_pra_alpha_summary(MODELS, DATASETS)
 
 for mdl in MODELS:
     render_joint_table_for_model(mdl, df_all, DATASETS)
