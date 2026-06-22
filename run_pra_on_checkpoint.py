@@ -24,12 +24,23 @@ def get_active_classifier(model):
     """
     Locate the linear layer that is actually used to produce logits.
 
-    Order matters: the custom Swin model contains both `head.fc` (active)
-    and a separate `fc` attribute that is not used by forward().
+    Order matters: the custom Swin model contains both ``head.fc`` and
+    ``fc``. Its ClassifierHead bypasses ``head.fc`` and ``forward()`` sends
+    the pre-logit embedding through the top-level ``fc`` instead.
     """
     base = model.module if hasattr(model, "module") else model
 
-    # Custom/timm-style Swin: forward() uses model.head.fc.
+    # Custom Swin used in this repository: model.head returns pre-logits and
+    # model.forward() applies this top-level layer to produce the logits.
+    if (
+        hasattr(base, "head")
+        and hasattr(base.head, "fc")
+        and hasattr(base, "fc")
+        and isinstance(base.fc, nn.Linear)
+    ):
+        return base.fc
+
+    # Standard timm-style Swin classifiers use model.head.fc directly.
     if hasattr(base, "head") and hasattr(base.head, "fc"):
         if isinstance(base.head.fc, nn.Linear):
             return base.head.fc
