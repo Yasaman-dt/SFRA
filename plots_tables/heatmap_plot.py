@@ -19,8 +19,12 @@ mpl.rcParams.update({
     "ytick.color": "black",
 })
 
-
-base_dir = Path(r"C:/Users/AT56170/Desktop/Codes/Machine Unlearning - Classification/Source_Free_Class_Revival/results_single_class/")
+plt.rcParams.update({
+    "font.family": "serif",
+    "font.serif": ["Times New Roman", "Times", "DejaVu Serif"],
+    "mathtext.fontset": "stix",
+})
+base_dir = Path(r"/projets/Zdehghani/Source_Free_Class_Revival/results_single_class/")
 merged_path = base_dir / "z_standardized_selected_all_methods.csv"
 OUT_DIR = base_dir / "plots_per_class_grid"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -138,10 +142,6 @@ for mdl in MODELS:
                     fontsize=fs
                 )
 
-
-
-
-
         # X ticks
         ax.set_xticks(range(len(pivot.columns)))
         ax.set_xticklabels([str(int(c)) for c in pivot.columns], rotation=0)
@@ -151,7 +151,7 @@ for mdl in MODELS:
         if j == 0:
             ax.set_yticks(range(len(pivot.index)))
             ax.set_yticklabels([nice_method(m) for m in pivot.index])
-            ax.set_ylabel("Unlearning method")
+            ax.set_ylabel("Unlearning Method")
         else:
             ax.tick_params(labelleft=False)  # ✅ hide labels without deleting shared ticks
 
@@ -231,7 +231,7 @@ else:
     # Y ticks
     ax.set_yticks(range(len(pivot.index)))
     ax.set_yticklabels([nice_method(m) for m in pivot.index])
-    ax.set_ylabel("Unlearning method")
+    ax.set_ylabel("Unlearning Method")
 
     # Remove spines and tick marks
     ax.grid(False)
@@ -244,6 +244,7 @@ else:
     cbar.set_label("RS")
 
     out = OUT_DIR / f"heatmap_RS_{mdl}_{ds}.png"
-    fig.savefig(out, dpi=300, bbox_inches="tight")
+    fig.savefig(out, dpi=600, bbox_inches="tight")
     plt.close(fig)
     print("[OK] saved", out)
+
