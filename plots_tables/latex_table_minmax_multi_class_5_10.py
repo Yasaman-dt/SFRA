@@ -126,10 +126,7 @@ def _latex_dataset_name(ds: str) -> str:
         return f"{m.group(1).upper()}-{m.group(2)}"
     return ds.replace("_", " ").title()
 
-def fmt_mu(mu):
-    if pd.isna(mu):
-        return "-"
-    return rf"${float(mu):.2f}$"
+
 
 def _rank_styles(values):
     vals = sorted({float(v) for v in values if pd.notna(v)}, reverse=True)
@@ -139,25 +136,50 @@ def _rank_styles(values):
         return (vals[0], None)
     return (vals[0], vals[1])
 
+def fmt_mu(mu):
+    if pd.isna(mu):
+        return "-"
+    return (
+        rf"{{\fontsize{{10.5}}{{10.5}}\selectfont "
+        rf"${float(mu):.2f}$}}"
+    )
+
+
 def _style_rs(v, max_v, second_v):
     if pd.isna(v):
         return "-"
-    val = f"{float(v):.3f}"
-    if (max_v is not None) and (abs(v - max_v) < 1e-12):
-        return rf"\textbf{{\boldmath ${val}$}}"
-    if (second_v is not None) and (abs(v - second_v) < 1e-12):
-        return rf"\underline{{$ {val} $}}"
-    return rf"${val}$"
 
-def wrap_with_resizebox(latex_src: str, caption: str, label: str, width: str = r"\columnwidth") -> str:
+    val = f"{float(v):.3f}"
+    number_font = r"\fontsize{10.5}{10.5}\selectfont"
+
+    if (max_v is not None) and (abs(v - max_v) < 1e-12):
+        return (
+            rf"{{{number_font} "
+            rf"\textbf{{\boldmath ${val}$}}}}"
+        )
+
+    if (second_v is not None) and (abs(v - second_v) < 1e-12):
+        return (
+            rf"{{{number_font} "
+            rf"\underline{{${val}$}}}}"
+        )
+
+    return rf"{{{number_font} ${val}$}}"
+
+def make_table(latex_src: str, caption: str, label: str) -> str:
     return (
-        f"\\begin{{table}}[h]\n"
-        f"\\centering\n"
+        "\\begin{table}[t]\n"
+        "\\centering\n"
         f"\\caption{{{caption}}}\n"
         f"\\label{{{label}}}\n"
-        f"\\resizebox{{{width}}}{{!}}{{%\n{latex_src}\n}}\n"
-        f"\\end{{table}}\n"
+        "\\vspace{-3mm}\n"
+        "\\fontsize{10.5}{10.5}\\selectfont\n"
+        "\\resizebox{\\columnwidth}{!}{%\n"
+        f"{latex_src}\n"
+        "}\n"
+        "\\end{table}\n"
     )
+
 
 def add_midrules_between_methods(latex_src: str) -> str:
     """
@@ -572,34 +594,6 @@ def center_method_phase_headers_settings(latex_src: str, group_labels: List[str]
 
     return "\n".join(lines)
 
-def wrap_with_wraptable(
-    latex_src: str,
-    caption: str,
-    label: str,
-    width: str = r"0.5\columnwidth",
-    placement: str = "r",          # r = right, l = left
-    vspace_top: str = r"-0.5\baselineskip",
-    vspace_bottom: str = r"-0.5\baselineskip",
-) -> str:
-    """
-    Wraps a tabular in a wraptable + resizebox(width) + \\small.
-    NOTE: wrapfig package must be loaded in LaTeX: \\usepackage{wrapfig}
-    """
-    top = f"\\vspace{{{vspace_top}}}\n" if vspace_top else ""
-    bot = f"\\vspace{{{vspace_bottom}}}\n" if vspace_bottom else ""
-
-    return (
-        f"\\begin{{wraptable}}{{{placement}}}{{{width}}}\n"
-        f"{top}"
-        f"\\centering\n"
-        f"\\small\n"
-        f"\\caption{{{caption}}}\n"
-        f"\\label{{{label}}}\n"
-        f"\\resizebox{{{width}}}{{!}}{{%\n{latex_src}\n}}\n"
-        f"{bot}"
-        f"\\end{{wraptable}}\n"
-    )
-
 def add_cmidrules_for_groups(latex_src: str, n_groups: int, group_width: int, start_col: int = 3) -> str:
     """
     Insert \cmidrule lines RIGHT BEFORE the first \midrule (header separator).
@@ -749,20 +743,18 @@ def render_joint_table_same_dataset(mdl: str, df_src: pd.DataFrame, dataset: str
                rf"For each dataset, \textbf{{bold}} indicates the highest RS and "
                rf"\underline{{underlined}} indicates the second-highest RS.")
     label = f"tab:{slugify(ds_latex)}_{slugify(mdl_latex)}_5v10"
-    #latex = wrap_with_resizebox(latex, caption, label, width=r"\columnwidth")
 
-    latex = wrap_with_wraptable(
-        latex, caption, label,
-        width=r"0.5\columnwidth",
-        placement="r",          # "l" if you want it on the left
-        vspace_top=r"-1.2cm",
-        vspace_bottom=r"-1cm",
+    latex = make_table(
+        latex_src=latex,
+        caption=caption,
+        label=label,
     )
+
     
 
 
     out_dir.mkdir(parents=True, exist_ok=True)
-    out = out_dir / f"latex_table_{slugify(dataset)}_{slugify(mdl)}_5v10.tex"
+    out = out_dir / f"latex_table_{slugify(mdl)}_multi_class_5v10.tex"
     out.write_text(latex, encoding="utf-8")
     print(f"[OK] wrote: {out}")
     return out

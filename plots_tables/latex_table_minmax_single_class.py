@@ -838,7 +838,7 @@ def wrap_with_resizebox(latex_src: str, caption: str, label: str,
         f"\\centering\n"
         f"\\caption{{{caption}}}\n"
         f"\\label{{{label}}}\n"
-        f"\\vspace{{-0.2cm}}\n"
+        f"\\vspace{{-0.3cm}}\n"
         f"\\resizebox{{{width}}}{{!}}{{%\n{latex_src}\n}}\n"
         f"\\end{{{env}}}\n"
     )

@@ -930,34 +930,15 @@ def center_method_phase_headers(latex_src: str, dataset_labels: List[str]) -> st
     lines[h2] = _join_cells(h2_cells, h2_trail)
     return "\n".join(lines)
 
-def wrap_with_wraptable(
-    latex_src: str,
-    caption: str,
-    label: str,
-    width: str = r"0.5\columnwidth",
-    placement: str = "r",          # r = right, l = left
-    vspace_top: str = r"-0.5pt",
-    vspace_bottom: str = r"-0.8pt",
-) -> str:
-    """
-    Wraps a tabular in a wraptable + resizebox(width) + \\small.
-    NOTE: wrapfig package must be loaded in LaTeX: \\usepackage{wrapfig}
-    """
-    top = f"\\vspace{{{vspace_top}}}\n" if vspace_top else ""
-    bot = f"\\vspace{{{vspace_bottom}}}\n" if vspace_bottom else ""
-
+def make_table(latex_src: str, caption: str, label: str) -> str:
     return (
-        f"\\begin{{wraptable}}{{{placement}}}{{{width}}}\n"
-        f"{top}"
-        f"\\centering\n"
-        f"\\small\n"
+        "\\begin{table*}[t]\n"
+        "\\centering\n"
         f"\\caption{{{caption}}}\n"
         f"\\label{{{label}}}\n"
-        f"\\resizebox{{{width}}}{{!}}{{%\n{latex_src}\n}}\n"
-        f"{bot}"
-        f"\\end{{wraptable}}\n"
+        f"{latex_src}\n"
+        "\\end{table*}\n"
     )
-
 
     
 def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[str]) -> Optional[Path]:
@@ -1098,8 +1079,7 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
 
     if len(datasets) == 1:
         ds_names = _latex_dataset_name(datasets[0])
-    else:
-        ds_names = ", ".join(_latex_dataset_name(d) for d in datasets[:-1]) + f" and {_latex_dataset_name(datasets[-1])}"
+    else:        ds_names = ", ".join(_latex_dataset_name(d) for d in datasets[:-1]) + f" and {_latex_dataset_name(datasets[-1])}"
 
     caption = (
         "The results of the proposed class revival applied to multiclass unlearned models on "
@@ -1110,20 +1090,18 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
 
 
     # ---- unique label per dataset selection ----
-    label   = f"tab:{slugify(mdl_latex)}_multi_class"
+    label   = f"tab:{slugify(mdl_latex)}_multi_class_2"
 
     #latex = wrap_with_resizebox(latex, caption, label, star=True, width=r"\columnwidth")
-    latex = wrap_with_wraptable(
-        latex, caption, label,
-        width=r"0.5\columnwidth",
-        placement="r",          # "l" if you want it on the left
-        vspace_top=r"-8.0pt",
-        vspace_bottom=r"-8.0pt",
+    latex = make_table(
+        latex,
+        caption,
+        label
     )
     
     
     # ---- unique filename per dataset selection ----
-    out = base_dir / f"latex_table_{slugify(mdl)}_multi_class.tex"
+    out = base_dir / f"latex_table_{slugify(mdl)}_multi_class_2.tex"
     with open(out, "w", encoding="utf-8") as f:
         f.write(latex)
     print(f"[OK] wrote: {out}")
