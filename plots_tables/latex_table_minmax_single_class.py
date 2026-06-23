@@ -66,54 +66,6 @@ def _apply_forget_filter(df: pd.DataFrame, dataset: str) -> pd.DataFrame:
     fc_num = pd.to_numeric(df["forget_class"], errors="coerce").astype("Int64")
     return df[fc_num.isin(list(allowed))].copy()
 
-
-def compute_rs_for_revival1(df_rev: pd.DataFrame, df_un: Optional[pd.DataFrame]) -> pd.DataFrame:
-    """
-    Adds RS to revival rows by merging in unlearned (forget) test metrics.
-
-    RS = 1 - |A^un_t_r - A^re_t_r| / |A^un_t_f - A^re_t_f|
-
-    A^un_t_r, A^un_t_f come from the 'unlearned' (forget) file
-    A^re_t_r, A^re_t_f come from the 'revival' file
-    """
-    if df_rev is None or df_rev.empty or df_un is None or df_un.empty:
-        if df_rev is None:
-            return df_rev
-        out = df_rev.copy()
-        out["RS1"] = pd.NA
-        return out
-
-    # keep only keys + needed metrics from unlearned
-    un_keep = ["forget_class","dataset","model","method","test_retain_acc","test_forget_acc"]
-    un = df_un[un_keep].copy().rename(columns={
-        "test_retain_acc": "test_retain_acc_un",
-        "test_forget_acc": "test_forget_acc_un",
-    })
-
-    keys = ["forget_class","dataset","model","method"]
-    m = df_rev.merge(un, on=keys, how="left")
-
-    # cast to numeric (works whether your accs are 0–1 or 0–100; ratio cancels scale)
-    A_re_t_r = pd.to_numeric(m["test_retain_acc"], errors="coerce")
-    A_re_t_f = pd.to_numeric(m["test_forget_acc"], errors="coerce")
-    A_un_t_r = pd.to_numeric(m["test_retain_acc_un"], errors="coerce")
-    A_un_t_f = pd.to_numeric(m["test_forget_acc_un"], errors="coerce")
-
-    num = (A_un_t_r - A_re_t_r).abs()
-    den = (A_un_t_f - A_re_t_f).abs()
-
-    # Safe division:
-    # - If den==0 and num==0 -> RS = 1 (identical changes)
-    # - If den==0 and num>0  -> RS = NaN (undefined)
-    # else RS = 1 - num/den
-    den_zero = (den == 0) | den.isna()
-    rs = np.where(den_zero & (num.fillna(0) == 0), 1.0,
-          np.where(den_zero, np.nan, 1 - (num / den)))
-
-    m["RS1"] = rs
-    return m
-
-
 def slugify(s: Optional[str]) -> str:
     """Safe tag for filenames/labels: keep letters/numbers/dashes; replace the rest with '_'."""
     if s is None:
@@ -660,7 +612,6 @@ for ds in DATASETS:
                         df_r["RS1"] = pd.NA
                         df_r["RS2"] = pd.NA
                     else:
-                        df_r = compute_rs_for_revival1(df_r, df_f)
                         df_r = compute_rs_for_revival2(df_r, df_f)
                         
 
@@ -802,7 +753,7 @@ def add_midrules_between_methods(latex_src: str) -> str:
         # One separator after every method block.
         # For DELETE, pandas adds \bottomrule afterward,
         # so the bottom of the table contains exactly two lines.
-        if re.search(r"&\s*Revival\s*\(ours\)", line):
+        if re.search(r"&\s*Relearned\s*\(ours\)", line):
             out.append(r"\midrule")
 
     return "\n".join(out)
@@ -1059,7 +1010,7 @@ def render_table_for(ds: str, mdl: str, df_src: pd.DataFrame):
             # 3) Our source-free revival
             # -----------------------------------------------------
             phase = "revival"
-            row = {"Method": m, "Phase": "Revival (ours)"}
+            row = {"Method": m, "Phase": "Relearned (ours)"}
             if (m, phase) in g.index:
                 for col in OUT_METRIC_COLS:
                     if col in (
@@ -1107,17 +1058,17 @@ def render_table_for(ds: str, mdl: str, df_src: pd.DataFrame):
     if SHOW_TRAIN_METRICS:
         cap = (
             f"{ds_latex} / {mdl_latex} — Comparison of PRA and "
-            f"the proposed source-free revival audit. PRA uses five real "
+            f"the proposed source-free relearning audit. PRA uses five real "
             f"forget-class samples and retain-constrained $\\alpha$ selection. "
-            f"Retain accuracy is mean$\\pm$std and post-attack/revival "
+            f"Retain accuracy is mean$\\pm$std and relearning "
             f"forget accuracy is reported as $({{\\min}},{{\\max}})$."
         )
     else:
         cap = (
             f"{ds_latex} / {mdl_latex} — Comparison of PRA and "
-            f"the proposed source-free revival audit. PRA uses five real "
+            f"the proposed source-free relearning audit. PRA uses five real "
             f"forget-class samples and retain-constrained $\\alpha$ selection. "
-            f"Retain accuracy is mean$\\pm$std and post-attack/revival "
+            f"Retain accuracy is mean$\\pm$std and relearning "
             f"forget accuracy is reported as $({{\\min}},{{\\max}})$."
         )
 
@@ -1386,9 +1337,9 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
             rows.append(pra_row)
 
         # ---------------------------------------------------------
-        # 3) Our revival method
+        # 3) Our relearning method
         # ---------------------------------------------------------
-        row_rev = {"Method": "", "Phase": "Revival (ours)"}
+        row_rev = {"Method": "", "Phase": "Relearned (ours)"}
 
         for ds in datasets:
             dsl = _latex_dataset_name(ds)
@@ -1462,11 +1413,11 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
 
     caption = (
         f"Comparison of different unlearning methods under the proposed "
-        f"source-free class revival audit and the source-dependent PRA baseline "
+        f"source-free class relearning audit and the source-dependent PRA baseline "
         f"on single-class-unlearned {mdl_latex} models evaluated on {ds_names}. "
         f"For retain accuracy $\\mathcal{{A}}^t_r$ and unlearned-model forget "
         f"accuracy $\\mathcal{{A}}^t_f$, we report mean$\\pm$std across forget "
-        f"For post-attack/revival forget. "
+        f"For relearning forget. "
         f"accuracy $\\mathcal{{A}}^t_f$, we report $(\\min,\\max)$ across "
         f"forget classes. RS is computed using the same definition for PRA "
         f"and our method and reports the maximum per-class value. For each "
@@ -1483,10 +1434,6 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
         f.write(latex)
     print(f"[OK] wrote: {out}")
     return out
-
-
-
-
 
 def write_pra_alpha_summary(
     models: List[str],

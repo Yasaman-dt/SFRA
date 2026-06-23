@@ -8,7 +8,7 @@ from itertools import product
 # ===================== CONFIG =====================
 
 # Root directory that contains the two settings (5-class / 10-class) OR everything mixed.
-ROOT_DIR = Path(r"C:/Users/AT56170/Desktop/Codes/Machine Unlearning - Classification/Source_Free_Class_Revival/results_multi_class_5_10/")
+ROOT_DIR = Path(r"/projets/Zdehghani/Source_Free_Class_Revival/results_multi_class_5_10/")
 
 # --- IMPORTANT: Set these to YOUR actual folders (best & safest) ---
 # Each should contain method subfolders (finetune/, scrub/, ...) and optionally original/
@@ -225,7 +225,7 @@ def add_midrules_between_methods(latex_src: str) -> str:
                 continue
 
             # after each method block (after Revival row)
-            if " & Revival &" in line:
+            if " & Relearned &" in line:
                 if in_retrained_block:
                     out.append(r"\midrule")
                     out.append(r"\midrule")
@@ -330,36 +330,6 @@ def _pick(value, hint, what: str, path: Path):
     
 # ===================== RS COMPUTATION =====================
 
-def compute_rs_for_revival1(df_rev: pd.DataFrame, df_un: Optional[pd.DataFrame]) -> pd.DataFrame:
-    if df_rev is None or df_rev.empty or df_un is None or df_un.empty:
-        out = df_rev.copy()
-        out["RS1"] = pd.NA
-        return out
-
-    un_keep = ["forget_class","dataset","model","method","setting","test_retain_acc","test_forget_acc"]
-    keys = ["forget_class","dataset","model","method","setting"]
-
-    un = df_un[un_keep].copy().rename(columns={
-        "test_retain_acc": "test_retain_acc_un",
-        "test_forget_acc": "test_forget_acc_un",
-    })
-    m = df_rev.merge(un, on=keys, how="left")
-
-    A_re_t_r = pd.to_numeric(m["test_retain_acc"], errors="coerce")
-    A_re_t_f = pd.to_numeric(m["test_forget_acc"], errors="coerce")
-    A_un_t_r = pd.to_numeric(m["test_retain_acc_un"], errors="coerce")
-    A_un_t_f = pd.to_numeric(m["test_forget_acc_un"], errors="coerce")
-
-    num = (A_un_t_r - A_re_t_r).abs()
-    den = (A_un_t_f - A_re_t_f).abs()
-
-    den_zero = (den == 0) | den.isna()
-    rs = np.where(den_zero & (num.fillna(0) == 0), 1.0,
-          np.where(den_zero, np.nan, 1 - (num / den)))
-
-    m["RS1"] = rs
-    return m
-
 def compute_rs_for_revival2(df_rev: pd.DataFrame, df_un: Optional[pd.DataFrame]) -> pd.DataFrame:
     if df_rev is None or df_rev.empty:
         return df_rev
@@ -391,10 +361,50 @@ def compute_rs_for_revival2(df_rev: pd.DataFrame, df_un: Optional[pd.DataFrame])
     Af_un = out["test_forget_acc_un"] / S
     Af_re = out["test_forget_acc"]    / S
 
-    retain_drop = (Ar_un - Ar_re).clip(lower=0.0)
-    forget_gain = (Af_re - Af_un).clip(lower=0.0)
+    # retain_drop = (Ar_un - Ar_re).clip(lower=0.0)
+    # forget_gain = (Af_re - Af_un).clip(lower=0.0)
 
-    out["RS2"] = (1.0 - retain_drop) * forget_gain
+    # out["RS2"] = (1.0 - retain_drop) * forget_gain
+
+    # Retain-preservation term:
+    # equals 1 when retain accuracy does not decrease
+    retain_drop = (Ar_un - Ar_re).clip(lower=0.0)
+    retain_preservation = (1.0 - retain_drop).clip(
+        lower=0.0,
+        upper=1.0,
+    )
+
+    # Forget-recovery term:
+    # positive only when forget accuracy improves after revival
+    forget_recovery = (Af_re - Af_un).clip(
+        lower=0.0,
+        upper=1.0,
+    )
+
+    # Harmonic mean of retain preservation and forget recovery
+    denominator = retain_preservation + forget_recovery
+
+    rs = pd.Series(0.0, index=out.index, dtype=float)
+
+    valid = (
+        denominator.gt(0)
+        & retain_preservation.notna()
+        & forget_recovery.notna()
+    )
+
+    rs.loc[valid] = (
+        2.0
+        * retain_preservation.loc[valid]
+        * forget_recovery.loc[valid]
+        / denominator.loc[valid]
+    )
+
+    # Preserve missing values when any required accuracy is unavailable
+    missing = retain_preservation.isna() | forget_recovery.isna()
+    rs.loc[missing] = np.nan
+
+    out["RS2"] = rs.clip(lower=0.0, upper=1.0)
+
     return out
 
 def get_k_from_setting(s):
@@ -685,7 +695,7 @@ def render_joint_table_same_dataset(mdl: str, df_src: pd.DataFrame, dataset: str
         rows.append(row_un)
 
         # Revival row
-        row_rev = {"Method": "", "Phase": "Revival"}
+        row_rev = {"Method": "", "Phase": "Relearned"}
         for s in settings:
             row_rev[(s, RS_LABEL)] = ""
             if (s, m, "revival") in g.index:
@@ -738,10 +748,12 @@ def render_joint_table_same_dataset(mdl: str, df_src: pd.DataFrame, dataset: str
 
     mdl_latex = _latex_model_name(mdl)
     ds_latex  = _latex_dataset_name(dataset)
-    caption = (rf"The results of the proposed class revival applied to multi-class "
-               rf"(5-Classes and 10-Classes) unlearned models on CIFAR-100 for ResNet-18. "
+    caption = (rf"Comparison of different unlearning methods under the proposed source-free class relearning audit on multi-class(5-Classes and 10-Classes) unlearned ResNet-18 models on "
+               rf"on CIFAR-100. "
                rf"For each dataset, \textbf{{bold}} indicates the highest RS and "
                rf"\underline{{underlined}} indicates the second-highest RS.")
+    
+ 
     label = f"tab:{slugify(ds_latex)}_{slugify(mdl_latex)}_5v10"
 
     latex = make_table(
@@ -749,9 +761,6 @@ def render_joint_table_same_dataset(mdl: str, df_src: pd.DataFrame, dataset: str
         caption=caption,
         label=label,
     )
-
-    
-
 
     out_dir.mkdir(parents=True, exist_ok=True)
     out = out_dir / f"latex_table_{slugify(mdl)}_multi_class_5v10.tex"
@@ -909,7 +918,6 @@ def collect_all_rows(setting_name: str, base_dir: Path) -> List[pd.DataFrame]:
                             df_r["RS2"] = pd.NA
                         else:
                             # match RS using BOTH setting + forget_class + dataset + model + method
-                            df_r = compute_rs_for_revival1(df_r, df_f_all)
                             df_r = compute_rs_for_revival2(df_r, df_f_all)
                 
                         # --- Fix key mismatch for retrained (do NOT change RS functions) ---

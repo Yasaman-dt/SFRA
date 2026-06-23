@@ -8,12 +8,12 @@ from pathlib import Path
 # ============================================================
 
 ROOT_2 = Path(
-    r"C:/Users/AT56170/Desktop/Codes/Machine Unlearning - Classification/"
+    r"/projets/Zdehghani/"
     r"Source_Free_Class_Revival/results_multi_class_2/"
 )
 
 ROOT_510 = Path(
-    r"C:/Users/AT56170/Desktop/Codes/Machine Unlearning - Classification/"
+    r"/projets/Zdehghani/"
     r"Source_Free_Class_Revival/results_multi_class_5_10/"
 )
 

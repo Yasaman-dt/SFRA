@@ -6,7 +6,7 @@ from typing import Optional, List
 from itertools import product
 
 # ----------------- Config -----------------
-base_dir = Path("C:/Users/AT56170/Desktop/Codes/Machine Unlearning - Classification/Source_Free_Class_Revival/results_multi_class_2/")
+base_dir = Path("/projets/Zdehghani/Source_Free_Class_Revival/results_multi_class_2/")
 
 DATASETS = ["cifar10", "cifar100", "tiny_imagenet"]
 
@@ -18,12 +18,6 @@ methods = [
     "l2ul_adv", "l2ul_imp", "fisher", "wood_fisher", 
     "scrub", "bad_teacher", "salun", "delete",
 ]
-
-PHASE_PRETTY = {
-    "original": r"Pre-unlearning (Original)",
-    "revival":  r"Post-unlearning (Class Revival)",
-    "unlearned": "Unlearned",
-}
 
 MODELS   = ["resnet18", "vit-s-16", "vit-b-16", "swin-t", "vgg16"]
 
@@ -69,52 +63,6 @@ def _apply_forget_filter(df: pd.DataFrame, dataset: str) -> pd.DataFrame:
     fc_num = pd.to_numeric(df["forget_class"], errors="coerce").astype("Int64")
     return df[fc_num.isin(list(allowed))].copy()
 
-
-def compute_rs_for_revival1(df_rev: pd.DataFrame, df_un: Optional[pd.DataFrame]) -> pd.DataFrame:
-    """
-    Adds RS to revival rows by merging in unlearned (forget) test metrics.
-
-    RS = 1 - |A^un_t_r - A^re_t_r| / |A^un_t_f - A^re_t_f|
-
-    A^un_t_r, A^un_t_f come from the 'unlearned' (forget) file
-    A^re_t_r, A^re_t_f come from the 'revival' file
-    """
-    if df_rev is None or df_rev.empty or df_un is None or df_un.empty:
-        if df_rev is None:
-            return df_rev
-        out = df_rev.copy()
-        out["RS1"] = pd.NA
-        return out
-
-    # keep only keys + needed metrics from unlearned
-    un_keep = ["forget_class","dataset","model","method","test_retain_acc","test_forget_acc"]
-    un = df_un[un_keep].copy().rename(columns={
-        "test_retain_acc": "test_retain_acc_un",
-        "test_forget_acc": "test_forget_acc_un",
-    })
-
-    keys = ["forget_class","dataset","model","method"]
-    m = df_rev.merge(un, on=keys, how="left")
-
-    # cast to numeric (works whether your accs are 0–1 or 0–100; ratio cancels scale)
-    A_re_t_r = pd.to_numeric(m["test_retain_acc"], errors="coerce")
-    A_re_t_f = pd.to_numeric(m["test_forget_acc"], errors="coerce")
-    A_un_t_r = pd.to_numeric(m["test_retain_acc_un"], errors="coerce")
-    A_un_t_f = pd.to_numeric(m["test_forget_acc_un"], errors="coerce")
-
-    num = (A_un_t_r - A_re_t_r).abs()
-    den = (A_un_t_f - A_re_t_f).abs()
-
-    # Safe division:
-    # - If den==0 and num==0 -> RS = 1 (identical changes)
-    # - If den==0 and num>0  -> RS = NaN (undefined)
-    # else RS = 1 - num/den
-    den_zero = (den == 0) | den.isna()
-    rs = np.where(den_zero & (num.fillna(0) == 0), 1.0,
-          np.where(den_zero, np.nan, 1 - (num / den)))
-
-    m["RS1"] = rs
-    return m
 
 
 def slugify(s: Optional[str]) -> str:
@@ -172,16 +120,60 @@ def compute_rs_for_revival2(df_rev: pd.DataFrame, df_un: Optional[pd.DataFrame])
     Af_un = out["test_forget_acc_un"] / S
     Af_re = out["test_forget_acc"]    / S
 
-    # NEW RS2:
-    # retain term penalizes only retain drops: max(0, Ar_un - Ar_re)
+    # # NEW RS2:
+    # # retain term penalizes only retain drops: max(0, Ar_un - Ar_re)
+    # retain_drop = (Ar_un - Ar_re).clip(lower=0.0)
+
+    # # forget term rewards only forget improvement: max(0, Af_re - Af_un)
+    # forget_gain = (Af_re - Af_un).clip(lower=0.0)
+
+    # out["RS2"] = (1.0 - retain_drop) * forget_gain
+       
+
+
+    # Retain-preservation term:
+    # equals 1 when retain accuracy does not decrease
     retain_drop = (Ar_un - Ar_re).clip(lower=0.0)
+    retain_preservation = (1.0 - retain_drop).clip(
+        lower=0.0,
+        upper=1.0,
+    )
 
-    # forget term rewards only forget improvement: max(0, Af_re - Af_un)
-    forget_gain = (Af_re - Af_un).clip(lower=0.0)
+    # Forget-recovery term:
+    # positive only when forget accuracy improves after revival
+    forget_recovery = (Af_re - Af_un).clip(
+        lower=0.0,
+        upper=1.0,
+    )
 
-    out["RS2"] = (1.0 - retain_drop) * forget_gain
-        
+    # Harmonic mean of retain preservation and forget recovery
+    denominator = retain_preservation + forget_recovery
+
+    rs = pd.Series(0.0, index=out.index, dtype=float)
+
+    valid = (
+        denominator.gt(0)
+        & retain_preservation.notna()
+        & forget_recovery.notna()
+    )
+
+    rs.loc[valid] = (
+        2.0
+        * retain_preservation.loc[valid]
+        * forget_recovery.loc[valid]
+        / denominator.loc[valid]
+    )
+
+    # Preserve missing values when any required accuracy is unavailable
+    missing = retain_preservation.isna() | forget_recovery.isna()
+    rs.loc[missing] = np.nan
+
+    out["RS2"] = rs.clip(lower=0.0, upper=1.0)
+
     return out
+    
+    
+    
 
 
 
@@ -458,7 +450,6 @@ for ds in DATASETS:
                         df_r["RS1"] = pd.NA
                         df_r["RS2"] = pd.NA
                     else:
-                        df_r = compute_rs_for_revival1(df_r, df_f)
                         df_r = compute_rs_for_revival2(df_r, df_f)
                         
 
@@ -562,7 +553,7 @@ def add_midrules_between_methods(latex_src: str) -> str:
     Post-process the pandas LaTeX table to:
       1) add a double rule at the very top,
       2) add a double rule between header and the first data row,
-      3) insert \midrule after each method block (after Revival rows),
+      3) insert \midrule after each method block (after 'Revival' rows),
          with a double rule after the 'Retrained & Revival' row,
       4) add a double rule right after the 'Original' row.
     Requires \\usepackage{booktabs}.
@@ -598,8 +589,8 @@ def add_midrules_between_methods(latex_src: str) -> str:
                 continue
                         
 
-            if " & Revival &" in line:
-                # Double rule for Retrained's revival row
+            if " & Relearned &" in line:
+                # Double rule for Retrained's relearned row
                 if "Retrained" in line or re.search(r"\\multirow\{2\}\{\*\}\{Retrained\}", "\n".join(out[-3:])):
                     out.append(r"\midrule"); out.append(r"\midrule")
                 else:
@@ -805,8 +796,8 @@ def render_table_for(ds: str, mdl: str, df_src: pd.DataFrame):
 
             rows.append(row_un)
 
-            # --- Revival row (RS cell blank to keep multirow) ---
-            row_re = {"Method": m, "Phase": "Revival"}
+            # --- Relearned row (RS cell blank to keep multirow) ---
+            row_re = {"Method": m, "Phase": "Relearned"}
             if (m, "revival") in g.index:
                 for col in OUT_METRIC_COLS:
                     mu = g.loc[(m, "revival"), (col, "mean")]
@@ -1025,7 +1016,7 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
         rows.append(row_un)
 
         # -------- Revival row (no RS value here; metrics only) --------
-        row_rev = {"Method": "", "Phase": "Revival"}
+        row_rev = {"Method": "", "Phase": "Relearned"}
         for ds in datasets:
             dsl = _latex_dataset_name(ds)
             row_rev[(dsl, RS_LABEL)] = ""  # continues multirow
@@ -1082,8 +1073,8 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
     else:        ds_names = ", ".join(_latex_dataset_name(d) for d in datasets[:-1]) + f" and {_latex_dataset_name(datasets[-1])}"
 
     caption = (
-        "The results of the proposed class revival applied to multiclass unlearned models on "
-        "CIFAR-10 and CIFAR-100 for ResNet-18. "
+        "Comparison of different unlearning methods under the proposed source-free class relearning audit on multi-class unlearned ResNet-18 models on "
+        "CIFAR-10 and CIFAR-100. "
         "For each dataset, \\textbf{bold} indicates the highest RS and "
         "\\underline{underlined} indicates the second-highest RS."
     )
