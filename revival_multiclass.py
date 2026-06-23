@@ -122,7 +122,7 @@ os.makedirs(AGG_CSV_DIR, exist_ok=True)
 COLUMNS_SINGLE = [
     "forget_class", "dataset", "model", "method", "lr",
     "epochs_total", "tpr", "cpr",
-    "retain_per_class", "total_retain", "total_forget",      # <-- NEW
+    "retain_per_class", "total_retain", "total_forget",      
     "epoch", "syn_train_loss", "syn_train_acc",
     "syn_total", "syn_retain", "syn_forget",
     "all_train", "all_test",
@@ -134,7 +134,7 @@ COLUMNS_MULTI = [
     "forget_class",
     "dataset", "model", "method", "lr",
     "epochs_total", "tpr", "cpr",
-    "retain_per_class", "total_retain", "total_forget",      # <-- NEW
+    "retain_per_class", "total_retain", "total_forget",      
     "epoch", "syn_train_loss", "syn_train_acc",
     "syn_total", "syn_retain", "syn_forget",
     "all_train", "all_test",
@@ -184,8 +184,6 @@ def make_feature_extractor(net, num_classes):
 
 
 # ---- one-time embedding pass + fast embedding loaders ----
-
-
 def make_emb_loader(x, y, bs=4096, shuffle=False, num_workers=4):
     ds  = TensorDataset(x, y)                 # x,y are CPU tensors now
     return DataLoader(
@@ -195,7 +193,6 @@ def make_emb_loader(x, y, bs=4096, shuffle=False, num_workers=4):
         persistent_workers=True,
         prefetch_factor=4
     )
-
 
 
 @torch.inference_mode()
