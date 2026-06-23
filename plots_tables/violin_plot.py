@@ -33,7 +33,7 @@ plt.rcParams.update({
 # --------------------------
 # Config
 # --------------------------
-base_dir = Path(r"C:/Users/AT56170/Desktop/Codes/Machine Unlearning - Classification/Source_Free_Class_Revival/results_single_class/")
+base_dir = Path(r"/projets/Zdehghani/Source_Free_Class_Revival/results_single_class/")
 merged_path = base_dir / "z_standardized_selected_all_methods.csv"
 
 OUT_DIR = base_dir / "plots_distribution_grid"
@@ -348,7 +348,7 @@ else:
         fig, ax = plt.subplots(
             nrows=1,
             ncols=1,
-            figsize=(7.5, 4.2),
+            figsize=(7.5, 3),
             constrained_layout=True
         )
 
@@ -396,7 +396,7 @@ else:
         # --- Method name (BIGGER + BOLD) ---
         ax.text(
             i,
-            -0.05,
+            -0.03,
             lines[0],
             transform=ax.get_xaxis_transform(),
             rotation=45,
@@ -410,7 +410,7 @@ else:
         if len(lines) > 1:
             ax.text(
                 i,
-                -0.10,
+                -0.15,
                 lines[1],
                 transform=ax.get_xaxis_transform(),
                 rotation=45,
@@ -428,8 +428,8 @@ else:
         ax.yaxis.set_major_formatter(FormatStrFormatter("%.1f"))
 
         ax.set_ylabel("RS")
-        ax.set_xlabel("Unlearning Method", fontsize=12)
-        ax.xaxis.set_label_coords(0.5, -0.4)
+        ax.set_xlabel("Unlearning Method")
+        ax.xaxis.set_label_coords(0.5, -0.75)
         
 
         ax.set_axisbelow(True)
@@ -440,7 +440,7 @@ else:
         fig.savefig(out_pdf, bbox_inches="tight")
 
         if SAVE_PNG_TOO:
-            fig.savefig(out_png, dpi=300, bbox_inches="tight")
+            fig.savefig(out_png, dpi=600, bbox_inches="tight")
 
         plt.close(fig)
 
