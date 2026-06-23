@@ -176,7 +176,20 @@ def compute_rs_for_revival2(df_rev: pd.DataFrame, df_un: Optional[pd.DataFrame])
     # forget term rewards only forget improvement: max(0, Af_re - Af_un)
     forget_gain = (Af_re - Af_un).clip(lower=0.0)
 
-    out["RS2"] = (1.0 - retain_drop) * forget_gain
+    #out["RS2"] = (1.0 - retain_drop) * forget_gain
+    
+    retain_score = 1.0 - retain_drop
+    forget_score = forget_gain
+
+    denominator = retain_score + forget_score
+
+    out["RS2"] = np.where(
+        denominator > 0,
+        2.0 * retain_score * forget_score / denominator,
+        0.0
+    )
+
+    out["RS2"] = out["RS2"].clip(lower=0.0, upper=1.0)
         
     return out
 
@@ -442,7 +455,22 @@ def load_pra_csv(
 
         retain_drop = (ar_un - ar_pra).clip(lower=0.0)
         forget_gain = (af_pra - af_un).clip(lower=0.0)
-        d["PRA_RS2"] = (1.0 - retain_drop) * forget_gain
+        #d["PRA_RS2"] = (1.0 - retain_drop) * forget_gain
+        
+        retain_score = 1.0 - retain_drop
+        forget_score = forget_gain
+
+        denominator = retain_score + forget_score
+
+        d["PRA_RS2"] = np.where(
+            denominator > 0,
+            2.0 * retain_score * forget_score / denominator,
+            0.0
+        )
+
+        d["PRA_RS2"] = d["PRA_RS2"].clip(lower=0.0, upper=1.0)
+        
+        
     else:
         d["PRA_RS2"] = pd.NA
 
