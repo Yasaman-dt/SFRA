@@ -234,7 +234,7 @@ def add_midrules_between_methods(latex_src: str) -> str:
                 continue
 
             # after each method block (after Revival row)
-            if " & Relearned &" in line:
+            if " & Relearned (ours) &" in line:
                 if in_retrained_block:
                     out.append(r"\midrule")
                     out.append(r"\midrule")
@@ -833,7 +833,7 @@ def render_joint_table_same_dataset(mdl: str, df_src: pd.DataFrame, dataset: str
             rows.append(row_pra)
 
         # Revival row
-        row_rev = {"Method": "", "Phase": "Relearned"}
+        row_rev = {"Method": "", "Phase": "Relearned (ours)"}
         for s in settings:
             raw_rs = rs_per_setting[s].get(m, np.nan)
             max_v, second_v = rs_rank_thresholds[s]
@@ -892,7 +892,7 @@ def render_joint_table_same_dataset(mdl: str, df_src: pd.DataFrame, dataset: str
 
     mdl_latex = _latex_model_name(mdl)
     ds_latex  = _latex_dataset_name(dataset)
-    caption = (rf"Comparison of different unlearning methods under the proposed source-free class relearning audit on multi-class(5-Classes and 10-Classes) unlearned ResNet-18 models on "
+    caption = (rf"Comparison of different unlearning methods under the proposed source-free class relearning audit on multi-class (5-Classes and 10-Classes) unlearned ResNet-18 models on "
                rf"on CIFAR-100. "
                rf"For each dataset, \textbf{{bold}} indicates the highest RS and "
                rf"\underline{{underlined}} indicates the second-highest RS.")

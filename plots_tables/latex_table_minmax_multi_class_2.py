@@ -1216,7 +1216,7 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
     else:        ds_names = ", ".join(_latex_dataset_name(d) for d in datasets[:-1]) + f" and {_latex_dataset_name(datasets[-1])}"
 
     caption = (
-        "Comparison of different unlearning methods under the proposed source-free class relearning audit on multi-class(2-Classes) unlearned ResNet-18 models on "
+        "Comparison of different unlearning methods under the proposed source-free class relearning audit on multi-class (2-Classes) unlearned ResNet-18 models on "
         "CIFAR-10 and CIFAR-100. "
         "For each dataset, \\textbf{bold} indicates the highest RS and "
         "\\underline{underlined} indicates the second-highest RS."
