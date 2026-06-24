@@ -314,6 +314,86 @@ def load_revival_csv(path: Path, ds_hint: Optional[str]=None, mdl_hint: Optional
                  "train_retain_acc","train_forget_acc","test_retain_acc","test_forget_acc"]
     return d[keep_cols].copy()
 
+def load_multi_pra_csv(path: Path) -> pd.DataFrame:
+    """Load a multi-class PRA CSV and compute PRA's revival score."""
+    d = pd.read_csv(path).rename(columns={
+        "baseline_acc_r_test": "test_retain_acc_un",
+        "baseline_acc_f_test": "test_forget_acc_un",
+        "pra_acc_r_test": "test_retain_acc",
+        "pra_acc_f_test": "test_forget_acc",
+    })
+
+    required = [
+        "test_retain_acc_un",
+        "test_forget_acc_un",
+        "test_retain_acc",
+        "test_forget_acc",
+    ]
+    missing = [col for col in required if col not in d.columns]
+    if missing:
+        raise KeyError(f"PRA CSV missing columns {missing}: {path}")
+
+    for col in required + ["selected_alpha", "support_seed"]:
+        if col in d.columns:
+            d[col] = pd.to_numeric(d[col], errors="coerce")
+
+    if "forget_classes" not in d.columns:
+        d["forget_classes"] = pd.NA
+    if "support_seed" not in d.columns:
+        d["support_seed"] = 0
+
+    # Rerunning PRA appends rows. Keep the latest copy of each trial.
+    d = d.drop_duplicates(
+        subset=["forget_classes", "support_seed"],
+        keep="last",
+    )
+
+    max_value = pd.concat([d[col] for col in required]).max(skipna=True)
+    scale = 100.0 if pd.notna(max_value) and max_value > 1.5 else 1.0
+
+    ar_un = d["test_retain_acc_un"] / scale
+    ar_pra = d["test_retain_acc"] / scale
+    af_un = d["test_forget_acc_un"] / scale
+    af_pra = d["test_forget_acc"] / scale
+
+    retain_score = (
+        1.0 - (ar_un - ar_pra).clip(lower=0.0)
+    ).clip(lower=0.0, upper=1.0)
+    forget_score = (af_pra - af_un).clip(lower=0.0, upper=1.0)
+    denominator = retain_score + forget_score
+
+    d["PRA_RS2"] = np.where(
+        denominator > 0,
+        2.0 * retain_score * forget_score / denominator,
+        0.0,
+    )
+    d["PRA_RS2"] = d["PRA_RS2"].clip(lower=0.0, upper=1.0)
+    return d
+
+def summarize_multi_pra(
+    path: Path,
+    num_forget_classes: int = 2,
+) -> Optional[dict]:
+    """Return one PRA row for the requested forget-set cardinality."""
+    if not path.is_file():
+        return None
+    d = load_multi_pra_csv(path)
+    forget_count = (
+        d["forget_classes"]
+        .astype(str)
+        .map(lambda value: len([
+            item for item in value.split(",") if item.strip()
+        ]))
+    )
+    d = d[forget_count == num_forget_classes].copy()
+    if d.empty:
+        return None
+    return {
+        "test_retain_acc": d["test_retain_acc"].mean(),
+        "test_forget_acc": d["test_forget_acc"].mean(),
+        "PRA_RS2": d["PRA_RS2"].mean(),
+    }
+
 def load_original_csv(path: Path, ds_hint: Optional[str]=None, mdl_hint: Optional[str]=None) -> pd.DataFrame:
     ds_p, mdl_p, _, _ = parse_filename(path)
     ds  = _pick(ds_p,  ds_hint,  "dataset", path)
@@ -589,7 +669,7 @@ def add_midrules_between_methods(latex_src: str) -> str:
                 continue
                         
 
-            if " & Relearned &" in line:
+            if " & Relearned (ours) &" in line:
                 # Double rule for Retrained's relearned row
                 if "Retrained" in line or re.search(r"\\multirow\{2\}\{\*\}\{Retrained\}", "\n".join(out[-3:])):
                     out.append(r"\midrule"); out.append(r"\midrule")
@@ -775,7 +855,7 @@ def render_table_for(ds: str, mdl: str, df_src: pd.DataFrame):
             row[RS_LABEL] = "-"
             rows.append(row)
         else:
-            # --- Unlearned row (RS shown here) ---
+            # --- Unlearned row ---
             row_un = {"Method": m, "Phase": "Unlearned"}
             if (m, "unlearned") in g.index:
                 for col in OUT_METRIC_COLS:
@@ -785,19 +865,35 @@ def render_table_for(ds: str, mdl: str, df_src: pd.DataFrame):
                 for col in OUT_METRIC_COLS:
                     row_un[col] = "-"
 
-            # -------- style the RS mean using max/second thresholds --------
-            if has_rs:
-                rs_mu = rs_by_method.get(m, np.nan)
-                rs_text_styled = _style_rs(rs_mu, max_v, second_v)
-            else:
-                rs_text_styled = "-"
-            row_un[RS_LABEL] = rf"\multirow{{2}}{{*}}{{{rs_text_styled}}}"
-            # ------------------------------------------------------------------------
-
+            row_un[RS_LABEL] = "-"
             rows.append(row_un)
 
+            # --- PRA baseline row ---
+            pra_path = (
+                base_dir.parent / "pra_multi" / m / f"{ds}_{mdl}.csv"
+            )
+            try:
+                pra = summarize_multi_pra(pra_path)
+            except Exception as exc:
+                print(f"[WARN] Failed to load PRA row from {pra_path}: {exc}")
+                pra = None
+
+            if pra is not None:
+                row_pra = {
+                    "Method": m,
+                    "Phase": r"PRA \cite{ha2025unlearning}",
+                }
+                for col in OUT_METRIC_COLS:
+                    row_pra[col] = (
+                        fmt_mu(pra[col])
+                        if col in pra
+                        else "-"
+                    )
+                row_pra[RS_LABEL] = fmt_rs(pra["PRA_RS2"])
+                rows.append(row_pra)
+
             # --- Relearned row (RS cell blank to keep multirow) ---
-            row_re = {"Method": m, "Phase": "Relearned"}
+            row_re = {"Method": m, "Phase": "Relearned (ours)"}
             if (m, "revival") in g.index:
                 for col in OUT_METRIC_COLS:
                     mu = g.loc[(m, "revival"), (col, "mean")]
@@ -805,7 +901,11 @@ def render_table_for(ds: str, mdl: str, df_src: pd.DataFrame):
             else:
                 for col in OUT_METRIC_COLS:
                     row_re[col] = "-"
-            row_re[RS_LABEL] = ""  # continue multirow
+            if has_rs:
+                rs_mu = rs_by_method.get(m, np.nan)
+                row_re[RS_LABEL] = _style_rs(rs_mu, max_v, second_v)
+            else:
+                row_re[RS_LABEL] = "-"
             rows.append(row_re)
 
 
@@ -993,17 +1093,30 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
             rows.append(row)
             continue
 
-        # -------- Unlearned row (styled RS shown here for each dataset) --------
-        row_un = {"Method": rf"\multirow{{2}}{{*}}{{{pretty}}}", "Phase": "Unlearned"}
+        pra_by_dataset = {}
+        for ds in datasets:
+            pra_path = (
+                base_dir.parent / "pra_multi" / m / f"{ds}_{mdl}.csv"
+            )
+            try:
+                pra_by_dataset[ds] = summarize_multi_pra(pra_path)
+            except Exception as exc:
+                print(f"[WARN] Failed to load PRA row from {pra_path}: {exc}")
+                pra_by_dataset[ds] = None
+
+        has_pra_data = any(
+            value is not None for value in pra_by_dataset.values()
+        )
+        method_row_span = 3 if has_pra_data else 2
+
+        # -------- Unlearned row --------
+        row_un = {
+            "Method": rf"\multirow{{{method_row_span}}}{{*}}{{{pretty}}}",
+            "Phase": "Unlearned",
+        }
         for ds in datasets:
             dsl = _latex_dataset_name(ds)
-
-            # -------- style RS using per-dataset thresholds --------
-            raw_rs = rs_per_ds[dsl].get(m, np.nan)
-            max_v, second_v = rs_rank_thresholds[dsl]
-            rs_text_styled = _style_rs(raw_rs, max_v, second_v) if pd.notna(raw_rs) else "-"
-            row_un[(dsl, RS_LABEL)] = rf"\multirow{{2}}{{*}}{{{rs_text_styled}}}"
-            # ------------------------------------------------------------------
+            row_un[(dsl, RS_LABEL)] = "-"
 
             if (ds, m, "unlearned") in g.index:
                 for col in OUT_METRIC_COLS:
@@ -1015,11 +1128,41 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
 
         rows.append(row_un)
 
-        # -------- Revival row (no RS value here; metrics only) --------
-        row_rev = {"Method": "", "Phase": "Relearned"}
+        # -------- One PRA row per method --------
+        if has_pra_data:
+            row_pra = {
+                "Method": "",
+                "Phase": r"PRA \cite{ha2025unlearning}",
+            }
+            for ds in datasets:
+                dsl = _latex_dataset_name(ds)
+                pra = pra_by_dataset[ds]
+                if pra is None:
+                    for col in OUT_METRIC_COLS:
+                        row_pra[(dsl, COL_LABELS[col])] = "-"
+                    row_pra[(dsl, RS_LABEL)] = "-"
+                    continue
+
+                for col in OUT_METRIC_COLS:
+                    row_pra[(dsl, COL_LABELS[col])] = (
+                        fmt_mu(pra[col])
+                        if col in pra
+                        else "-"
+                    )
+                row_pra[(dsl, RS_LABEL)] = fmt_rs(pra["PRA_RS2"])
+            rows.append(row_pra)
+
+        # -------- Revival row --------
+        row_rev = {"Method": "", "Phase": "Relearned (ours)"}
         for ds in datasets:
             dsl = _latex_dataset_name(ds)
-            row_rev[(dsl, RS_LABEL)] = ""  # continues multirow
+            raw_rs = rs_per_ds[dsl].get(m, np.nan)
+            max_v, second_v = rs_rank_thresholds[dsl]
+            row_rev[(dsl, RS_LABEL)] = (
+                _style_rs(raw_rs, max_v, second_v)
+                if pd.notna(raw_rs)
+                else "-"
+            )
             if (ds, m, "revival") in g.index:
                 for col in OUT_METRIC_COLS:
                     mu = g.loc[(ds, m, "revival"), (col, "mean")]
@@ -1073,7 +1216,7 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
     else:        ds_names = ", ".join(_latex_dataset_name(d) for d in datasets[:-1]) + f" and {_latex_dataset_name(datasets[-1])}"
 
     caption = (
-        "Comparison of different unlearning methods under the proposed source-free class relearning audit on multi-class unlearned ResNet-18 models on "
+        "Comparison of different unlearning methods under the proposed source-free class relearning audit on multi-class(2-Classes) unlearned ResNet-18 models on "
         "CIFAR-10 and CIFAR-100. "
         "For each dataset, \\textbf{bold} indicates the highest RS and "
         "\\underline{underlined} indicates the second-highest RS."
