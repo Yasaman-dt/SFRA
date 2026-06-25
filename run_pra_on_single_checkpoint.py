@@ -684,7 +684,7 @@ def evaluate_one_checkpoint(
 
 
 def append_results_to_csv(results, args):
-    out_dir = os.path.join('pra', args.method)
+    out_dir = os.path.join('pra_single', args.method)
     os.makedirs(out_dir, exist_ok=True)
     out_path = os.path.join(
         out_dir,
