@@ -21,3 +21,10 @@ __pycache__/
 
 results
 synth_pools
+
+results_single_class
+results_multi_class_2
+results_multi_class_5_10
+pra_single
+pra_multi
+linear_probe_single
