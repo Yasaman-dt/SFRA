@@ -8,16 +8,14 @@ from matplotlib.ticker import MultipleLocator, FormatStrFormatter
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-# --------------------------
-# Style (keep it simple + paper friendly)
-# --------------------------
+
 mpl.rcParams.update({
     "font.size": 12,
-    "axes.labelsize": 17,
-    "axes.titlesize": 17,
-    "xtick.labelsize": 14,
-    "ytick.labelsize": 14,
-    "legend.fontsize": 13,
+    "axes.labelsize": 13,
+    "axes.titlesize": 13,
+    "xtick.labelsize": 12,
+    "ytick.labelsize": 12,
+    "legend.fontsize": 12,
     "text.color": "black",
     "axes.labelcolor": "black",
     "xtick.color": "black",
@@ -420,7 +418,7 @@ else:
             )
                                             
         for t in ax.get_xticklabels():
-            t.set_fontsize(10)
+            t.set_fontsize(12)
             t.set_ha("center")
 
         ax.set_ylim(-0.02, 1.02)
@@ -429,7 +427,7 @@ else:
 
         ax.set_ylabel("RS")
         ax.set_xlabel("Unlearning Method")
-        ax.xaxis.set_label_coords(0.5, -0.75)
+        ax.xaxis.set_label_coords(0.5, -0.9)
         
 
         ax.set_axisbelow(True)
