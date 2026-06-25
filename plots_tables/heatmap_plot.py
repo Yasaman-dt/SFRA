@@ -8,11 +8,11 @@ from matplotlib.ticker import MultipleLocator, FormatStrFormatter
 
 mpl.rcParams.update({
     "font.size": 12,
-    "axes.labelsize": 17,
-    "axes.titlesize": 17,
-    "xtick.labelsize": 14,
-    "ytick.labelsize": 14,
-    "legend.fontsize": 13,
+    "axes.labelsize": 13,
+    "axes.titlesize": 13,
+    "xtick.labelsize": 12,
+    "ytick.labelsize": 12,
+    "legend.fontsize": 12,
     "text.color": "black",
     "axes.labelcolor": "black",
     "xtick.color": "black",
@@ -98,7 +98,7 @@ for mdl in MODELS:
         if d.empty:
             ax.text(0.5, 0.5, "No data", ha="center", va="center")
             ax.set_xticks([])
-            ax.set_xlabel("Forget class")
+            ax.set_xlabel("Forget Class")
 
             # ✅ do NOT ax.set_yticks([]) because sharey=True
             if j != 0:
@@ -145,7 +145,7 @@ for mdl in MODELS:
         # X ticks
         ax.set_xticks(range(len(pivot.columns)))
         ax.set_xticklabels([str(int(c)) for c in pivot.columns], rotation=0)
-        ax.set_xlabel("Forget class")
+        ax.set_xlabel("Forget Class")
 
         # Y ticks: only show labels on left subplot
         if j == 0:
@@ -226,7 +226,7 @@ else:
     # X ticks
     ax.set_xticks(range(len(pivot.columns)))
     ax.set_xticklabels([str(int(c)) for c in pivot.columns], rotation=0)
-    ax.set_xlabel("Forget class")
+    ax.set_xlabel("Forget Class")
 
     # Y ticks
     ax.set_yticks(range(len(pivot.index)))
