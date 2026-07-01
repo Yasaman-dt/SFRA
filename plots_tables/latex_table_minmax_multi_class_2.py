@@ -25,6 +25,7 @@ KNOWN_METHODS = set(methods)
 
 # ---- Table output choices ----
 SHOW_TRAIN_METRICS = False  # set True to keep train_* columns, False to drop them
+SHOW_LINEAR_PROBE = False   # set True to include Linear Probe rows in the tables
 
 # Columns to compute from CSV regardless (we still need them for aggregation)
 ALL_METRIC_COLS = ["train_retain_acc","train_forget_acc","test_retain_acc","test_forget_acc"]
@@ -392,6 +393,57 @@ def summarize_multi_pra(
         "test_retain_acc": d["test_retain_acc"].mean(),
         "test_forget_acc": d["test_forget_acc"].mean(),
         "PRA_RS2": d["PRA_RS2"].mean(),
+    }
+
+def summarize_multi_linear_probe(
+    path: Path,
+    num_forget_classes: int = 2,
+) -> Optional[dict]:
+    if not path.is_file():
+        return None
+    d = pd.read_csv(path)
+    required = [
+        "forget_classes",
+        "output_acc_r_test",
+        "output_acc_f_test",
+        "linear_probe_acc_r_test",
+        "linear_probe_acc_f_test",
+    ]
+    missing = [col for col in required if col not in d.columns]
+    if missing:
+        raise KeyError(f"Linear-probe CSV missing columns {missing}: {path}")
+    counts = d["forget_classes"].astype(str).map(
+        lambda value: len([
+            item for item in value.split(",") if item.strip()
+        ])
+    )
+    d = d[counts == num_forget_classes].copy()
+    if d.empty:
+        return None
+    d = d.drop_duplicates(
+        subset=["forget_classes", "seed"],
+        keep="last",
+    )
+    for col in required[1:]:
+        d[col] = pd.to_numeric(d[col], errors="coerce")
+    ar_un = d["output_acc_r_test"] / 100.0
+    ar_lp = d["linear_probe_acc_r_test"] / 100.0
+    af_un = d["output_acc_f_test"] / 100.0
+    af_lp = d["linear_probe_acc_f_test"] / 100.0
+    retain_score = (
+        1.0 - (ar_un - ar_lp).clip(lower=0.0)
+    ).clip(lower=0.0, upper=1.0)
+    forget_score = (af_lp - af_un).clip(lower=0.0, upper=1.0)
+    denominator = retain_score + forget_score
+    rs = np.where(
+        denominator > 0,
+        2.0 * retain_score * forget_score / denominator,
+        0.0,
+    )
+    return {
+        "test_retain_acc": d["linear_probe_acc_r_test"].mean(),
+        "test_forget_acc": d["linear_probe_acc_f_test"].mean(),
+        "LP_RS2": float(np.nanmean(rs)),
     }
 
 def load_original_csv(path: Path, ds_hint: Optional[str]=None, mdl_hint: Optional[str]=None) -> pd.DataFrame:
@@ -823,8 +875,11 @@ def render_table_for(ds: str, mdl: str, df_src: pd.DataFrame):
         agg_cols = agg_cols + ["RS2"]
     g = df.groupby(["method","phase"], dropna=False)[agg_cols].agg(["mean"])
     
-    # -------- collect RS means per method (from revival) and rank them --------
+    # -------- collect displayed RS values and rank them together --------
+    # Rank PRA, optional Linear Probe, and Relearned (ours) in the same pool.
     rs_by_method = {}
+    pra_rs_by_method = {}
+    lp_rs_by_method = {}
     if has_rs:
         for m in df["method"].unique():
             if (m, "revival") in g.index:
@@ -832,7 +887,34 @@ def render_table_for(ds: str, mdl: str, df_src: pd.DataFrame):
                 rs_by_method[m] = float(rs_mu) if pd.notna(rs_mu) else np.nan
             else:
                 rs_by_method[m] = np.nan
-    max_v, second_v = _rank_styles(list(rs_by_method.values()))
+            pra_rs_by_method[m] = np.nan
+            pra_path = (
+                base_dir.parent / "pra_multi" / m / f"{ds}_{mdl}.csv"
+            )
+            try:
+                pra = summarize_multi_pra(pra_path)
+                if pra is not None and pd.notna(pra.get("PRA_RS2", np.nan)):
+                    pra_rs_by_method[m] = float(pra["PRA_RS2"])
+            except Exception:
+                pra_rs_by_method[m] = np.nan
+
+            lp_rs_by_method[m] = np.nan
+            if SHOW_LINEAR_PROBE:
+                lp_path = (
+                    base_dir.parent / "linear_probe_multi" / m
+                    / f"{ds}_{mdl}.csv"
+                )
+                try:
+                    lp = summarize_multi_linear_probe(lp_path)
+                    if lp is not None and pd.notna(lp.get("LP_RS2", np.nan)):
+                        lp_rs_by_method[m] = float(lp["LP_RS2"])
+                except Exception:
+                    lp_rs_by_method[m] = np.nan
+    max_v, second_v = _rank_styles(
+        list(rs_by_method.values())
+        + list(pra_rs_by_method.values())
+        + list(lp_rs_by_method.values())
+    )
     # -------------------------------------------------------------------------------
 
     # method ordering (yours + extras found)
@@ -868,6 +950,35 @@ def render_table_for(ds: str, mdl: str, df_src: pd.DataFrame):
             row_un[RS_LABEL] = "-"
             rows.append(row_un)
 
+            lp = None
+            if SHOW_LINEAR_PROBE:
+                lp_path = (
+                    base_dir.parent / "linear_probe_multi" / m
+                    / f"{ds}_{mdl}.csv"
+                )
+                try:
+                    lp = summarize_multi_linear_probe(lp_path)
+                except Exception as exc:
+                    print(
+                        f"[WARN] Failed to load linear-probe row from "
+                        f"{lp_path}: {exc}"
+                    )
+                    lp = None
+            if lp is not None:
+                row_lp = {
+                    "Method": m,
+                    "Phase": r"Linear Probe \cite{gao2026illusion}",
+                }
+                for col in OUT_METRIC_COLS:
+                    row_lp[col] = fmt_mu(lp[col]) if col in lp else "-"
+                raw_lp_rs = lp_rs_by_method.get(m, np.nan)
+                row_lp[RS_LABEL] = (
+                    _style_rs(raw_lp_rs, max_v, second_v)
+                    if pd.notna(raw_lp_rs)
+                    else "-"
+                )
+                rows.append(row_lp)
+
             # --- PRA baseline row ---
             pra_path = (
                 base_dir.parent / "pra_multi" / m / f"{ds}_{mdl}.csv"
@@ -889,7 +1000,12 @@ def render_table_for(ds: str, mdl: str, df_src: pd.DataFrame):
                         if col in pra
                         else "-"
                     )
-                row_pra[RS_LABEL] = fmt_rs(pra["PRA_RS2"])
+                raw_pra_rs = pra_rs_by_method.get(m, np.nan)
+                row_pra[RS_LABEL] = (
+                    _style_rs(raw_pra_rs, max_v, second_v)
+                    if pd.notna(raw_pra_rs)
+                    else "-"
+                )
                 rows.append(row_pra)
 
             # --- Relearned row (RS cell blank to keep multirow) ---
@@ -1053,13 +1169,18 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
     extras  = sorted(set(df["method"].unique()) - set(present))
     method_list = present + extras
 
-    # ---------- Pass 1 — collect RS means per dataset & method and rank ----------
+    # ---------- Pass 1 — collect displayed RS values per dataset and rank ----------
+    # Rank PRA, optional Linear Probe, and Relearned (ours) in the same pool.
     rs_per_ds = { _latex_dataset_name(ds): {} for ds in datasets }
+    pra_rs_per_ds = { _latex_dataset_name(ds): {} for ds in datasets }
+    lp_rs_per_ds = { _latex_dataset_name(ds): {} for ds in datasets }
     for ds in datasets:
         dsl = _latex_dataset_name(ds)
         for m in method_list:
             if m == "original":
                 rs_per_ds[dsl][m] = np.nan
+                pra_rs_per_ds[dsl][m] = np.nan
+                lp_rs_per_ds[dsl][m] = np.nan
                 continue
             if "RS2" in g.columns.get_level_values(0).unique() and ((ds, m, "revival") in g.index):
                 rs_mu = g.loc[(ds, m, "revival"), ("RS2", "mean")]
@@ -1067,10 +1188,38 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
             else:
                 rs_per_ds[dsl][m] = np.nan
 
+            pra_rs_per_ds[dsl][m] = np.nan
+            pra_path = (
+                base_dir.parent / "pra_multi" / m / f"{ds}_{mdl}.csv"
+            )
+            try:
+                pra = summarize_multi_pra(pra_path)
+                if pra is not None and pd.notna(pra.get("PRA_RS2", np.nan)):
+                    pra_rs_per_ds[dsl][m] = float(pra["PRA_RS2"])
+            except Exception:
+                pra_rs_per_ds[dsl][m] = np.nan
+
+            lp_rs_per_ds[dsl][m] = np.nan
+            if SHOW_LINEAR_PROBE:
+                lp_path = (
+                    base_dir.parent / "linear_probe_multi" / m
+                    / f"{ds}_{mdl}.csv"
+                )
+                try:
+                    lp = summarize_multi_linear_probe(lp_path)
+                    if lp is not None and pd.notna(lp.get("LP_RS2", np.nan)):
+                        lp_rs_per_ds[dsl][m] = float(lp["LP_RS2"])
+                except Exception:
+                    lp_rs_per_ds[dsl][m] = np.nan
+
     rs_rank_thresholds = {}
     for ds in datasets:
         dsl = _latex_dataset_name(ds)
-        max_v, second_v = _rank_styles(list(rs_per_ds[dsl].values()))
+        max_v, second_v = _rank_styles(
+            list(rs_per_ds[dsl].values())
+            + list(pra_rs_per_ds[dsl].values())
+            + list(lp_rs_per_ds[dsl].values())
+        )
         rs_rank_thresholds[dsl] = (max_v, second_v)
     # -------------------------------------------------------------------------------
 
@@ -1094,6 +1243,7 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
             continue
 
         pra_by_dataset = {}
+        lp_by_dataset = {}
         for ds in datasets:
             pra_path = (
                 base_dir.parent / "pra_multi" / m / f"{ds}_{mdl}.csv"
@@ -1103,11 +1253,29 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
             except Exception as exc:
                 print(f"[WARN] Failed to load PRA row from {pra_path}: {exc}")
                 pra_by_dataset[ds] = None
+            if SHOW_LINEAR_PROBE:
+                lp_path = (
+                    base_dir.parent / "linear_probe_multi" / m
+                    / f"{ds}_{mdl}.csv"
+                )
+                try:
+                    lp_by_dataset[ds] = summarize_multi_linear_probe(lp_path)
+                except Exception as exc:
+                    print(
+                        f"[WARN] Failed to load linear-probe row from "
+                        f"{lp_path}: {exc}"
+                    )
+                    lp_by_dataset[ds] = None
+            else:
+                lp_by_dataset[ds] = None
 
         has_pra_data = any(
             value is not None for value in pra_by_dataset.values()
         )
-        method_row_span = 3 if has_pra_data else 2
+        has_lp_data = any(
+            value is not None for value in lp_by_dataset.values()
+        )
+        method_row_span = 2 + int(has_lp_data) + int(has_pra_data)
 
         # -------- Unlearned row --------
         row_un = {
@@ -1127,6 +1295,32 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
                     row_un[(dsl, COL_LABELS[col])] = "-"
 
         rows.append(row_un)
+
+        if has_lp_data:
+            row_lp = {
+                "Method": "",
+                "Phase": r"Linear Probe \cite{gao2026illusion}",
+            }
+            for ds in datasets:
+                dsl = _latex_dataset_name(ds)
+                lp = lp_by_dataset[ds]
+                if lp is None:
+                    for col in OUT_METRIC_COLS:
+                        row_lp[(dsl, COL_LABELS[col])] = "-"
+                    row_lp[(dsl, RS_LABEL)] = "-"
+                    continue
+                for col in OUT_METRIC_COLS:
+                    row_lp[(dsl, COL_LABELS[col])] = (
+                        fmt_mu(lp[col]) if col in lp else "-"
+                    )
+                raw_lp_rs = lp_rs_per_ds[dsl].get(m, np.nan)
+                max_v, second_v = rs_rank_thresholds[dsl]
+                row_lp[(dsl, RS_LABEL)] = (
+                    _style_rs(raw_lp_rs, max_v, second_v)
+                    if pd.notna(raw_lp_rs)
+                    else "-"
+                )
+            rows.append(row_lp)
 
         # -------- One PRA row per method --------
         if has_pra_data:
@@ -1149,7 +1343,13 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
                         if col in pra
                         else "-"
                     )
-                row_pra[(dsl, RS_LABEL)] = fmt_rs(pra["PRA_RS2"])
+                raw_pra_rs = pra_rs_per_ds[dsl].get(m, np.nan)
+                max_v, second_v = rs_rank_thresholds[dsl]
+                row_pra[(dsl, RS_LABEL)] = (
+                    _style_rs(raw_pra_rs, max_v, second_v)
+                    if pd.notna(raw_pra_rs)
+                    else "-"
+                )
             rows.append(row_pra)
 
         # -------- Revival row --------
@@ -1215,12 +1415,17 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
         ds_names = _latex_dataset_name(datasets[0])
     else:        ds_names = ", ".join(_latex_dataset_name(d) for d in datasets[:-1]) + f" and {_latex_dataset_name(datasets[-1])}"
 
-    caption = (
-        "Comparison of different unlearning methods under the proposed source-free class relearning audit on multi-class (2-Classes) unlearned ResNet-18 models on "
-        "CIFAR-10 and CIFAR-100. "
-        "For each dataset, \\textbf{bold} indicates the highest RS and "
-        "\\underline{underlined} indicates the second-highest RS."
+    compared_baselines = (
+        "linear probing, and the source-dependent PRA baseline"
+        if SHOW_LINEAR_PROBE
+        else "the source-dependent PRA baseline"
     )
+    caption = ( f"Comparison of different unlearning methods under the proposed "
+                f"source-free class relearning audit and {compared_baselines} on "
+                f"multi-class (2-Classes) unlearned ResNet-18 models on CIFAR-10 and CIFAR-100. "  
+               rf"For each dataset, \textbf{{bold}} indicates the highest displayed RS and "
+               rf"\underline{{underlined}} indicates the second-highest displayed RS.")
+    
 
 
     # ---- unique label per dataset selection ----

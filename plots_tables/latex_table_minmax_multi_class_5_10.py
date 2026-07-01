@@ -37,6 +37,7 @@ KNOWN_METHODS = set(methods)
 
 # ---- Table output choices ----
 SHOW_TRAIN_METRICS = False
+SHOW_LINEAR_PROBE = False
 ALL_METRIC_COLS = ["train_retain_acc","train_forget_acc","test_retain_acc","test_forget_acc"]
 OUT_METRIC_COLS = ALL_METRIC_COLS if SHOW_TRAIN_METRICS else ["test_retain_acc","test_forget_acc"]
 
@@ -222,7 +223,7 @@ def add_midrules_between_methods(latex_src: str) -> str:
             continue
 
         # detect start of retrained block (unlearned row has the multirow label)
-        if re.search(r"\\multirow\{[23]\}\{\*\}\{Retrained", line):
+        if re.search(r"\\multirow\{[234]\}\{\*\}\{Retrained", line):
             in_retrained_block = True
 
         # body separators (after rows)
@@ -632,6 +633,57 @@ def summarize_multi_pra(
         "test_forget_acc": d["test_forget_acc"].mean(),
         "PRA_RS2": d["PRA_RS2"].mean(),
     }
+
+def summarize_multi_linear_probe(
+    path: Path,
+    num_forget_classes: int,
+) -> Optional[dict]:
+    if not path.is_file():
+        return None
+    d = pd.read_csv(path)
+    required = [
+        "forget_classes",
+        "output_acc_r_test",
+        "output_acc_f_test",
+        "linear_probe_acc_r_test",
+        "linear_probe_acc_f_test",
+    ]
+    missing = [col for col in required if col not in d.columns]
+    if missing:
+        raise KeyError(f"Linear-probe CSV missing columns {missing}: {path}")
+    counts = d["forget_classes"].astype(str).map(
+        lambda value: len([
+            item for item in value.split(",") if item.strip()
+        ])
+    )
+    d = d[counts == num_forget_classes].copy()
+    if d.empty:
+        return None
+    d = d.drop_duplicates(
+        subset=["forget_classes", "seed"],
+        keep="last",
+    )
+    for col in required[1:]:
+        d[col] = pd.to_numeric(d[col], errors="coerce")
+    ar_un = d["output_acc_r_test"] / 100.0
+    ar_lp = d["linear_probe_acc_r_test"] / 100.0
+    af_un = d["output_acc_f_test"] / 100.0
+    af_lp = d["linear_probe_acc_f_test"] / 100.0
+    retain_score = (
+        1.0 - (ar_un - ar_lp).clip(lower=0.0)
+    ).clip(lower=0.0, upper=1.0)
+    forget_score = (af_lp - af_un).clip(lower=0.0, upper=1.0)
+    denominator = retain_score + forget_score
+    rs = np.where(
+        denominator > 0,
+        2.0 * retain_score * forget_score / denominator,
+        0.0,
+    )
+    return {
+        "test_retain_acc": d["linear_probe_acc_r_test"].mean(),
+        "test_forget_acc": d["linear_probe_acc_f_test"].mean(),
+        "LP_RS2": float(np.nanmean(rs)),
+    }
 # ===================== TABLE RENDER: JOINT (SAME DATASET, TWO SETTINGS) =====================
 
 def center_method_phase_headers_settings(latex_src: str, group_labels: List[str]) -> str:
@@ -734,12 +786,18 @@ def render_joint_table_same_dataset(mdl: str, df_src: pd.DataFrame, dataset: str
     extras  = sorted(set(df["method"].unique()) - set(present))
     method_list = present + extras
 
-    # RS ranking per setting
+    # RS ranking per setting. Rank all displayed RS values together:
+    # PRA, optional Linear Probe, and Relearned (ours).
     rs_per_setting = { s: {} for s in settings }
+    pra_rs_per_setting = { s: {} for s in settings }
+    lp_rs_per_setting = { s: {} for s in settings }
     for s in settings:
+        k = get_k_from_setting(s)
         for m in method_list:
             if m == "original":
                 rs_per_setting[s][m] = np.nan
+                pra_rs_per_setting[s][m] = np.nan
+                lp_rs_per_setting[s][m] = np.nan
                 continue
             if ("RS2" in g.columns.get_level_values(0).unique()) and ((s, m, "revival") in g.index):
                 rs_mu = g.loc[(s, m, "revival"), ("RS2", "mean")]
@@ -747,7 +805,40 @@ def render_joint_table_same_dataset(mdl: str, df_src: pd.DataFrame, dataset: str
             else:
                 rs_per_setting[s][m] = np.nan
 
-    rs_rank_thresholds = { s: _rank_styles(list(rs_per_setting[s].values())) for s in settings }
+            pra_rs_per_setting[s][m] = np.nan
+            pra_path = (
+                ROOT_DIR.parent / "pra_multi" / m
+                / f"{dataset}_{mdl}.csv"
+            )
+            if k is not None:
+                try:
+                    pra = summarize_multi_pra(pra_path, int(k))
+                    if pra is not None and pd.notna(pra.get("PRA_RS2", np.nan)):
+                        pra_rs_per_setting[s][m] = float(pra["PRA_RS2"])
+                except Exception:
+                    pra_rs_per_setting[s][m] = np.nan
+
+            lp_rs_per_setting[s][m] = np.nan
+            if SHOW_LINEAR_PROBE and k is not None:
+                lp_path = (
+                    ROOT_DIR.parent / "linear_probe_multi" / m
+                    / f"{dataset}_{mdl}.csv"
+                )
+                try:
+                    lp = summarize_multi_linear_probe(lp_path, int(k))
+                    if lp is not None and pd.notna(lp.get("LP_RS2", np.nan)):
+                        lp_rs_per_setting[s][m] = float(lp["LP_RS2"])
+                except Exception:
+                    lp_rs_per_setting[s][m] = np.nan
+
+    rs_rank_thresholds = {
+        s: _rank_styles(
+            list(rs_per_setting[s].values())
+            + list(pra_rs_per_setting[s].values())
+            + list(lp_rs_per_setting[s].values())
+        )
+        for s in settings
+    }
 
     rows = []
     for m in method_list:
@@ -768,8 +859,13 @@ def render_joint_table_same_dataset(mdl: str, df_src: pd.DataFrame, dataset: str
             continue
 
         pra_by_setting = {}
+        lp_by_setting = {}
         pra_path = (
             ROOT_DIR.parent / "pra_multi" / m
+            / f"{dataset}_{mdl}.csv"
+        )
+        lp_path = (
+            ROOT_DIR.parent / "linear_probe_multi" / m
             / f"{dataset}_{mdl}.csv"
         )
         for s in settings:
@@ -786,11 +882,29 @@ def render_joint_table_same_dataset(mdl: str, df_src: pd.DataFrame, dataset: str
                     f"{pra_path}: {exc}"
                 )
                 pra_by_setting[s] = None
+            if SHOW_LINEAR_PROBE:
+                try:
+                    lp_by_setting[s] = (
+                        summarize_multi_linear_probe(lp_path, int(k))
+                        if k is not None
+                        else None
+                    )
+                except Exception as exc:
+                    print(
+                        f"[WARN] Failed to load {s} linear-probe row from "
+                        f"{lp_path}: {exc}"
+                    )
+                    lp_by_setting[s] = None
+            else:
+                lp_by_setting[s] = None
 
         has_pra_data = any(
             value is not None for value in pra_by_setting.values()
         )
-        method_row_span = 3 if has_pra_data else 2
+        has_lp_data = any(
+            value is not None for value in lp_by_setting.values()
+        )
+        method_row_span = 2 + int(has_lp_data) + int(has_pra_data)
 
         # Unlearned row
         row_un = {
@@ -808,6 +922,31 @@ def render_joint_table_same_dataset(mdl: str, df_src: pd.DataFrame, dataset: str
                 for col in OUT_METRIC_COLS:
                     row_un[(s, COL_LABELS[col])] = "-"
         rows.append(row_un)
+
+        if has_lp_data:
+            row_lp = {
+                "Method": "",
+                "Phase": r"Linear Probe \cite{gao2026illusion}",
+            }
+            for s in settings:
+                lp = lp_by_setting[s]
+                if lp is None:
+                    for col in OUT_METRIC_COLS:
+                        row_lp[(s, COL_LABELS[col])] = "-"
+                    row_lp[(s, RS_LABEL)] = "-"
+                    continue
+                for col in OUT_METRIC_COLS:
+                    row_lp[(s, COL_LABELS[col])] = (
+                        fmt_mu(lp[col]) if col in lp else "-"
+                    )
+                raw_lp_rs = lp_rs_per_setting[s].get(m, np.nan)
+                max_v, second_v = rs_rank_thresholds[s]
+                row_lp[(s, RS_LABEL)] = (
+                    _style_rs(raw_lp_rs, max_v, second_v)
+                    if pd.notna(raw_lp_rs)
+                    else "-"
+                )
+            rows.append(row_lp)
 
         # PRA row: K=5 is shown only under forget5 and K=10 under forget10.
         if has_pra_data:
@@ -829,7 +968,13 @@ def render_joint_table_same_dataset(mdl: str, df_src: pd.DataFrame, dataset: str
                         if col in pra
                         else "-"
                     )
-                row_pra[(s, RS_LABEL)] = fmt_rs_value(pra["PRA_RS2"])
+                raw_pra_rs = pra_rs_per_setting[s].get(m, np.nan)
+                max_v, second_v = rs_rank_thresholds[s]
+                row_pra[(s, RS_LABEL)] = (
+                    _style_rs(raw_pra_rs, max_v, second_v)
+                    if pd.notna(raw_pra_rs)
+                    else "-"
+                )
             rows.append(row_pra)
 
         # Revival row
@@ -892,10 +1037,16 @@ def render_joint_table_same_dataset(mdl: str, df_src: pd.DataFrame, dataset: str
 
     mdl_latex = _latex_model_name(mdl)
     ds_latex  = _latex_dataset_name(dataset)
-    caption = (rf"Comparison of different unlearning methods under the proposed source-free class relearning audit on multi-class (5-Classes and 10-Classes) unlearned ResNet-18 models on "
-               rf"on CIFAR-100. "
-               rf"For each dataset, \textbf{{bold}} indicates the highest RS and "
-               rf"\underline{{underlined}} indicates the second-highest RS.")
+    compared_baselines = (
+        "linear probing, and the source-dependent PRA baseline"
+        if SHOW_LINEAR_PROBE
+        else "the source-dependent PRA baseline"
+    )
+    caption = ( f"Comparison of different unlearning methods under the proposed "
+                f"source-free class relearning audit and {compared_baselines} on "
+                f"multi-class (5-Classes and 10-Classes) unlearned ResNet-18 models on CIFAR-100. "
+               rf"For each setting, \textbf{{bold}} indicates the highest displayed RS and "
+               rf"\underline{{underlined}} indicates the second-highest displayed RS.")
     
  
     label = f"tab:{slugify(ds_latex)}_{slugify(mdl_latex)}_5v10"
