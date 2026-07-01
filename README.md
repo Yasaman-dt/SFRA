@@ -46,12 +46,12 @@ CUDA_VISIBLE_DEVICES=0 python main.py  --method pass  --dataset_name tiny_imagen
 
 ## 3. Apply Retrain-from-scratch baseline without the forget class:
 
-**Single class setting:**
+**single-class setting:**
 ```bash
 CUDA_VISIBLE_DEVICES=0 python main.py  --classes "0,1,2,3,4,5,6,7,8,9" --method pass  --dataset_name cifar10 --model_name resnet18 --retrain_from_scratch
 ```
 
-**Multi class setting:**
+**multi-class setting:**
 ```bash
 CUDA_VISIBLE_DEVICES=0 python main.py  --forget_class 2   --method pass  --dataset_name cifar10  	--model_name resnet18 --retrain_from_scratch
 ```
@@ -60,25 +60,25 @@ CUDA_VISIBLE_DEVICES=0 python main.py  --forget_class 2   --method pass  --datas
 
 ## 4. Apply unelarning methods:
 
-**Single class setting:**
+**single-class setting:**
 ```bash
 CUDA_VISIBLE_DEVICES=0 python test_original_model.py --datasets cifar10 	--model-name resnet18	--forget-classes 0 1 2 3 4 5 6 7 8 9
 ```
 
-**multi class unlearning:**
+**multi-class setting:**
 ```bash
 CUDA_VISIBLE_DEVICES=0 python test_original_model.py --datasets cifar10 	--model-name resnet18	--forget-set 1 6
 ```
 
 Evaluate the unlearn model:
 
-**Single class setting:**
+**single-class setting:**
 ```bash
 CUDA_VISIBLE_DEVICES=0 python eval_unlearned_model.py   --dataset_name cifar10  	--model_name resnet18  	--method bad_teacher   		--forget_id 0 		--unlearn_rate 1e-03  --exps_dir ~/classification/exps   --batch_size 256   --num_workers 8
 ```
 
 
-**multi class unlearning:**
+**multi-class setting:**
 ```bash
 CUDA_VISIBLE_DEVICES=0 python eval_unlearned_model.py   --dataset_name cifar100  	--model_name renset18   --method bad_teacher  		--forget_set 25 58    	--unlearn_rate 1e-03  --exps_dir ~/classification/exps   --batch_size 128   --num_workers 8
 ```
@@ -87,13 +87,13 @@ CUDA_VISIBLE_DEVICES=0 python eval_unlearned_model.py   --dataset_name cifar100 
 
 ## 5. Run our class relearning method:
 
-**Single class setting:**
+**single-class setting:**
 ```bash
 CUDA_VISIBLE_DEVICES=0 python source_free_relearning_singleclass.py 	--method bad_teacher  --model_name resnet18 	--dataset cifar10	    	--lr 1e-3 	--epochs 500  --forget 0,1,2,3,4,5,6,7,8,9    	--retain_per_class 500   	--forget_per_class 500   --tpr 500000
 ```
 
 
-**multi class unlearning:**
+**multi-class setting:**
 ```bash
 CUDA_VISIBLE_DEVICES=0 python source_free_relearning_multiclass.py  --dataset cifar10   	--model resnet18   --method bad_teacher  --lr 2e-2   --epochs 200   --forget 1,6   	--tpr 500000   	--retain_per_class 500   --forget_per_class 500
 ```
@@ -124,22 +124,152 @@ CUDA_VISIBLE_DEVICES=0 python -m ablation.relearning_singleclass_ablation.py    
 CUDA_VISIBLE_DEVICES=0 python tsne_framework.py 	--dataset cifar10 --model_name resnet18  	--method bad_teacher 	--forget_class 7 --lr 0.001  --split test --autoname
 ```
 
-tsne of the unlearned model for the synthetic embeddings and the real embeddings:
+## Source-Dependent Baselines
+We evaluate two source-dependent baselines: PRA and linear probing. Unlike our source-free relearning audit, these baselines use real data from the original task.
+
+### PRA baseline
+
+PRA is evaluated using real support samples from the forgotten classes. For single-class unlearning checkpoints, we run:
+
+**single-class setting:**
 ```bash
-CUDA_VISIBLE_DEVICES=0 python plots_tables/tsne_real_gaussian_probes.py
-   --method bad_teacher   --dataset cifar10   --model_name resnet18   --lr 0.001   --forget_class 7   --generated_per_class 500000   --retain_per_class 180   --forget_per_class 20   --real_per_class 180   --perplexity 30   --tsne_iterations 1500   --seed 0
+CUDA_VISIBLE_DEVICES=2 python run_pra_on_single_checkpoint.py \
+  --dataset cifar100 \
+  --model resnet18 \
+  --method boundary_shrink \
+  --lr 1e-08 \
+  --forget 0,20,40,60,80 \
+  --n-percent 100.0 \
+  --num-samples-per-class 5 \
+  --pra-metric cosine \
+  --max-retain-drop 1.0 \
+  --attack-split train \
+  --support-seed 0 
+```
+
+**multi-class setting:**
+```bash
+CUDA_VISIBLE_DEVICES=2 python run_pra_on_multi_checkpoint.py \
+  --dataset cifar100 \
+  --model resnet18 \
+  --method finetune \
+  --forget 25,58 \
+  --lr 0.02
 ```
 
 
+### Linear-Probe Baseline
+The linear-probe baseline evaluates how much class information remains in the representation of the unlearned model.
 
-CUDA_VISIBLE_DEVICES=2 python run_pra_on_single_checkpoint.py   --dataset cifar100   --model resnet18   --method boundary_shrink   --lr 1e-08   --forget 0,20,40,60,80   --base-dir /export/livia/home/vision/Zdehghani/classification/exps   --n-percent 100.0   --num-samples-per-class 5   --pra-metric cosine   --max-retain-drop 1.0   --attack-split train   --support-seed 0   --device cuda
+**single-class setting:**
+CUDA_VISIBLE_DEVICES=2 python run_linear_probe_single_checkpoint.py \
+  --dataset tiny_imagenet \
+  --model vit-b-16 \
+  --method delete \
+  --forget 0,40,80,120,160 \
+  --lr 0.001
+
+**multi-class setting:**
+CUDA_VISIBLE_DEVICES=2 python run_linear_probe_multi_checkpoint.py \
+  --dataset cifar10 \
+  --model resnet18 \
+  --method scrub \
+  --forget 1,6 \
+  --lr 0.001
 
 
+---
+
+## 8. Appendix / Plot and Table Generation Scripts
+
+These scripts are post-processing utilities used to reproduce appendix figures and tables from saved checkpoints and result CSV files. Most scripts assume that the corresponding unlearned checkpoints and result folders have already been generated.
+
+### Coefficient approximation validation
+
+```bash
+python plots_tables/probe_coefficient_validation.py \
+  --method bad_teacher \
+  --dataset cifar10 \
+  --model_name resnet18 \
+  --lr 0.001 \
+  --forget_class 7 \
+  --generated_per_class 500000 \
+  --selected_per_class 500 \
+  --bootstrap_repetitions 300
+```
+
+This script validates the approximation used in the one-step margin analysis. It compares the exact weighted update term with the unweighted synthetic mean approximation and generates appendix figures/tables for the coefficient validation experiment.
+
+### Real and synthetic probe t-SNE visualization
+
+```bash
+CUDA_VISIBLE_DEVICES=0 python plots_tables/tsne_real_gaussian_probes.py \
+  --method bad_teacher \
+  --dataset cifar10 \
+  --model_name resnet18 \
+  --lr 0.001 \
+  --forget_class 7 \
+  --generated_per_class 500000 \
+  --retain_per_class 500 \
+  --forget_per_class 500 \
+  --real_per_class 500
+```
+
+This script loads an unlearned checkpoint and visualizes real test samples together with selected synthetic probes. It saves separate t-SNE figures for the pre-classifier feature space and the classifier-head logit space.
+
+### Synthesis-ablation RS table
+
+```bash
+python plots_tables/synthesis_ablation_class_table_rs_only.py \
+  --root results_synthesis_ablation \
+  --methods bad_teacher neggrad_plus delete scrub boundary_shrink finetune gradient_ascent random_label l2ul_adv salun \
+  --dataset cifar10 \
+  --model_name resnet18 \
+  --classes 0 1 2 3 4 5 6 7 8 9 \
+  --bold_best
+```
+
+This script reads the results produced by the synthesis-strategy ablation and creates a LaTeX table with forget classes as columns. It reports the relearning score (RS) for different synthesis strategies.
 
 
-CUDA_VISIBLE_DEVICES=2 python run_linear_probe_single_checkpoint.py   --dataset tiny_imagenet   --model vit-b-16   --method delete   --forget 0,40,80,120,160   --lr 0.001
+### Gaussian vs. Uniform embedding-distribution table
 
-CUDA_VISIBLE_DEVICES=2 python run_linear_probe_multi_checkpoint.py   --dataset cifar10   --model resnet18   --method scrub   --forget 1,6   --lr 0.001
+```bash
+python plots_tables/sampling_distribution_rs_table.py \
+  --dataset cifar10 \
+  --model_name resnet18 \
+  --classes 0 1 2 3 4 5 6 7 8 9 \
+  --bold_best
+```
 
+This script compares Gaussian and Uniform embedding distributions. It combines Gaussian results from `results_single_class` with Uniform results from `results_synthesis_ablation`.
 
-python plots_tables/synthesis_ablation_class_table_rs_only.py   --root results_synthesis_ablation   --methods bad_teacher neggrad_plus delete scrub boundary_shrink finetune gradient_ascent random_label l2ul_adv salun --dataset cifar10   --model_name resnet18   --classes 0 1 2 3 4 5 6 7 8 9   --bold_best
+### Confidence of forget-class assignments
+
+First generate per-forget-class confidence statistics:
+
+```bash
+CUDA_VISIBLE_DEVICES=0 python plots_tables/retain_forget_assigned_confidence.py \
+  --method bad_teacher \
+  --dataset cifar10 \
+  --model_name resnet18 \
+  --lr 0.001 \
+  --forget_classes 0 1 2 3 4 5 6 7 8 9
+```
+
+This script evaluates the unlearned model on real test samples and measures how confidently retain classes are assigned to correctly classified retain samples and to forget-class samples that are predicted as retain classes.
+
+### Aggregated confidence table across forget classes
+
+```bash
+python plots_tables/aggregate_confidence_by_forget_class.py \
+  --root results/bad_teacher/confidence_tables \
+  --method bad_teacher \
+  --dataset cifar10 \
+  --model_name resnet18 \
+  --lr 0.001 \
+  --classes 0 1 2 3 4 5 6 7 8 9 \
+  --allow_any_lr
+```
+
+This script aggregates the per-forget-class confidence CSVs into one compact table. For each forget class, it reports the weighted average confidence of correctly classified retain samples, the weighted average confidence of forget-class samples assigned to retain classes, and their confidence gap.
