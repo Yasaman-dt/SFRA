@@ -13,7 +13,7 @@ It supports:
 - Training original models
 - Retrain-from-scratch baselines
 - Single-class and multi-class unlearning
-- Class relearning method
+- Our source-free class relearning method
 - Ablations and t-SNE visualizations
 
 ---
