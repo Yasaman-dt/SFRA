@@ -29,6 +29,7 @@ KNOWN_METHODS = set(methods)
 
 # ---- Table output choices ----
 SHOW_TRAIN_METRICS = False  # set True to keep train_* columns, False to drop them
+SHOW_LINEAR_PROBE = False   # set True to include Linear Probe rows in the joint tables
 
 # Columns to compute from CSV regardless (we still need them for aggregation)
 ALL_METRIC_COLS = ["train_retain_acc","train_forget_acc","test_retain_acc","test_forget_acc"]
@@ -332,7 +333,7 @@ def load_pra_csv(
     if mdl is None:
         raise ValueError(f"Cannot infer model for PRA file: {path}")
 
-    mth = mth_hint or "pra"
+    mth = mth_hint or "pra_single"
     d = pd.read_csv(path)
 
     # New auto-alpha output.
@@ -484,6 +485,51 @@ def summarize_pra_results(
              num_support_runs=("support_seed", "nunique"),
          )
     )
+
+
+def load_linear_probe_results(path: Path, dataset: str) -> pd.DataFrame:
+    """Load single-class linear-probe results and compute the common RS."""
+    if not path.is_file():
+        return pd.DataFrame()
+    d = pd.read_csv(path)
+    required = {
+        "forget_classes",
+        "output_acc_r_test",
+        "output_acc_f_test",
+        "linear_probe_acc_r_test",
+        "linear_probe_acc_f_test",
+    }
+    if not required.issubset(d.columns):
+        raise KeyError(
+            f"Linear-probe CSV missing {sorted(required - set(d.columns))}: "
+            f"{path}"
+        )
+    d["forget_class"] = pd.to_numeric(
+        d["forget_classes"], errors="coerce"
+    )
+    d = _apply_forget_filter(d, dataset)
+    d = d.drop_duplicates(
+        subset=["forget_classes", "seed"],
+        keep="last",
+    )
+    for col in required - {"forget_classes"}:
+        d[col] = pd.to_numeric(d[col], errors="coerce")
+
+    ar_un = d["output_acc_r_test"] / 100.0
+    ar_lp = d["linear_probe_acc_r_test"] / 100.0
+    af_un = d["output_acc_f_test"] / 100.0
+    af_lp = d["linear_probe_acc_f_test"] / 100.0
+    retain_score = (
+        1.0 - (ar_un - ar_lp).clip(lower=0.0)
+    ).clip(lower=0.0, upper=1.0)
+    forget_score = (af_lp - af_un).clip(lower=0.0, upper=1.0)
+    denominator = retain_score + forget_score
+    d["LP_RS2"] = np.where(
+        denominator > 0,
+        2.0 * retain_score * forget_score / denominator,
+        0.0,
+    )
+    return d
 
 
 def _rank_styles(values):
@@ -952,7 +998,7 @@ def render_table_for(ds: str, mdl: str, df_src: pd.DataFrame):
             # -----------------------------------------------------
             pra_path = (
                 base_dir.parent
-                / "pra"
+                / "pra_single"
                 / m
                 / f"{ds}_{mdl}.csv"
             )
@@ -1190,9 +1236,11 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
 
     dataset_labels = [_latex_dataset_name(d) for d in datasets]
 
-    # ---------- PASS 1: collect RS maxima per dataset & method ----------
-    # We will use RS = max RS2 over revival rows (as in your existing code).
+    # ---------- PASS 1: collect displayed RS values per dataset ----------
+    # Rank all displayed RS values together (PRA, optional Linear Probe, and ours).
     rs_per_ds = {dsl: {} for dsl in dataset_labels}   # {dsl: {method -> rs_value or NaN}}
+    pra_rs_per_ds = {dsl: {} for dsl in dataset_labels}
+    lp_rs_per_ds = {dsl: {} for dsl in dataset_labels}
     for m in method_list:
         if m == "original":
             continue
@@ -1204,10 +1252,60 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
             else:
                 rs_per_ds[dsl][m] = np.nan
 
+            pra_rs_per_ds[dsl][m] = np.nan
+            pra_path = (
+                base_dir.parent / "pra_single" / m
+                / f"{ds}_{mdl}.csv"
+            )
+            if pra_path.is_file():
+                try:
+                    df_pra = load_pra_csv(
+                        pra_path,
+                        ds_hint=ds,
+                        mdl_hint=mdl,
+                        mth_hint=m,
+                    )
+                    pra_summary = summarize_pra_results(
+                        df_pra,
+                        dataset=ds,
+                    )
+                    if not pra_summary.empty:
+                        pra_rs = pd.to_numeric(
+                            pra_summary["PRA_RS2"],
+                            errors="coerce",
+                        )
+                        if pra_rs.notna().any():
+                            pra_rs_per_ds[dsl][m] = float(pra_rs.max())
+                except Exception:
+                    pra_rs_per_ds[dsl][m] = np.nan
+
+            lp_rs_per_ds[dsl][m] = np.nan
+            if SHOW_LINEAR_PROBE:
+                lp_path = (
+                    base_dir.parent / "linear_probe_single" / m
+                    / f"{ds}_{mdl}.csv"
+                )
+                if lp_path.is_file():
+                    try:
+                        df_lp = load_linear_probe_results(lp_path, ds)
+                        if not df_lp.empty:
+                            lp_rs = pd.to_numeric(
+                                df_lp["LP_RS2"],
+                                errors="coerce",
+                            )
+                            if lp_rs.notna().any():
+                                lp_rs_per_ds[dsl][m] = float(lp_rs.max())
+                    except Exception:
+                        lp_rs_per_ds[dsl][m] = np.nan
+
     # Compute (max, second max) thresholds per dataset (distinct values)
     rs_rank_thresholds = {}
     for dsl in dataset_labels:
-        rs_vals = list(rs_per_ds[dsl].values())
+        rs_vals = (
+            list(rs_per_ds[dsl].values())
+            + list(pra_rs_per_ds[dsl].values())
+            + list(lp_rs_per_ds[dsl].values())
+        )
         max_v, second_v = _rank_styles(rs_vals)
         rs_rank_thresholds[dsl] = (max_v, second_v)
 
@@ -1237,15 +1335,57 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
         # ---------------------------------------------------------
         pra_row = {"Method": "", "Phase": r"PRA \cite{ha2025unlearning}"}
         has_pra_data = False
+        lp_row = {
+            "Method": "",
+            "Phase": r"Linear Probe \cite{gao2026illusion}",
+        }
+        has_lp_data = False
 
         for ds in datasets:
             dsl = _latex_dataset_name(ds)
-            pra_path = base_dir.parent / "pra" / m / f"{ds}_{mdl}.csv"
+            pra_path = (
+                base_dir.parent / "pra_single" / m
+                / f"{ds}_{mdl}.csv"
+            )
+            lp_path = (
+                base_dir.parent / "linear_probe_single" / m
+                / f"{ds}_{mdl}.csv"
+            )
 
             # Initialize all PRA cells for this dataset.
             for col in OUT_METRIC_COLS:
                 pra_row[(dsl, COL_LABELS[col])] = "-"
             pra_row[(dsl, "RS")] = "-"
+            for col in OUT_METRIC_COLS:
+                lp_row[(dsl, COL_LABELS[col])] = "-"
+            lp_row[(dsl, "RS")] = "-"
+
+            if SHOW_LINEAR_PROBE and lp_path.is_file():
+                try:
+                    df_lp = load_linear_probe_results(lp_path, ds)
+                    if not df_lp.empty:
+                        acc_r = df_lp["linear_probe_acc_r_test"]
+                        acc_f = df_lp["linear_probe_acc_f_test"]
+                        lp_rs = df_lp["LP_RS2"]
+                        lp_row[
+                            (dsl, COL_LABELS["test_retain_acc"])
+                        ] = fmt_mu_sigma(acc_r.mean(), acc_r.std())
+                        lp_row[
+                            (dsl, COL_LABELS["test_forget_acc"])
+                        ] = fmt_min_max(acc_f.min(), acc_f.max())
+                        lp_raw_rs = lp_rs_per_ds[dsl].get(m, np.nan)
+                        max_v, second_v = rs_rank_thresholds[dsl]
+                        lp_row[(dsl, "RS")] = (
+                            _style_rs(lp_raw_rs, max_v, second_v)
+                            if pd.notna(lp_raw_rs)
+                            else "-"
+                        )
+                        has_lp_data = True
+                except Exception as e:
+                    print(
+                        f"[WARN] Failed to load linear-probe results for "
+                        f"method={m}, dataset={ds}, model={mdl}: {e}"
+                    )
 
             if pra_path.is_file():
                 try:
@@ -1287,9 +1427,11 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
                             (dsl, COL_LABELS["test_forget_acc"])
                         ] = fmt_min_max(acc_f.min(), acc_f.max())
 
+                        pra_raw_rs = pra_rs_per_ds[dsl].get(m, np.nan)
+                        max_v, second_v = rs_rank_thresholds[dsl]
                         pra_row[(dsl, "RS")] = (
-                            fmt_rs_max(pra_rs.max())
-                            if pra_rs.notna().any()
+                            _style_rs(pra_raw_rs, max_v, second_v)
+                            if pd.notna(pra_raw_rs)
                             else "-"
                         )
 
@@ -1301,9 +1443,7 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
                         f"method={m}, dataset={ds}, model={mdl}: {e}"
                     )
 
-        # The method label spans three rows when PRA is available;
-        # otherwise it spans only Unlearned and Revival (ours).
-        method_row_span = 3 if has_pra_data else 2
+        method_row_span = 2 + int(has_lp_data) + int(has_pra_data)
 
         # ---------------------------------------------------------
         # 1) Unlearned model
@@ -1330,14 +1470,18 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
 
         rows.append(row_un)
 
+        # 2) Source-dependent linear probe
+        if has_lp_data:
+            rows.append(lp_row)
+
         # ---------------------------------------------------------
-        # 2) PRA baseline attack
+        # 3) PRA baseline attack
         # ---------------------------------------------------------
         if has_pra_data:
             rows.append(pra_row)
 
         # ---------------------------------------------------------
-        # 3) Our relearning method
+        # 4) Our relearning method
         # ---------------------------------------------------------
         row_rev = {"Method": "", "Phase": "Relearned (ours)"}
 
@@ -1411,20 +1555,41 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
     else:
         ds_names = ", ".join(_latex_dataset_name(d) for d in datasets[:-1]) + f", and {_latex_dataset_name(datasets[-1])}"
 
+    compared_baselines = (
+        "the full-data linear probe, and the source-dependent PRA baseline"
+        if SHOW_LINEAR_PROBE
+        else "the source-dependent PRA baseline"
+    )
+    forget_variant_text = (
+        "Linear Probe, PRA, and Relearned (ours)"
+        if SHOW_LINEAR_PROBE
+        else "PRA and Relearned (ours)"
+    )
+    rs_variant_text = (
+        "Linear Probe, PRA, and our method"
+        if SHOW_LINEAR_PROBE
+        else "PRA and our method"
+    )
+
     caption = (
-        f"Comparison of different unlearning methods under the proposed "
-        f"source-free class relearning audit and the source-dependent PRA baseline "
-        f"on single-class-unlearned {mdl_latex} models evaluated on {ds_names}. "
-        f"For retain accuracy $\\mathcal{{A}}^t_r$ and unlearned-model forget "
-        f"accuracy $\\mathcal{{A}}^t_f$, we report mean$\\pm$std across forget "
-        f"For relearning forget. "
-        f"accuracy $\\mathcal{{A}}^t_f$, we report $(\\min,\\max)$ across "
-        f"forget classes. RS is computed using the same definition for PRA "
-        f"and our method and reports the maximum per-class value. For each "
-        r"dataset block, \textbf{bold} indicates the highest RS of our "
-        r"source-free audit and \underline{underlined} indicates the "
-        r"second-highest."
-        )
+        f"Comparison of unlearning methods using the proposed source-free "
+        f"class-relearning audit and {compared_baselines} on {mdl_latex} models "
+        f"under single-class unlearning across three datasets. For all model "
+        f"variants, retain accuracy $\\mathcal{{A}}^t_r$ is reported as the "
+        f"mean $\\pm$ standard deviation across forget classes. For the Original "
+        f"and Unlearned variants, forget-class accuracy $\\mathcal{{A}}^t_f$ is "
+        f"also reported as the mean $\\pm$ standard deviation. For "
+        f"{forget_variant_text}, $\\mathcal{{A}}^t_f$ is reported as the "
+        f"$(\\min,\\max)$ range across forget classes. RS is computed separately "
+        f"for each forget class, and the maximum RS across forget classes is "
+        f"reported. Within each dataset block, "
+        r"\textbf{bold} and \underline{underlined} values denote the highest "
+        r"and second-highest displayed RS, respectively, across PRA, the proposed "
+        r"audit, and all enabled baselines."
+    )
+
+
+
     label   = f"tab:{slugify(mdl_latex)}_single_class_all_datasets"
 
     latex = wrap_with_resizebox(latex, caption, label, star=True, width=r"\textwidth")
@@ -1453,7 +1618,7 @@ def write_pra_alpha_summary(
             for model in models:
                 pra_path = (
                     base_dir.parent
-                    / "pra"
+                    / "pra_single"
                     / method
                     / f"{dataset}_{model}.csv"
                 )
