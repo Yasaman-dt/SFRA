@@ -277,3 +277,17 @@ python plots_tables/aggregate_confidence_by_forget_class.py \
 ```
 
 This script aggregates the per-forget-class confidence CSVs into one compact table. For each forget class, it reports the weighted average confidence of correctly classified retain samples, the weighted average confidence of forget-class samples assigned to retain classes, and their confidence gap.
+
+
+### Synthesis-strategy ablation runner
+
+```bash
+CUDA_VISIBLE_DEVICES=0 python -m ablation.synthesis_strategy_ablation \
+  --method bad_teacher \
+  --dataset cifar10 \
+  --model_name resnet18 \
+  --lr 0.001 \
+  --forget_classes 0 1 2 3 4 5 6 7 8 9 \
+  --generated_per_class 500000 \
+  --retain_per_class 500 \
+  --forget_per_class 500
