@@ -5,7 +5,7 @@ It supports:
 
 - **Datasets:** `cifar10`, `cifar100`, `tiny_imagenet`
 - **Backbones:** `resnet18`, `vit-s-16`, `vit-b-16`, `swin-t`, `vgg16`
-- **Unlearning methods (`--method`):**  
+- **Unlearning methods:**  
   `retrained`, `random_label`, `finetune`, `gradient_ascent`,  
   `boundary_shrink`, `boundary_expand`, `delete`, 
   `l2ul_adv`, `salun`, `scrub`, `bad_teacher`, `neggrad_plus`
@@ -133,7 +133,7 @@ PRA is evaluated using real support samples from the forgotten classes. For sing
 
 **single-class setting:**
 ```bash
-CUDA_VISIBLE_DEVICES=2 python run_pra_on_single_checkpoint.py \
+CUDA_VISIBLE_DEVICES=2 python -m relearning_baselines.run_pra_on_single_checkpoint \
   --dataset cifar100 \
   --model resnet18 \
   --method boundary_shrink \
@@ -149,7 +149,7 @@ CUDA_VISIBLE_DEVICES=2 python run_pra_on_single_checkpoint.py \
 
 **multi-class setting:**
 ```bash
-CUDA_VISIBLE_DEVICES=2 python run_pra_on_multi_checkpoint.py \
+CUDA_VISIBLE_DEVICES=2 python -m relearning_baselines.run_pra_on_multi_checkpoint \
   --dataset cifar100 \
   --model resnet18 \
   --method finetune \
@@ -162,20 +162,24 @@ CUDA_VISIBLE_DEVICES=2 python run_pra_on_multi_checkpoint.py \
 The linear-probe baseline evaluates how much class information remains in the representation of the unlearned model.
 
 **single-class setting:**
-CUDA_VISIBLE_DEVICES=2 python run_linear_probe_single_checkpoint.py \
+```bash
+CUDA_VISIBLE_DEVICES=2 python -m relearning_baselines.run_linear_probe_single_checkpoint \
   --dataset tiny_imagenet \
   --model vit-b-16 \
   --method delete \
   --forget 0,40,80,120,160 \
   --lr 0.001
+```
 
 **multi-class setting:**
-CUDA_VISIBLE_DEVICES=2 python run_linear_probe_multi_checkpoint.py \
+```bash
+CUDA_VISIBLE_DEVICES=2 python -m relearning_baselines.run_linear_probe_multi_checkpoint \
   --dataset cifar10 \
   --model resnet18 \
   --method scrub \
   --forget 1,6 \
   --lr 0.001
+```
 
 
 ---
