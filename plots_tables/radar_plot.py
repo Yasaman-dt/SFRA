@@ -9,7 +9,7 @@ import math
 
 mpl.rcParams.update({
     "font.size": 5,        
-    "axes.labelsize": 14,
+    "axes.labelsize": 12,
     "xtick.labelsize": 12,
     "ytick.labelsize": 12,
     "legend.fontsize": 12,
@@ -25,12 +25,12 @@ mpl.rcParams.update({
 
 plt.rcParams.update({
     "font.family": "serif",
-    "font.serif": ["Times New Roman"],  # first choice; falls back if missing
-    "mathtext.fontset": "stix",         # math text in a Times-like style
+    "font.serif": ["Times New Roman", "Times", "DejaVu Serif"],
+    "mathtext.fontset": "stix",
 })
 
 # ----------------- USER CONFIG -----------------
-base_dir   = Path(r"C:/Users/AT56170/Desktop/Codes/Machine Unlearning - Classification/Source_Free_Class_Revival/results_single_class/")
+base_dir   = Path(r"/projets/Zdehghani/Source_Free_Class_Revival/results_single_class/")
 DATASET    = "tiny_imagenet"
 MODEL      = "vit-b-16"
 FORGET_C   = "160"          # accept "9" or 9
@@ -39,7 +39,7 @@ OUT_NAME   = f"radar_{DATASET}_{MODEL}_forget{FORGET_C}.png"
 
 # Keep your preferred order; we'll drop those that are missing
 METHOD_ORDER = [
-    "retrained", "finetune", "gradient_ascent", "neggrad_plus", "random_label",
+    "finetune", "gradient_ascent", "neggrad_plus", "random_label",
     "boundary_shrink", "l2ul_adv", "l2ul_imp",
     "scrub", "bad_teacher", "salun", "delete",
 ]
@@ -128,7 +128,7 @@ def _move_polar_xticklabels_out(ax, angles, radius, labels, fontsize=9):
         t.set_position((th, radius))
         
 def put_xticklabels_outside(ax, angles, labels, pad=0.16,
-                            fontsize_main=14, fontsize_paren=10,
+                            fontsize_main=12, fontsize_paren=10,
                             line_gap=0.07, rotation=0,
                             bold_main=True):
     ax.set_xticklabels([])  # we'll draw them manually
@@ -218,7 +218,7 @@ def _radar_plot(labels, orig, un, re, title="", save_path=None, annotate=True):
     # if "gradient_ascent" in methods:
     #     pads[methods.index("gradient_ascent")] = 0.25 
 
-    put_xticklabels_outside(ax, angles, labels, pad=pads,  fontsize_main=14, fontsize_paren=9)
+    put_xticklabels_outside(ax, angles, labels, pad=pads,  fontsize_main=12, fontsize_paren=9)
     
     
     #plt.subplots_adjust(top=1, bottom=0.05, left=0.05, right=0.7)  # a bit more room
@@ -237,7 +237,7 @@ def _radar_plot(labels, orig, un, re, title="", save_path=None, annotate=True):
     ax.fill(angles_c, _close(un), alpha=0.10, color="red")
 
     p2, = ax.plot(angles_c, _close(re), linewidth=2.2, linestyle="-",
-                  color="green", label="Revival")
+                  color="green", label="Relearned")
     ax.fill(angles_c, _close(re), alpha=0.10, color="green")
 
 
@@ -256,7 +256,7 @@ def _radar_plot(labels, orig, un, re, title="", save_path=None, annotate=True):
         #_annotate_series(re,       off2, color="green")
 
     # --- Bigger legend + actually show the title you computed ---
-    leg = ax.legend(loc="upper left", bbox_to_anchor=(1.15, 1.15), fontsize=14)
+    leg = ax.legend(loc="upper left", bbox_to_anchor=(1.15, 1.15), fontsize=12)
     #leg.get_title().set_fontweight("bold")
 
 
@@ -293,7 +293,7 @@ if __name__ == "__main__":
     title = f"{DATASET.upper()} / {MODEL} — forget class {FORGET_C}"
     
     # build a FILE path, not a directory
-    save_dir  = Path(r"C:/Users/AT56170/Desktop/Codes/Machine Unlearning - Classification/Source_Free_Class_Revival/Radar_Plots")
+    save_dir  = Path(r"/projets/Zdehghani/Source_Free_Class_Revival/Radar_Plots")
     save_dir.mkdir(parents=True, exist_ok=True)
     save_path = save_dir / OUT_NAME   # e.g., .../Radar_Plots/radar_cifar10_resnet18_forget8.png
     
