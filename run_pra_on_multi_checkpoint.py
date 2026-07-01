@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader, Subset
 
 from models import load_model
 from utils import get_dataset, get_transforms
-from run_pra_on_checkpoint import (
+from run_pra_on_single_checkpoint import (
     apply_prototypes_to_classifier,
     collect_prototypes,
     get_active_classifier,
