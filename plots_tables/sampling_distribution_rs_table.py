@@ -165,7 +165,6 @@ def latex_dataset_name(dataset: str) -> str:
 def latex_model_name(model_name: str) -> str:
     mapping = {
         "resnet18": "ResNet-18",
-        "vit-s-16": "ViT-S/16",
         "vit-b-16": "ViT-B/16",
         "swin-t": "Swin-T",
         "vgg16": "VGG-16",

@@ -23,7 +23,7 @@ SETTING_DIRS: Dict[str, Path] = {
 DATASET_TARGET = "cifar100"  # <-- what you want for the joint table (same dataset)
 
 DATASETS = ["cifar10", "cifar100", "tiny_imagenet"]
-MODELS   = ["resnet18", "vit-s-16", "vit-b-16", "swin-t", "vgg16"]
+MODELS   = ["resnet18", "vit-b-16", "swin-t", "vgg16"]
 
 # include ORIGINAL as a method
 methods = [
@@ -107,7 +107,6 @@ def _method_label(raw: str) -> str:
 def _latex_model_name(mdl: str) -> str:
     mapping = {
         "resnet18": "ResNet-18",
-        "vit-s-16": "ViT-S/16",
         "vit-b-16": "ViT-B/16",
         "swin-t":   "Swin-T",
         "vgg16":    "VGG-16",

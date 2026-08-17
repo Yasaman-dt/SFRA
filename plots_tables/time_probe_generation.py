@@ -54,7 +54,6 @@ PAPER_SINGLE_CLASS_SETTINGS = {
 DEFAULT_FEATURE_DIMS = {
     "resnet18": 512,
     "vgg16": 512,
-    "vit-s-16": 768,
     "vit-b-16": 768,
     "swin-t": 768,
 }
@@ -68,7 +67,6 @@ DATASET_LABELS = {
 MODEL_LABELS = {
     "resnet18": "ResNet-18",
     "vgg16": "VGG-16",
-    "vit-s-16": "ViT-S/16",
     "vit-b-16": "ViT-B/16",
     "swin-t": "Swin-T",
 }
