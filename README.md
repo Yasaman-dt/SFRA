@@ -58,7 +58,7 @@ CUDA_VISIBLE_DEVICES=0 python main.py  --forget_class 2   --method pass  --datas
 
 ---
 
-## 4. Apply unelarning methods:
+## Test original model for different settings:
 
 **single-class setting:**
 ```bash
@@ -69,6 +69,24 @@ CUDA_VISIBLE_DEVICES=0 python test_original_model.py --datasets cifar10 	--model
 ```bash
 CUDA_VISIBLE_DEVICES=0 python test_original_model.py --datasets cifar10 	--model-name resnet18	--forget-set 1 6
 ```
+
+---
+
+## 4. Apply unleanring methods:
+
+**single-class setting:**
+
+```bash
+CUDA_VISIBLE_DEVICES=0 python main.py  --dataset_name cifar10  	--classes "0,1,2,3,4,5,6,7,8,9" 	--model_name resnet18  --retain_data True --method bad_teacher  	--unlearn_rate 1e-3  	--description lr_1e-3
+```
+
+**multi-class setting:**
+```bash
+CUDA_VISIBLE_DEVICES=1 python main.py  --dataset_name cifar10 		--forget_class 2 	--model_name resnet18   --method gradient_ascent  --retain_data True  --unlearn_rate 1e-5  --description lr_1e-5
+```
+
+---
+
 
 Evaluate the unlearn model:
 
@@ -226,14 +244,50 @@ This script loads an unlearned checkpoint and visualizes real test samples toget
 ```bash
 python plots_tables/synthesis_ablation_class_table_rs_only.py \
   --root results_synthesis_ablation \
-  --methods bad_teacher neggrad_plus delete scrub boundary_shrink finetune gradient_ascent random_label l2ul_adv salun \
+  --methods retrained bad_teacher neggrad_plus delete scrub boundary_shrink finetune gradient_ascent random_label l2ul_adv salun \
   --dataset cifar10 \
   --model_name resnet18 \
   --classes 0 1 2 3 4 5 6 7 8 9 \
+  --exclude_strategies dist=uniform__forget=low_confidence__retain=high_confidence \
   --bold_best
 ```
 
 This script reads the results produced by the synthesis-strategy ablation and creates a LaTeX table with forget classes as columns. It reports the relearning score (RS) for different synthesis strategies.
+
+### Synthetic--real alignment analysis
+
+This post-hoc analysis uses only the low-confidence synthetic forget probes from
+the existing source-free relearning procedure. It does not train or modify a
+model and does not construct random or high-confidence controls.
+
+Run a small one-class sanity check first:
+
+```bash
+CUDA_VISIBLE_DEVICES=0 python plots_tables/synthetic_real_alignment.py \
+  --methods bad_teacher delete scrub retrained \
+  --forget_classes 0 \
+  --seeds 0 \
+  --N 1000 --M 100 \
+  --skip_retain_pass \
+  --output_dir results/alignment_analysis_smoke
+```
+
+Then run the full CIFAR-10/ResNet-18 analysis with the settings used by the
+existing relearning results:
+
+```bash
+CUDA_VISIBLE_DEVICES=0 python plots_tables/synthetic_real_alignment.py \
+  --dataset cifar10 \
+  --model resnet18 \
+  --methods bad_teacher delete scrub retrained \
+  --forget_classes 0 1 2 3 4 5 6 7 8 9 \
+  --seeds 0 \
+  --N 500000 --M 500 \
+  --output_dir results/alignment_analysis
+```
+
+Omitting `--skip_retain_pass` preserves the original generator's RNG-consuming
+retain-pool pass before constructing the actual low-confidence forget probes.
 
 
 ### Gaussian vs. Uniform embedding-distribution table
