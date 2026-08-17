@@ -137,6 +137,44 @@ def weighted_average(values: pd.Series, weights: pd.Series) -> float:
     return float(np.average(values[valid], weights=weights[valid]))
 
 
+def table_average(summary: pd.DataFrame, include_counts: bool) -> dict[str, float]:
+    """Compute the final average row shown at the bottom of the table."""
+    if include_counts:
+        retain_count = pd.to_numeric(
+            summary["retain_correct_count"], errors="coerce"
+        ).fillna(0.0)
+        forget_count = pd.to_numeric(
+            summary["forget_assigned_count"], errors="coerce"
+        ).fillna(0.0)
+        retain_conf = pd.to_numeric(
+            summary["retain_correct_weighted_confidence"], errors="coerce"
+        )
+        forget_conf = pd.to_numeric(
+            summary["forget_assigned_weighted_confidence"], errors="coerce"
+        )
+        retain_avg = weighted_average(retain_conf, retain_count)
+        forget_avg = weighted_average(forget_conf, forget_count)
+        return {
+            "retain_correct_count": retain_count.sum(),
+            "retain_correct_weighted_confidence": retain_avg,
+            "forget_assigned_count": forget_count.sum(),
+            "forget_assigned_weighted_confidence": forget_avg,
+            "confidence_gap": retain_avg - forget_avg,
+        }
+
+    retain_avg = pd.to_numeric(
+        summary["retain_correct_weighted_confidence"], errors="coerce"
+    ).mean()
+    forget_avg = pd.to_numeric(
+        summary["forget_assigned_weighted_confidence"], errors="coerce"
+    ).mean()
+    return {
+        "retain_correct_weighted_confidence": retain_avg,
+        "forget_assigned_weighted_confidence": forget_avg,
+        "confidence_gap": retain_avg - forget_avg,
+    }
+
+
 def csv_path_for(
     root: Path,
     dataset: str,
@@ -284,6 +322,17 @@ def make_latex(
                 fmt_float(row["confidence_gap"], precision),
             ]
             lines.append(" & ".join(cells) + r" \\")
+        avg = table_average(summary, include_counts=True)
+        lines.append(r"\midrule")
+        cells = [
+            r"\textbf{Average}",
+            str(int(avg["retain_correct_count"])),
+            fmt_float(avg["retain_correct_weighted_confidence"], precision),
+            str(int(avg["forget_assigned_count"])),
+            fmt_float(avg["forget_assigned_weighted_confidence"], precision),
+            fmt_float(avg["confidence_gap"], precision),
+        ]
+        lines.append(" & ".join(cells) + r" \\")
     else:
         for _, row in summary.iterrows():
             cells = [
@@ -293,6 +342,15 @@ def make_latex(
                 fmt_float(row["confidence_gap"], precision),
             ]
             lines.append(" & ".join(cells) + r" \\")
+        avg = table_average(summary, include_counts=False)
+        lines.append(r"\midrule")
+        cells = [
+            r"\textbf{Average}",
+            fmt_float(avg["retain_correct_weighted_confidence"], precision),
+            fmt_float(avg["forget_assigned_weighted_confidence"], precision),
+            fmt_float(avg["confidence_gap"], precision),
+        ]
+        lines.append(" & ".join(cells) + r" \\")
 
     lines.extend([r"\bottomrule", r"\end{tabular}", r"\end{table}"])
     return "\n".join(lines) + "\n"

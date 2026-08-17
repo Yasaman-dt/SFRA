@@ -1,5 +1,7 @@
 import pandas as pd
 import re
+import csv
+from io import StringIO
 import numpy as np
 from pathlib import Path
 from typing import Optional, List
@@ -50,8 +52,8 @@ COL_LABELS = {
 
 # Keep only these forget classes for TinyImageNet
 FORGET_CLASS_FILTERS = {
-    "cifar100": {0,20,40, 60, 80},
-    "tiny_imagenet": {0, 40, 80, 120, 160}
+    "cifar100": {0, 10, 20, 30, 40, 50, 60, 70, 80, 90},
+    "tiny_imagenet": {0, 20, 40, 60, 80, 100, 120, 140, 160, 180}
 }
 
 def _apply_forget_filter(df: pd.DataFrame, dataset: str) -> pd.DataFrame:
@@ -255,13 +257,54 @@ def _pick(value, hint, what: str, path: Path):
         return hint
     raise ValueError(f"Cannot infer {what} from filename '{path.name}', and no {what} hint was provided.")
 
+def read_csv_keep_well_formed_rows(path: Path) -> pd.DataFrame:
+    """
+    Read a CSV while tolerating rows with extra trailing fields.
+
+    This is useful for old result files where extra per-class accuracy columns
+    were appended to only some rows. If a row has more fields than the header,
+    keep the first header-width fields, which preserves the main aggregate
+    metrics and forget-class identifier. Rows with too few fields are dropped.
+    """
+    text = path.read_text(encoding="utf-8", errors="replace")
+    rows = list(csv.reader(StringIO(text)))
+    if not rows:
+        return pd.DataFrame()
+
+    header = rows[0]
+    width = len(header)
+    good_rows = [header]
+    truncated_count = 0
+    dropped_count = 0
+    for row in rows[1:]:
+        if len(row) == width:
+            good_rows.append(row)
+        elif len(row) > width:
+            good_rows.append(row[:width])
+            truncated_count += 1
+        else:
+            dropped_count += 1
+
+    if truncated_count or dropped_count:
+        print(
+            f"[WARN] While reading {path}, truncated {truncated_count} rows "
+            f"with extra fields and dropped {dropped_count} short rows; "
+            f"expected {width} fields."
+        )
+
+    buf = StringIO()
+    writer = csv.writer(buf, lineterminator="\n")
+    writer.writerows(good_rows)
+    buf.seek(0)
+    return pd.read_csv(buf)
+
 def load_forget_csv(path: Path, ds_hint: Optional[str]=None, mdl_hint: Optional[str]=None, mth_hint: Optional[str]=None) -> pd.DataFrame:
     ds_p, mdl_p, mth_p, _ = parse_filename(path)
     ds  = _pick(ds_p,  ds_hint,  "dataset", path)
     mdl = _pick(mdl_p, mdl_hint, "model",   path)
     mth = mth_p or mth_hint or "unknown"
 
-    d = pd.read_csv(path)
+    d = read_csv_keep_well_formed_rows(path)
     d = standardize_cols(d, ds, mdl, mth)
     if "forget_class" not in d.columns:
         d["forget_class"] = pd.NA
@@ -275,7 +318,7 @@ def load_revival_csv(path: Path, ds_hint: Optional[str]=None, mdl_hint: Optional
     mdl = _pick(mdl_p, mdl_hint, "model",   path)
     mth = mth_p or mth_hint or "unknown"
 
-    d = pd.read_csv(path)
+    d = read_csv_keep_well_formed_rows(path)
     if "epoch" in d.columns:
         d = d.sort_values(["forget_class","epoch"]).groupby("forget_class", as_index=False).tail(1)
     d = standardize_cols(d, ds, mdl, mth)
@@ -290,7 +333,7 @@ def load_original_csv(path: Path, ds_hint: Optional[str]=None, mdl_hint: Optiona
     ds  = _pick(ds_p,  ds_hint,  "dataset", path)
     mdl = _pick(mdl_p, mdl_hint, "model",   path)
 
-    d = pd.read_csv(path)
+    d = read_csv_keep_well_formed_rows(path)
     d = standardize_cols(d, ds, mdl, "original")
     if "forget_class" not in d.columns:
         d["forget_class"] = -1
@@ -751,8 +794,22 @@ def fmt_mu_sigma(mu, sigma):
     sigma = 0.0 if pd.isna(sigma) else float(sigma)
     if pd.isna(mu):
         return "-"
-    # mean in normal size, ±std smaller (in parentheses)
-    return rf"${mu:.2f}\,\text{{\scriptsize\,±\,{sigma:.2f}}}$"
+    return rf"${mu:.2f}{{\scriptstyle\,\pm\,{sigma:.2f}}}$"
+
+
+def fmt_min_mean_max(vmin, mean, vmax):
+    if pd.isna(vmin) and pd.isna(mean) and pd.isna(vmax):
+        return "-"
+    if pd.isna(vmin) or pd.isna(mean) or pd.isna(vmax):
+        return "-"
+    return rf"$({float(vmin):.2f},{float(mean):.2f},{float(vmax):.2f})$"
+
+
+def fmt_forget_series(values: pd.Series) -> str:
+    values = pd.to_numeric(values, errors="coerce").dropna()
+    if values.empty:
+        return "-"
+    return fmt_min_mean_max(values.min(), values.mean(), values.max())
 
 
 
@@ -823,10 +880,140 @@ def fmt_rs(mu, sigma):
     if pd.isna(mu):
         return "-"
     sigma = 0.0 if pd.isna(sigma) else float(sigma)
-    return rf"${float(mu):.3f}\,\text{{\scriptsize\,±\,{sigma:.3f}}}$"
+    return rf"${float(mu):.3f}{{\scriptstyle\,\pm\,{sigma:.3f}}}$"
 
 def fmt_rs_max(v):
     return "-" if pd.isna(v) else rf"${float(v):.3f}$"
+
+
+DELTA_RS_LABEL = r"$\Delta$RS"
+
+
+def _style_delta_text(delta, delta_max_v=None, delta_second_v=None):
+    if pd.isna(delta):
+        return r"\,(-)"
+    text = f"({float(delta):+.3f})"
+    if (delta_max_v is not None) and (abs(delta - delta_max_v) < 1e-12):
+        return rf"\,\mathbf{{({float(delta):+.3f})}}"
+    if (delta_second_v is not None) and (abs(delta - delta_second_v) < 1e-12):
+        return rf"\,\underline{{({float(delta):+.3f})}}"
+    return rf"\,{text}"
+
+
+def _style_rs_delta(v, delta, max_v, second_v, delta_max_v=None, delta_second_v=None):
+    if pd.isna(v):
+        return "-"
+    val = f"{float(v):.3f}"
+    delta_text = _style_delta_text(delta, delta_max_v, delta_second_v)
+    if (max_v is not None) and (abs(v - max_v) < 1e-12):
+        return rf"\textbf{{\boldmath ${val}{delta_text}$}}"
+    if (second_v is not None) and (abs(v - second_v) < 1e-12):
+        return rf"$\underline{{{val}}}{delta_text}$"
+    return rf"${val}{delta_text}$"
+
+
+def _style_rs_only(v, max_v, second_v):
+    if pd.isna(v):
+        return "-"
+    val = f"{float(v):.3f}"
+    if (max_v is not None) and (abs(v - max_v) < 1e-12):
+        return rf"\textbf{{\boldmath ${val}$}}"
+    if (second_v is not None) and (abs(v - second_v) < 1e-12):
+        return rf"$\underline{{{val}}}$"
+    return rf"${val}$"
+
+
+def _style_delta_only(delta, delta_max_v, delta_second_v):
+    if pd.isna(delta):
+        return "-"
+    val = f"{float(delta):+.3f}"
+    if (delta_max_v is not None) and (abs(delta - delta_max_v) < 1e-12):
+        return rf"$\mathbf{{{val}}}$"
+    if (delta_second_v is not None) and (abs(delta - delta_second_v) < 1e-12):
+        return rf"$\underline{{{val}}}$"
+    return rf"${val}$"
+
+
+def _forget_key(value) -> str:
+    """Stable key for matching a forget class across source-free/PRA tables."""
+    if pd.isna(value):
+        return ""
+    try:
+        as_float = float(value)
+        if as_float.is_integer():
+            return str(int(as_float))
+    except (TypeError, ValueError):
+        pass
+    return str(value)
+
+
+def _retrained_rs_by_forget(df: pd.DataFrame, dataset: str) -> dict:
+    sub = df[
+        (df["dataset"] == dataset)
+        & (df["method"] == "retrained")
+        & (df["phase"] == "revival")
+    ].copy()
+    if sub.empty or "forget_class" not in sub.columns or "RS2" not in sub.columns:
+        return {}
+    sub["RS2"] = pd.to_numeric(sub["RS2"], errors="coerce")
+    sub["forget_key"] = sub["forget_class"].map(_forget_key)
+    grouped = sub.groupby("forget_key")["RS2"].mean()
+    return {
+        str(forget_key): float(value)
+        for forget_key, value in grouped.items()
+        if pd.notna(value)
+    }
+
+
+def _rs_by_forget(frame: pd.DataFrame, rs_col: str) -> dict:
+    if frame is None or frame.empty or rs_col not in frame.columns:
+        return {}
+    tmp = frame.copy()
+    tmp[rs_col] = pd.to_numeric(tmp[rs_col], errors="coerce")
+    if "forget_class" not in tmp.columns:
+        return {}
+    tmp["forget_key"] = tmp["forget_class"].map(_forget_key)
+    grouped = tmp.groupby("forget_key")[rs_col].mean()
+    return {
+        str(forget_key): float(value)
+        for forget_key, value in grouped.items()
+        if pd.notna(value)
+    }
+
+
+def _max_rs_and_delta(
+    frame: pd.DataFrame,
+    rs_col: str,
+    retrained_by_forget: dict,
+    select_by: str = "rs",
+) -> tuple[float, float]:
+    if frame is None or frame.empty or rs_col not in frame.columns:
+        return np.nan, np.nan
+    tmp = frame.copy()
+    tmp[rs_col] = pd.to_numeric(tmp[rs_col], errors="coerce")
+    tmp = tmp[tmp[rs_col].notna()]
+    if tmp.empty:
+        return np.nan, np.nan
+
+    # Compute the matched delta for each forget class first:
+    #   DeltaRS(c) = RS(c) - RS_retrained(c)
+    # This avoids the invalid operation max_c RS(c) - max_c RS_retrained(c).
+    if "forget_class" in tmp.columns:
+        tmp["_forget_key"] = tmp["forget_class"].map(_forget_key)
+    else:
+        tmp["_forget_key"] = ""
+    tmp["_matched_retrained_rs"] = tmp["_forget_key"].map(retrained_by_forget)
+    tmp["_matched_delta_rs"] = tmp[rs_col] - tmp["_matched_retrained_rs"]
+
+    if select_by == "delta" and tmp["_matched_delta_rs"].notna().any():
+        idx = tmp["_matched_delta_rs"].idxmax()
+    else:
+        idx = tmp[rs_col].idxmax()
+
+    rs = float(tmp.loc[idx, rs_col])
+    delta = tmp.loc[idx, "_matched_delta_rs"]
+    delta = float(delta) if pd.notna(delta) else np.nan
+    return rs, delta
 
 
 def inject_rs2_multicolumn(latex_src: str, n_metric_cols: int) -> str:
@@ -1142,7 +1329,7 @@ def add_group_vertical_bars(latex_src: str, datasets: List[str]) -> str:
     Works even if the header text is wrapped. (Joint table: RS + metrics per dataset)
     """
     out = latex_src
-    ncols = 1 + len(OUT_METRIC_COLS)
+    ncols = 2 + len(OUT_METRIC_COLS)
     for i, ds in enumerate(datasets):
         dsl = _latex_dataset_name(ds)
         pat = rf"(\\multicolumn\{{{ncols}\}}\{{)(?:\|?c\|?)(\}}\{{[^}}]*{re.escape(dsl)}[^}}]*\}})"
@@ -1181,7 +1368,7 @@ def center_method_phase_headers(latex_src: str, dataset_labels: List[str]) -> st
     if h2 is None:
         return latex_src
 
-    ncols = 1 + len(OUT_METRIC_COLS)  # RS + metrics
+    ncols = 2 + len(OUT_METRIC_COLS)  # metrics + RS + DeltaRS
     group_bits = [rf"\multicolumn{{{ncols}}}{{c}}{{\textbf{{{ds}}}}}" for ds in dataset_labels]
     new_h1 = (
         r"\multirow{2}{*}{Unlearning Method} & \multirow{2}{*}{Phase} & "
@@ -1239,47 +1426,113 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
     # ---------- PASS 1: collect displayed RS values per dataset ----------
     # Rank all displayed RS values together (PRA, optional Linear Probe, and ours).
     rs_per_ds = {dsl: {} for dsl in dataset_labels}   # {dsl: {method -> rs_value or NaN}}
+    rs_delta_per_ds = {dsl: {} for dsl in dataset_labels}
     pra_rs_per_ds = {dsl: {} for dsl in dataset_labels}
+    pra_delta_per_ds = {dsl: {} for dsl in dataset_labels}
     lp_rs_per_ds = {dsl: {} for dsl in dataset_labels}
+    lp_delta_per_ds = {dsl: {} for dsl in dataset_labels}
+    retrained_rs_per_ds = {
+        _latex_dataset_name(ds): _retrained_rs_by_forget(df, ds)
+        for ds in datasets
+    }
+
+    pra_summary_cache = {}
+
+    def get_pra_summary(method: str, dataset: str) -> pd.DataFrame:
+        key = (method, dataset)
+        if key in pra_summary_cache:
+            return pra_summary_cache[key]
+        pra_path = (
+            base_dir.parent / "pra_single" / method
+            / f"{dataset}_{mdl}.csv"
+        )
+        if not pra_path.is_file():
+            pra_summary_cache[key] = pd.DataFrame()
+            return pra_summary_cache[key]
+        df_pra = load_pra_csv(
+            pra_path,
+            ds_hint=dataset,
+            mdl_hint=mdl,
+            mth_hint=method,
+        )
+        pra_summary_cache[key] = summarize_pra_results(
+            df_pra,
+            dataset=dataset,
+        )
+        return pra_summary_cache[key]
+
+    pra_retrained_rs_per_ds = {
+        _latex_dataset_name(ds): _rs_by_forget(
+            get_pra_summary("retrained", ds),
+            "PRA_RS2",
+        )
+        for ds in datasets
+    }
+
+    lp_retrained_rs_per_ds = {dsl: {} for dsl in dataset_labels}
+    if SHOW_LINEAR_PROBE:
+        for ds in datasets:
+            dsl = _latex_dataset_name(ds)
+            lp_path = (
+                base_dir.parent / "linear_probe_single" / "retrained"
+                / f"{ds}_{mdl}.csv"
+            )
+            if lp_path.is_file():
+                try:
+                    lp_retrained_rs_per_ds[dsl] = _rs_by_forget(
+                        load_linear_probe_results(lp_path, ds),
+                        "LP_RS2",
+                    )
+                except Exception:
+                    lp_retrained_rs_per_ds[dsl] = {}
+
     for m in method_list:
         if m == "original":
             continue
         for ds in datasets:
             dsl = _latex_dataset_name(ds)
-            if "RS2" in g.columns.get_level_values(0).unique() and ((ds, m, "revival") in g.index):
-                rs_max = g.loc[(ds, m, "revival"), ("RS2", "max")]
-                rs_per_ds[dsl][m] = float(rs_max) if pd.notna(rs_max) else np.nan
-            else:
-                rs_per_ds[dsl][m] = np.nan
+            sourcefree_rows = df[
+                (df["dataset"] == ds)
+                & (df["method"] == m)
+                & (df["phase"] == "revival")
+            ]
+            rs_value, rs_delta = _max_rs_and_delta(
+                sourcefree_rows,
+                "RS2",
+                retrained_rs_per_ds[dsl],
+                select_by="rs",
+            )
+            if m == "retrained":
+                rs_delta = np.nan
+            rs_per_ds[dsl][m] = rs_value
+            rs_delta_per_ds[dsl][m] = rs_delta
 
             pra_rs_per_ds[dsl][m] = np.nan
-            pra_path = (
-                base_dir.parent / "pra_single" / m
-                / f"{ds}_{mdl}.csv"
-            )
-            if pra_path.is_file():
-                try:
-                    df_pra = load_pra_csv(
-                        pra_path,
-                        ds_hint=ds,
-                        mdl_hint=mdl,
-                        mth_hint=m,
+            pra_delta_per_ds[dsl][m] = np.nan
+            try:
+                pra_summary = get_pra_summary(m, ds)
+                if not pra_summary.empty:
+                    pra_rs = pd.to_numeric(
+                        pra_summary["PRA_RS2"],
+                        errors="coerce",
                     )
-                    pra_summary = summarize_pra_results(
-                        df_pra,
-                        dataset=ds,
-                    )
-                    if not pra_summary.empty:
-                        pra_rs = pd.to_numeric(
-                            pra_summary["PRA_RS2"],
-                            errors="coerce",
+                    if pra_rs.notna().any():
+                        pra_value, pra_delta = _max_rs_and_delta(
+                            pra_summary,
+                            "PRA_RS2",
+                            pra_retrained_rs_per_ds[dsl],
+                            select_by="rs",
                         )
-                        if pra_rs.notna().any():
-                            pra_rs_per_ds[dsl][m] = float(pra_rs.max())
-                except Exception:
-                    pra_rs_per_ds[dsl][m] = np.nan
+                        if m == "retrained":
+                            pra_delta = np.nan
+                        pra_rs_per_ds[dsl][m] = pra_value
+                        pra_delta_per_ds[dsl][m] = pra_delta
+            except Exception:
+                pra_rs_per_ds[dsl][m] = np.nan
+                pra_delta_per_ds[dsl][m] = np.nan
 
             lp_rs_per_ds[dsl][m] = np.nan
+            lp_delta_per_ds[dsl][m] = np.nan
             if SHOW_LINEAR_PROBE:
                 lp_path = (
                     base_dir.parent / "linear_probe_single" / m
@@ -1294,12 +1547,22 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
                                 errors="coerce",
                             )
                             if lp_rs.notna().any():
-                                lp_rs_per_ds[dsl][m] = float(lp_rs.max())
+                                lp_value, lp_delta = _max_rs_and_delta(
+                                    df_lp,
+                                    "LP_RS2",
+                                    lp_retrained_rs_per_ds[dsl],
+                                )
+                                if m == "retrained":
+                                    lp_delta = np.nan
+                                lp_rs_per_ds[dsl][m] = lp_value
+                                lp_delta_per_ds[dsl][m] = lp_delta
                     except Exception:
                         lp_rs_per_ds[dsl][m] = np.nan
+                        lp_delta_per_ds[dsl][m] = np.nan
 
     # Compute (max, second max) thresholds per dataset (distinct values)
     rs_rank_thresholds = {}
+    delta_rank_thresholds = {}
     for dsl in dataset_labels:
         rs_vals = (
             list(rs_per_ds[dsl].values())
@@ -1308,6 +1571,12 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
         )
         max_v, second_v = _rank_styles(rs_vals)
         rs_rank_thresholds[dsl] = (max_v, second_v)
+        delta_vals = (
+            list(rs_delta_per_ds[dsl].values())
+            + list(pra_delta_per_ds[dsl].values())
+            + list(lp_delta_per_ds[dsl].values())
+        )
+        delta_rank_thresholds[dsl] = _rank_styles(delta_vals)
 
     # ---------- PASS 2: build rows with styled RS ----------
     rows = []
@@ -1319,11 +1588,18 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
             for ds in datasets:
                 dsl = _latex_dataset_name(ds)
                 row[(dsl, "RS")] = "-"
+                row[(dsl, DELTA_RS_LABEL)] = "-"
                 if (ds, m, "original") in g.index:
                     for col in OUT_METRIC_COLS:
-                        mu = g.loc[(ds, m, "original"), (col, "mean")]
-                        sd = g.loc[(ds, m, "original"), (col, "std")]
-                        row[(dsl, COL_LABELS[col])] = fmt_mu_sigma(mu, sd)
+                        if col == "test_forget_acc":
+                            vmin = g.loc[(ds, m, "original"), (col, "min")]
+                            mu = g.loc[(ds, m, "original"), (col, "mean")]
+                            vmax = g.loc[(ds, m, "original"), (col, "max")]
+                            row[(dsl, COL_LABELS[col])] = fmt_min_mean_max(vmin, mu, vmax)
+                        else:
+                            mu = g.loc[(ds, m, "original"), (col, "mean")]
+                            sd = g.loc[(ds, m, "original"), (col, "std")]
+                            row[(dsl, COL_LABELS[col])] = fmt_mu_sigma(mu, sd)
                 else:
                     for col in OUT_METRIC_COLS:
                         row[(dsl, COL_LABELS[col])] = "-"
@@ -1356,9 +1632,11 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
             for col in OUT_METRIC_COLS:
                 pra_row[(dsl, COL_LABELS[col])] = "-"
             pra_row[(dsl, "RS")] = "-"
+            pra_row[(dsl, DELTA_RS_LABEL)] = "-"
             for col in OUT_METRIC_COLS:
                 lp_row[(dsl, COL_LABELS[col])] = "-"
             lp_row[(dsl, "RS")] = "-"
+            lp_row[(dsl, DELTA_RS_LABEL)] = "-"
 
             if SHOW_LINEAR_PROBE and lp_path.is_file():
                 try:
@@ -1372,13 +1650,16 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
                         ] = fmt_mu_sigma(acc_r.mean(), acc_r.std())
                         lp_row[
                             (dsl, COL_LABELS["test_forget_acc"])
-                        ] = fmt_min_max(acc_f.min(), acc_f.max())
+                        ] = fmt_forget_series(acc_f)
                         lp_raw_rs = lp_rs_per_ds[dsl].get(m, np.nan)
+                        lp_delta = lp_delta_per_ds[dsl].get(m, np.nan)
                         max_v, second_v = rs_rank_thresholds[dsl]
-                        lp_row[(dsl, "RS")] = (
-                            _style_rs(lp_raw_rs, max_v, second_v)
-                            if pd.notna(lp_raw_rs)
-                            else "-"
+                        delta_max_v, delta_second_v = delta_rank_thresholds[dsl]
+                        lp_row[(dsl, "RS")] = _style_rs_only(
+                            lp_raw_rs, max_v, second_v
+                        )
+                        lp_row[(dsl, DELTA_RS_LABEL)] = _style_delta_only(
+                            lp_delta, delta_max_v, delta_second_v
                         )
                         has_lp_data = True
                 except Exception as e:
@@ -1425,14 +1706,17 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
 
                         pra_row[
                             (dsl, COL_LABELS["test_forget_acc"])
-                        ] = fmt_min_max(acc_f.min(), acc_f.max())
+                        ] = fmt_forget_series(acc_f)
 
                         pra_raw_rs = pra_rs_per_ds[dsl].get(m, np.nan)
+                        pra_delta = pra_delta_per_ds[dsl].get(m, np.nan)
                         max_v, second_v = rs_rank_thresholds[dsl]
-                        pra_row[(dsl, "RS")] = (
-                            _style_rs(pra_raw_rs, max_v, second_v)
-                            if pd.notna(pra_raw_rs)
-                            else "-"
+                        delta_max_v, delta_second_v = delta_rank_thresholds[dsl]
+                        pra_row[(dsl, "RS")] = _style_rs_only(
+                            pra_raw_rs, max_v, second_v
+                        )
+                        pra_row[(dsl, DELTA_RS_LABEL)] = _style_delta_only(
+                            pra_delta, delta_max_v, delta_second_v
                         )
 
                         has_pra_data = True
@@ -1458,12 +1742,19 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
 
             # RS is shown on the Revival (ours) row only.
             row_un[(dsl, "RS")] = ""
+            row_un[(dsl, DELTA_RS_LABEL)] = ""
 
             if (ds, m, "unlearned") in g.index:
                 for col in OUT_METRIC_COLS:
-                    mu = g.loc[(ds, m, "unlearned"), (col, "mean")]
-                    sd = g.loc[(ds, m, "unlearned"), (col, "std")]
-                    row_un[(dsl, COL_LABELS[col])] = fmt_mu_sigma(mu, sd)
+                    if col == "test_forget_acc":
+                        vmin = g.loc[(ds, m, "unlearned"), (col, "min")]
+                        mu = g.loc[(ds, m, "unlearned"), (col, "mean")]
+                        vmax = g.loc[(ds, m, "unlearned"), (col, "max")]
+                        row_un[(dsl, COL_LABELS[col])] = fmt_min_mean_max(vmin, mu, vmax)
+                    else:
+                        mu = g.loc[(ds, m, "unlearned"), (col, "mean")]
+                        sd = g.loc[(ds, m, "unlearned"), (col, "std")]
+                        row_un[(dsl, COL_LABELS[col])] = fmt_mu_sigma(mu, sd)
             else:
                 for col in OUT_METRIC_COLS:
                     row_un[(dsl, COL_LABELS[col])] = "-"
@@ -1488,23 +1779,28 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
         for ds in datasets:
             dsl = _latex_dataset_name(ds)
             raw_rs = rs_per_ds[dsl].get(m, np.nan)
+            delta_rs = rs_delta_per_ds[dsl].get(m, np.nan)
             max_v, second_v = rs_rank_thresholds[dsl]
+            delta_max_v, delta_second_v = delta_rank_thresholds[dsl]
 
             if pd.notna(raw_rs):
-                row_rev[(dsl, "RS")] = _style_rs(
+                row_rev[(dsl, "RS")] = _style_rs_only(
                     raw_rs, max_v, second_v
+                )
+                row_rev[(dsl, DELTA_RS_LABEL)] = _style_delta_only(
+                    delta_rs, delta_max_v, delta_second_v
                 )
             else:
                 row_rev[(dsl, "RS")] = "-"
+                row_rev[(dsl, DELTA_RS_LABEL)] = "-"
 
             if (ds, m, "revival") in g.index:
                 for col in OUT_METRIC_COLS:
-                    if col in ("train_forget_acc", "test_forget_acc"):
+                    if col == "test_forget_acc":
                         vmin = g.loc[(ds, m, "revival"), (col, "min")]
+                        mu = g.loc[(ds, m, "revival"), (col, "mean")]
                         vmax = g.loc[(ds, m, "revival"), (col, "max")]
-                        row_rev[(dsl, COL_LABELS[col])] = fmt_min_max(
-                            vmin, vmax
-                        )
+                        row_rev[(dsl, COL_LABELS[col])] = fmt_min_mean_max(vmin, mu, vmax)
                     else:
                         mu = g.loc[(ds, m, "revival"), (col, "mean")]
                         sd = g.loc[(ds, m, "revival"), (col, "std")]
@@ -1523,6 +1819,7 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
         for c in OUT_METRIC_COLS:
             ordered_cols.append((dsl, COL_LABELS[c]))
         ordered_cols.append((dsl, "RS"))
+        ordered_cols.append((dsl, DELTA_RS_LABEL))
 
     table_df = pd.DataFrame(rows)
     table_df["Method"] = table_df["Method"].map(_method_label)
@@ -1537,8 +1834,9 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
                          .str.replace("&", r"\&", regex=False)
                          .str.replace("%", r"\%", regex=False))
 
-    cols_per_dataset = 1 + len(OUT_METRIC_COLS)  # RS + metrics
-    column_format = "c|c|" + ("{}|".format("c"*cols_per_dataset) * len(datasets)).rstrip("|")
+    cols_per_dataset = 2 + len(OUT_METRIC_COLS)  # metrics + RS + DeltaRS
+    block_format = ("c" * len(OUT_METRIC_COLS)) + "cc"
+    column_format = "c|c|" + ("{}|".format(block_format) * len(datasets)).rstrip("|")
 
     latex = table_df.to_latex(index=False, escape=False, multicolumn=True,
                               multicolumn_format="c", column_format=column_format)
@@ -1576,16 +1874,16 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
         f"class-relearning audit and {compared_baselines} on {mdl_latex} models "
         f"under single-class unlearning across three datasets. For all model "
         f"variants, retain accuracy $\\mathcal{{A}}^t_r$ is reported as the "
-        f"mean $\\pm$ standard deviation across forget classes. For the Original "
-        f"and Unlearned variants, forget-class accuracy $\\mathcal{{A}}^t_f$ is "
-        f"also reported as the mean $\\pm$ standard deviation. For "
-        f"{forget_variant_text}, $\\mathcal{{A}}^t_f$ is reported as the "
-        f"$(\\min,\\max)$ range across forget classes. RS is computed separately "
-        f"for each forget class, and the maximum RS across forget classes is "
-        f"reported. Within each dataset block, "
+        f"mean $\\pm$ standard deviation across forget classes, while "
+        f"forget-class accuracy $\\mathcal{{A}}^t_f$ is reported as "
+        f"$(\\min,\\mathrm{{avg}},\\max)$. For each method, we report "
+        f"the maximum RS across forget classes, and $\\Delta$RS is computed "
+        f"relative to the matched retrained-from-scratch control for the "
+        f"same forget class. "
+        f"Within each dataset block, "
         r"\textbf{bold} and \underline{underlined} values denote the highest "
-        r"and second-highest displayed RS, respectively, across PRA, the proposed "
-        r"audit, and all enabled baselines."
+        r"and second-highest displayed values, respectively, for both RS and "
+        r"$\Delta$RS across PRA, the proposed audit, and all enabled baselines."
     )
 
 

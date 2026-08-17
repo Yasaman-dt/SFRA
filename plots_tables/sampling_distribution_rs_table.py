@@ -33,10 +33,10 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 METHOD_ORDER = [
     "original",
     "retrained",
-    "random_label",
     "finetune",
     "gradient_ascent",
     "neggrad_plus",
+    "random_label",
     "boundary_shrink",
     "boundary_expand",
     "l2ul_adv",
@@ -183,6 +183,7 @@ def fmt_rs_latex(value: float, precision: int, bold: bool = False) -> str:
     text = fmt_rs(value, precision)
     if text == "-":
         return text
+    text = rf"${text}$"
     if bold:
         return rf"\textbf{{{text}}}"
     return text
@@ -404,12 +405,13 @@ def make_latex_table(
     lines.append(rf"\label{{{label}}}")
     lines.append(r"\setlength{\tabcolsep}{4pt}")
     lines.append(r"\renewcommand{\arraystretch}{1.05}")
-    lines.append(r"\resizebox{\textwidth}{!}{%")
+    lines.append(r"\scriptsize")
+    lines.append(r"\resizebox{0.90\textwidth}{!}{%")
     lines.append(rf"\begin{{tabular}}{{{colspec}}}")
     lines.append(r"\toprule")
     lines.append(
         r"\multirow{2}{*}{Unlearning Method} & "
-        r"\multirow{2}{*}{Embedding Distribution} & "
+        r"\multirow{2}{*}{\shortstack{Embedding\\Distribution}} & "
         rf"\multicolumn{{{len(classes)}}}{{c}}{{Forget Class}} \\"
     )
     lines.append(

@@ -47,7 +47,8 @@ COL_LABELS = {
     "test_retain_acc":  r"$\mathcal{A}^{t}_{r}(\%)$",
     "test_forget_acc":  r"$\mathcal{A}^{t}_{f}(\%)$",
 }
-RS_LABEL = r"RS"
+RS_LABEL = "RS"
+DELTA_RS_LABEL = r"$\Delta$RS"
 
 # Keep only these forget classes for TinyImageNet
 FORGET_CLASS_FILTERS = {"tiny_imagenet": {40, 80, 120, 160}}
@@ -176,6 +177,53 @@ def _style_rs(v, max_v, second_v):
 
     return rf"{{{number_font} ${val}$}}"
 
+
+def _style_delta_text(delta, delta_max_v=None, delta_second_v=None):
+    if pd.isna(delta):
+        return r"\,(-)"
+    if (delta_max_v is not None) and (abs(delta - delta_max_v) < 1e-12):
+        return rf"\,\mathbf{{({float(delta):+.3f})}}"
+    if (delta_second_v is not None) and (abs(delta - delta_second_v) < 1e-12):
+        return rf"\,\underline{{({float(delta):+.3f})}}"
+    return rf"\,({float(delta):+.3f})"
+
+
+def _style_rs_delta(v, delta, max_v, second_v, delta_max_v=None, delta_second_v=None):
+    if pd.isna(v):
+        return "-"
+    val = f"{float(v):.3f}"
+    delta_text = _style_delta_text(delta, delta_max_v, delta_second_v)
+    number_font = r"\fontsize{10.5}{10.5}\selectfont"
+    if (max_v is not None) and (abs(v - max_v) < 1e-12):
+        return rf"{{{number_font} \textbf{{\boldmath ${val}{delta_text}$}}}}"
+    if (second_v is not None) and (abs(v - second_v) < 1e-12):
+        return rf"{{{number_font} $\underline{{{val}}}{delta_text}$}}"
+    return rf"{{{number_font} ${val}{delta_text}$}}"
+
+
+def _style_rs_only(v, max_v, second_v):
+    if pd.isna(v):
+        return "-"
+    val = f"{float(v):.3f}"
+    number_font = r"\fontsize{10.5}{10.5}\selectfont"
+    if (max_v is not None) and (abs(v - max_v) < 1e-12):
+        return rf"{{{number_font} \textbf{{\boldmath ${val}$}}}}"
+    if (second_v is not None) and (abs(v - second_v) < 1e-12):
+        return rf"{{{number_font} $\underline{{{val}}}$}}"
+    return rf"{{{number_font} ${val}$}}"
+
+
+def _style_delta_only(delta, delta_max_v, delta_second_v):
+    if pd.isna(delta):
+        return "-"
+    val = f"{float(delta):+.3f}"
+    number_font = r"\fontsize{10.5}{10.5}\selectfont"
+    if (delta_max_v is not None) and (abs(delta - delta_max_v) < 1e-12):
+        return rf"{{{number_font} $\mathbf{{{val}}}$}}"
+    if (delta_second_v is not None) and (abs(delta - delta_second_v) < 1e-12):
+        return rf"{{{number_font} $\underline{{{val}}}$}}"
+    return rf"{{{number_font} ${val}$}}"
+
 def make_table(latex_src: str, caption: str, label: str) -> str:
     return (
         "\\begin{table}[t]\n"
@@ -252,7 +300,7 @@ def add_group_vertical_bars_settings(latex_src: str, group_labels: List[str]) ->
     the second group (and onwards) should be '|c' so the divider appears.
     """
     out = latex_src
-    ncols = len(OUT_METRIC_COLS) + 1  # metrics + RS per group
+    ncols = len(OUT_METRIC_COLS) + 2  # metrics + RS + DeltaRS per group
 
     for i, g in enumerate(group_labels):
         spec = "c" if i == 0 else "|c"
@@ -712,7 +760,7 @@ def center_method_phase_headers_settings(latex_src: str, group_labels: List[str]
         return latex_src
 
     # number of columns per group = metrics + RS
-    ncols = len(OUT_METRIC_COLS) + 1
+    ncols = len(OUT_METRIC_COLS) + 2
 
     group_bits = [rf"\multicolumn{{{ncols}}}{{c}}{{\textbf{{{g}}}}}" for g in group_labels]
     lines[h1] = (
@@ -839,6 +887,41 @@ def render_joint_table_same_dataset(mdl: str, df_src: pd.DataFrame, dataset: str
         )
         for s in settings
     }
+    retrained_rs_per_setting = {
+        s: rs_per_setting[s].get("retrained", np.nan)
+        for s in settings
+    }
+    retrained_pra_rs_per_setting = {
+        s: pra_rs_per_setting[s].get("retrained", np.nan)
+        for s in settings
+    }
+    retrained_lp_rs_per_setting = {
+        s: lp_rs_per_setting[s].get("retrained", np.nan)
+        for s in settings
+    }
+
+    def delta_from_baseline(setting: str, method: str, value: float, baseline_by_setting: dict) -> float:
+        baseline = baseline_by_setting.get(setting, np.nan)
+        if method == "retrained" or pd.isna(value) or pd.isna(baseline):
+            return np.nan
+        return float(value) - float(baseline)
+
+    delta_rank_thresholds = {}
+    for s in settings:
+        delta_values = []
+        for method, value in lp_rs_per_setting[s].items():
+            delta_values.append(
+                delta_from_baseline(s, method, value, retrained_lp_rs_per_setting)
+            )
+        for method, value in pra_rs_per_setting[s].items():
+            delta_values.append(
+                delta_from_baseline(s, method, value, retrained_pra_rs_per_setting)
+            )
+        for method, value in rs_per_setting[s].items():
+            delta_values.append(
+                delta_from_baseline(s, method, value, retrained_rs_per_setting)
+            )
+        delta_rank_thresholds[s] = _rank_styles(delta_values)
 
     rows = []
     for m in method_list:
@@ -848,6 +931,7 @@ def render_joint_table_same_dataset(mdl: str, df_src: pd.DataFrame, dataset: str
             row = {"Method": pretty, "Phase": "Original"}
             for s in settings:
                 row[(s, RS_LABEL)] = "-"
+                row[(s, DELTA_RS_LABEL)] = "-"
                 if (s, m, "original") in g.index:
                     for col in OUT_METRIC_COLS:
                         mu = g.loc[(s, m, "original"), (col, "mean")]
@@ -913,6 +997,7 @@ def render_joint_table_same_dataset(mdl: str, df_src: pd.DataFrame, dataset: str
         }
         for s in settings:
             row_un[(s, RS_LABEL)] = "-"
+            row_un[(s, DELTA_RS_LABEL)] = "-"
 
             if (s, m, "unlearned") in g.index:
                 for col in OUT_METRIC_COLS:
@@ -934,6 +1019,7 @@ def render_joint_table_same_dataset(mdl: str, df_src: pd.DataFrame, dataset: str
                     for col in OUT_METRIC_COLS:
                         row_lp[(s, COL_LABELS[col])] = "-"
                     row_lp[(s, RS_LABEL)] = "-"
+                    row_lp[(s, DELTA_RS_LABEL)] = "-"
                     continue
                 for col in OUT_METRIC_COLS:
                     row_lp[(s, COL_LABELS[col])] = (
@@ -941,10 +1027,14 @@ def render_joint_table_same_dataset(mdl: str, df_src: pd.DataFrame, dataset: str
                     )
                 raw_lp_rs = lp_rs_per_setting[s].get(m, np.nan)
                 max_v, second_v = rs_rank_thresholds[s]
-                row_lp[(s, RS_LABEL)] = (
-                    _style_rs(raw_lp_rs, max_v, second_v)
-                    if pd.notna(raw_lp_rs)
-                    else "-"
+                delta_max_v, delta_second_v = delta_rank_thresholds[s]
+                row_lp[(s, RS_LABEL)] = _style_rs_only(
+                    raw_lp_rs, max_v, second_v
+                )
+                row_lp[(s, DELTA_RS_LABEL)] = _style_delta_only(
+                    delta_from_baseline(s, m, raw_lp_rs, retrained_lp_rs_per_setting),
+                    delta_max_v,
+                    delta_second_v,
                 )
             rows.append(row_lp)
 
@@ -960,6 +1050,7 @@ def render_joint_table_same_dataset(mdl: str, df_src: pd.DataFrame, dataset: str
                     for col in OUT_METRIC_COLS:
                         row_pra[(s, COL_LABELS[col])] = "-"
                     row_pra[(s, RS_LABEL)] = "-"
+                    row_pra[(s, DELTA_RS_LABEL)] = "-"
                     continue
 
                 for col in OUT_METRIC_COLS:
@@ -970,10 +1061,14 @@ def render_joint_table_same_dataset(mdl: str, df_src: pd.DataFrame, dataset: str
                     )
                 raw_pra_rs = pra_rs_per_setting[s].get(m, np.nan)
                 max_v, second_v = rs_rank_thresholds[s]
-                row_pra[(s, RS_LABEL)] = (
-                    _style_rs(raw_pra_rs, max_v, second_v)
-                    if pd.notna(raw_pra_rs)
-                    else "-"
+                delta_max_v, delta_second_v = delta_rank_thresholds[s]
+                row_pra[(s, RS_LABEL)] = _style_rs_only(
+                    raw_pra_rs, max_v, second_v
+                )
+                row_pra[(s, DELTA_RS_LABEL)] = _style_delta_only(
+                    delta_from_baseline(s, m, raw_pra_rs, retrained_pra_rs_per_setting),
+                    delta_max_v,
+                    delta_second_v,
                 )
             rows.append(row_pra)
 
@@ -982,10 +1077,14 @@ def render_joint_table_same_dataset(mdl: str, df_src: pd.DataFrame, dataset: str
         for s in settings:
             raw_rs = rs_per_setting[s].get(m, np.nan)
             max_v, second_v = rs_rank_thresholds[s]
-            row_rev[(s, RS_LABEL)] = (
-                _style_rs(raw_rs, max_v, second_v)
-                if pd.notna(raw_rs)
-                else "-"
+            delta_max_v, delta_second_v = delta_rank_thresholds[s]
+            row_rev[(s, RS_LABEL)] = _style_rs_only(
+                raw_rs, max_v, second_v
+            )
+            row_rev[(s, DELTA_RS_LABEL)] = _style_delta_only(
+                delta_from_baseline(s, m, raw_rs, retrained_rs_per_setting),
+                delta_max_v,
+                delta_second_v,
             )
             if (s, m, "revival") in g.index:
                 for col in OUT_METRIC_COLS:
@@ -1002,6 +1101,7 @@ def render_joint_table_same_dataset(mdl: str, df_src: pd.DataFrame, dataset: str
         for c in OUT_METRIC_COLS:
             ordered_cols.append((s, COL_LABELS[c]))
         ordered_cols.append((s, RS_LABEL))
+        ordered_cols.append((s, DELTA_RS_LABEL))
 
     table_df = pd.DataFrame(rows)
     table_df = table_df.rename(columns={"Method": ("","Unlearning Method"), "Phase": ("","Model Variant")})
@@ -1014,9 +1114,10 @@ def render_joint_table_same_dataset(mdl: str, df_src: pd.DataFrame, dataset: str
                          .str.replace("&", r"\&", regex=False)
                          .str.replace("%", r"\%", regex=False))
 
-    cols_per_setting = 1 + len(OUT_METRIC_COLS)  # RS + metrics
+    cols_per_setting = 2 + len(OUT_METRIC_COLS)  # metrics + RS + DeltaRS
     # e.g., c|c|cccc|cccc   (single bar)  -> we want c|c|cccc||cccc (double bar between groups)
-    blocks = [("c" * cols_per_setting) for _ in settings]
+    block_format = ("c" * len(OUT_METRIC_COLS)) + "cc"
+    blocks = [block_format for _ in settings]
     column_format = "c|c|" + ("|".join(blocks))
     
 
@@ -1029,7 +1130,7 @@ def render_joint_table_same_dataset(mdl: str, df_src: pd.DataFrame, dataset: str
     latex = add_group_vertical_bars_settings(latex, display_groups)
     
     # 2) add cmidrules under the two group headers
-    group_width = len(OUT_METRIC_COLS) + 1  # metrics + RS
+    group_width = len(OUT_METRIC_COLS) + 2  # metrics + RS + DeltaRS
     #latex = add_cmidrules_for_groups(latex, n_groups=len(settings), group_width=group_width)
     
     # 3) add method separators (without duplicating header lines)
@@ -1045,8 +1146,9 @@ def render_joint_table_same_dataset(mdl: str, df_src: pd.DataFrame, dataset: str
     caption = ( f"Comparison of different unlearning methods under the proposed "
                 f"source-free class relearning audit and {compared_baselines} on "
                 f"multi-class (5-Classes and 10-Classes) unlearned ResNet-18 models on CIFAR-100. "
-               rf"For each setting, \textbf{{bold}} indicates the highest displayed RS and "
-               rf"\underline{{underlined}} indicates the second-highest displayed RS.")
+               rf"Each RS entry also reports $\Delta$RS relative to the matched retrained control for the same audit variant. "
+               rf"For each setting, \textbf{{bold}} and \underline{{underlined}} indicate "
+               rf"the highest and second-highest displayed values, respectively, for both RS and $\Delta$RS.")
     
  
     label = f"tab:{slugify(ds_latex)}_{slugify(mdl_latex)}_5v10"

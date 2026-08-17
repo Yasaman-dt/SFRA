@@ -44,7 +44,8 @@ COL_LABELS = {
     "test_forget_acc":  r"$\mathcal{A}^{t}_{f}(\%)$",
 }
 
-RS_LABEL = r"RS"
+RS_LABEL = "RS"
+DELTA_RS_LABEL = r"$\Delta$RS"
 
 # Keep only these forget classes for TinyImageNet
 FORGET_CLASS_FILTERS = {
@@ -482,6 +483,50 @@ def _style_rs(v, max_v, second_v):
         return rf"\underline{{$ {val} $}}"
     return rf"${val}$"
 
+
+def _style_delta_text(delta, delta_max_v=None, delta_second_v=None):
+    if pd.isna(delta):
+        return r"\,(-)"
+    if (delta_max_v is not None) and (abs(delta - delta_max_v) < 1e-12):
+        return rf"\,\mathbf{{({float(delta):+.3f})}}"
+    if (delta_second_v is not None) and (abs(delta - delta_second_v) < 1e-12):
+        return rf"\,\underline{{({float(delta):+.3f})}}"
+    return rf"\,({float(delta):+.3f})"
+
+
+def _style_rs_delta(v, delta, max_v, second_v, delta_max_v=None, delta_second_v=None):
+    if pd.isna(v):
+        return "-"
+    val = f"{float(v):.3f}"
+    delta_text = _style_delta_text(delta, delta_max_v, delta_second_v)
+    if (max_v is not None) and (abs(v - max_v) < 1e-12):
+        return rf"\textbf{{\boldmath ${val}{delta_text}$}}"
+    if (second_v is not None) and (abs(v - second_v) < 1e-12):
+        return rf"$\underline{{{val}}}{delta_text}$"
+    return rf"${val}{delta_text}$"
+
+
+def _style_rs_only(v, max_v, second_v):
+    if pd.isna(v):
+        return "-"
+    val = f"{float(v):.3f}"
+    if (max_v is not None) and (abs(v - max_v) < 1e-12):
+        return rf"\textbf{{\boldmath ${val}$}}"
+    if (second_v is not None) and (abs(v - second_v) < 1e-12):
+        return rf"$\underline{{{val}}}$"
+    return rf"${val}$"
+
+
+def _style_delta_only(delta, delta_max_v, delta_second_v):
+    if pd.isna(delta):
+        return "-"
+    val = f"{float(delta):+.3f}"
+    if (delta_max_v is not None) and (abs(delta - delta_max_v) < 1e-12):
+        return rf"$\mathbf{{{val}}}$"
+    if (delta_second_v is not None) and (abs(delta - delta_second_v) < 1e-12):
+        return rf"$\underline{{{val}}}$"
+    return rf"${val}$"
+
 all_rows = []
 per_method_info = []
 
@@ -675,8 +720,7 @@ def fmt_mu_sigma(mu, sigma):
     sigma = 0.0 if pd.isna(sigma) else float(sigma)
     if pd.isna(mu):
         return "-"
-    # mean in normal size, ±std smaller (in parentheses)
-    return rf"${mu:.2f}\,\text{{\scriptsize\,±\,{sigma:.2f}}}$"
+    return rf"${mu:.2f}{{\scriptstyle\,\pm\,{sigma:.2f}}}$"
 
 
 
@@ -915,6 +959,32 @@ def render_table_for(ds: str, mdl: str, df_src: pd.DataFrame):
         + list(pra_rs_by_method.values())
         + list(lp_rs_by_method.values())
     )
+    retrained_rs = rs_by_method.get("retrained", np.nan)
+    retrained_pra_rs = pra_rs_by_method.get("retrained", np.nan)
+    retrained_lp_rs = lp_rs_by_method.get("retrained", np.nan)
+
+    def delta_from_baseline(method: str, value: float, baseline: float) -> float:
+        if method == "retrained" or pd.isna(value) or pd.isna(baseline):
+            return np.nan
+        return float(value) - float(baseline)
+
+    lp_delta_by_method = {
+        m: delta_from_baseline(m, value, retrained_lp_rs)
+        for m, value in lp_rs_by_method.items()
+    }
+    pra_delta_by_method = {
+        m: delta_from_baseline(m, value, retrained_pra_rs)
+        for m, value in pra_rs_by_method.items()
+    }
+    rs_delta_by_method = {
+        m: delta_from_baseline(m, value, retrained_rs)
+        for m, value in rs_by_method.items()
+    }
+    delta_max_v, delta_second_v = _rank_styles(
+        list(lp_delta_by_method.values())
+        + list(pra_delta_by_method.values())
+        + list(rs_delta_by_method.values())
+    )
     # -------------------------------------------------------------------------------
 
     # method ordering (yours + extras found)
@@ -935,6 +1005,7 @@ def render_table_for(ds: str, mdl: str, df_src: pd.DataFrame):
                 row[col] = fmt_mu(mu)
             # RS column: "-" for Original
             row[RS_LABEL] = "-"
+            row[DELTA_RS_LABEL] = "-"
             rows.append(row)
         else:
             # --- Unlearned row ---
@@ -948,6 +1019,7 @@ def render_table_for(ds: str, mdl: str, df_src: pd.DataFrame):
                     row_un[col] = "-"
 
             row_un[RS_LABEL] = "-"
+            row_un[DELTA_RS_LABEL] = "-"
             rows.append(row_un)
 
             lp = None
@@ -972,10 +1044,11 @@ def render_table_for(ds: str, mdl: str, df_src: pd.DataFrame):
                 for col in OUT_METRIC_COLS:
                     row_lp[col] = fmt_mu(lp[col]) if col in lp else "-"
                 raw_lp_rs = lp_rs_by_method.get(m, np.nan)
-                row_lp[RS_LABEL] = (
-                    _style_rs(raw_lp_rs, max_v, second_v)
-                    if pd.notna(raw_lp_rs)
-                    else "-"
+                row_lp[RS_LABEL] = _style_rs_only(raw_lp_rs, max_v, second_v)
+                row_lp[DELTA_RS_LABEL] = _style_delta_only(
+                    lp_delta_by_method.get(m, np.nan),
+                    delta_max_v,
+                    delta_second_v,
                 )
                 rows.append(row_lp)
 
@@ -1001,10 +1074,11 @@ def render_table_for(ds: str, mdl: str, df_src: pd.DataFrame):
                         else "-"
                     )
                 raw_pra_rs = pra_rs_by_method.get(m, np.nan)
-                row_pra[RS_LABEL] = (
-                    _style_rs(raw_pra_rs, max_v, second_v)
-                    if pd.notna(raw_pra_rs)
-                    else "-"
+                row_pra[RS_LABEL] = _style_rs_only(raw_pra_rs, max_v, second_v)
+                row_pra[DELTA_RS_LABEL] = _style_delta_only(
+                    pra_delta_by_method.get(m, np.nan),
+                    delta_max_v,
+                    delta_second_v,
                 )
                 rows.append(row_pra)
 
@@ -1019,13 +1093,19 @@ def render_table_for(ds: str, mdl: str, df_src: pd.DataFrame):
                     row_re[col] = "-"
             if has_rs:
                 rs_mu = rs_by_method.get(m, np.nan)
-                row_re[RS_LABEL] = _style_rs(rs_mu, max_v, second_v)
+                row_re[RS_LABEL] = _style_rs_only(rs_mu, max_v, second_v)
+                row_re[DELTA_RS_LABEL] = _style_delta_only(
+                    rs_delta_by_method.get(m, np.nan),
+                    delta_max_v,
+                    delta_second_v,
+                )
             else:
                 row_re[RS_LABEL] = "-"
+                row_re[DELTA_RS_LABEL] = "-"
             rows.append(row_re)
 
 
-    table_df = pd.DataFrame(rows, columns=["Method","Phase"] + OUT_METRIC_COLS + [RS_LABEL]) \
+    table_df = pd.DataFrame(rows, columns=["Method","Phase"] + OUT_METRIC_COLS + [RS_LABEL, DELTA_RS_LABEL]) \
                  .rename(columns={c: COL_LABELS[c] for c in OUT_METRIC_COLS})
 
 
@@ -1042,7 +1122,7 @@ def render_table_for(ds: str, mdl: str, df_src: pd.DataFrame):
                          .str.replace("%", r"\%", regex=False))
 
     # dynamic column format: Method | Phase | (one 'c' per displayed metric)
-    column_format = "c|c|" + ("c" * (len(OUT_METRIC_COLS) + 1))  # +1 for RS
+    column_format = "c|c|" + ("c" * len(OUT_METRIC_COLS)) + "cc"
     latex = table_df.to_latex(index=False, escape=False, column_format=column_format)
     
     # change "Phase" header to "Model state" (only the first header hit)
@@ -1084,7 +1164,7 @@ def add_group_vertical_bars(latex_src: str, datasets: List[str]) -> str:
     Works even if the header text is wrapped. (Joint table: RS + metrics per dataset)
     """
     out = latex_src
-    ncols = 1 + len(OUT_METRIC_COLS)  # RS + metrics
+    ncols = 2 + len(OUT_METRIC_COLS)  # metrics + RS + DeltaRS
     for i, ds in enumerate(datasets):
         dsl = _latex_dataset_name(ds)
         pat = rf"(\\multicolumn\{{{ncols}\}}\{{)(?:\|?c\|?)(\}}\{{[^}}]*{re.escape(dsl)}[^}}]*\}})"
@@ -1112,7 +1192,7 @@ def center_method_phase_headers(latex_src: str, dataset_labels: List[str]) -> st
     if h2 is None:
         return latex_src
 
-    ncols = 1 + len(OUT_METRIC_COLS)  # RS + metrics
+    ncols = 2 + len(OUT_METRIC_COLS)  # metrics + RS + DeltaRS
     group_bits = [rf"\multicolumn{{{ncols}}}{{c}}{{\textbf{{{ds}}}}}" for ds in dataset_labels]
     lines[h1] = r"\multirow{2}{*}{Unlearning Method} & \multirow{2}{*}{Phase} & " + " & ".join(group_bits) + r" \\"
 
@@ -1141,9 +1221,14 @@ def make_table(latex_src: str, caption: str, label: str) -> str:
     return (
         "\\begin{table*}[t]\n"
         "\\centering\n"
+        "\\scriptsize\n"
+        "\\setlength{\\tabcolsep}{3pt}\n"
+        "\\renewcommand{\\arraystretch}{0.92}\n"
         f"\\caption{{{caption}}}\n"
         f"\\label{{{label}}}\n"
+        "\\resizebox{\\textwidth}{!}{%\n"
         f"{latex_src}\n"
+        "}\n"
         "\\end{table*}\n"
     )
 
@@ -1213,6 +1298,10 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
                     lp_rs_per_ds[dsl][m] = np.nan
 
     rs_rank_thresholds = {}
+    delta_rank_thresholds = {}
+    retrained_rs_per_ds = {}
+    retrained_pra_rs_per_ds = {}
+    retrained_lp_rs_per_ds = {}
     for ds in datasets:
         dsl = _latex_dataset_name(ds)
         max_v, second_v = _rank_styles(
@@ -1221,6 +1310,32 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
             + list(lp_rs_per_ds[dsl].values())
         )
         rs_rank_thresholds[dsl] = (max_v, second_v)
+        retrained_rs_per_ds[dsl] = rs_per_ds[dsl].get("retrained", np.nan)
+        retrained_pra_rs_per_ds[dsl] = pra_rs_per_ds[dsl].get("retrained", np.nan)
+        retrained_lp_rs_per_ds[dsl] = lp_rs_per_ds[dsl].get("retrained", np.nan)
+
+    def delta_from_baseline(dsl: str, method: str, value: float, baseline_by_ds: dict) -> float:
+        baseline = baseline_by_ds.get(dsl, np.nan)
+        if method == "retrained" or pd.isna(value) or pd.isna(baseline):
+            return np.nan
+        return float(value) - float(baseline)
+
+    for ds in datasets:
+        dsl = _latex_dataset_name(ds)
+        delta_values = []
+        for method, value in lp_rs_per_ds[dsl].items():
+            delta_values.append(
+                delta_from_baseline(dsl, method, value, retrained_lp_rs_per_ds)
+            )
+        for method, value in pra_rs_per_ds[dsl].items():
+            delta_values.append(
+                delta_from_baseline(dsl, method, value, retrained_pra_rs_per_ds)
+            )
+        for method, value in rs_per_ds[dsl].items():
+            delta_values.append(
+                delta_from_baseline(dsl, method, value, retrained_rs_per_ds)
+            )
+        delta_rank_thresholds[dsl] = _rank_styles(delta_values)
     # -------------------------------------------------------------------------------
 
     rows = []
@@ -1232,6 +1347,7 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
             for ds in datasets:
                 dsl = _latex_dataset_name(ds)
                 row[(dsl, RS_LABEL)] = "-"
+                row[(dsl, DELTA_RS_LABEL)] = "-"
                 if (ds, m, "original") in g.index:
                     for col in OUT_METRIC_COLS:
                         mu = g.loc[(ds, m, "original"), (col, "mean")]
@@ -1285,6 +1401,7 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
         for ds in datasets:
             dsl = _latex_dataset_name(ds)
             row_un[(dsl, RS_LABEL)] = "-"
+            row_un[(dsl, DELTA_RS_LABEL)] = "-"
 
             if (ds, m, "unlearned") in g.index:
                 for col in OUT_METRIC_COLS:
@@ -1308,6 +1425,7 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
                     for col in OUT_METRIC_COLS:
                         row_lp[(dsl, COL_LABELS[col])] = "-"
                     row_lp[(dsl, RS_LABEL)] = "-"
+                    row_lp[(dsl, DELTA_RS_LABEL)] = "-"
                     continue
                 for col in OUT_METRIC_COLS:
                     row_lp[(dsl, COL_LABELS[col])] = (
@@ -1315,10 +1433,14 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
                     )
                 raw_lp_rs = lp_rs_per_ds[dsl].get(m, np.nan)
                 max_v, second_v = rs_rank_thresholds[dsl]
-                row_lp[(dsl, RS_LABEL)] = (
-                    _style_rs(raw_lp_rs, max_v, second_v)
-                    if pd.notna(raw_lp_rs)
-                    else "-"
+                delta_max_v, delta_second_v = delta_rank_thresholds[dsl]
+                row_lp[(dsl, RS_LABEL)] = _style_rs_only(
+                    raw_lp_rs, max_v, second_v
+                )
+                row_lp[(dsl, DELTA_RS_LABEL)] = _style_delta_only(
+                    delta_from_baseline(dsl, m, raw_lp_rs, retrained_lp_rs_per_ds),
+                    delta_max_v,
+                    delta_second_v,
                 )
             rows.append(row_lp)
 
@@ -1335,6 +1457,7 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
                     for col in OUT_METRIC_COLS:
                         row_pra[(dsl, COL_LABELS[col])] = "-"
                     row_pra[(dsl, RS_LABEL)] = "-"
+                    row_pra[(dsl, DELTA_RS_LABEL)] = "-"
                     continue
 
                 for col in OUT_METRIC_COLS:
@@ -1345,10 +1468,14 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
                     )
                 raw_pra_rs = pra_rs_per_ds[dsl].get(m, np.nan)
                 max_v, second_v = rs_rank_thresholds[dsl]
-                row_pra[(dsl, RS_LABEL)] = (
-                    _style_rs(raw_pra_rs, max_v, second_v)
-                    if pd.notna(raw_pra_rs)
-                    else "-"
+                delta_max_v, delta_second_v = delta_rank_thresholds[dsl]
+                row_pra[(dsl, RS_LABEL)] = _style_rs_only(
+                    raw_pra_rs, max_v, second_v
+                )
+                row_pra[(dsl, DELTA_RS_LABEL)] = _style_delta_only(
+                    delta_from_baseline(dsl, m, raw_pra_rs, retrained_pra_rs_per_ds),
+                    delta_max_v,
+                    delta_second_v,
                 )
             rows.append(row_pra)
 
@@ -1358,10 +1485,14 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
             dsl = _latex_dataset_name(ds)
             raw_rs = rs_per_ds[dsl].get(m, np.nan)
             max_v, second_v = rs_rank_thresholds[dsl]
-            row_rev[(dsl, RS_LABEL)] = (
-                _style_rs(raw_rs, max_v, second_v)
-                if pd.notna(raw_rs)
-                else "-"
+            delta_max_v, delta_second_v = delta_rank_thresholds[dsl]
+            row_rev[(dsl, RS_LABEL)] = _style_rs_only(
+                raw_rs, max_v, second_v
+            )
+            row_rev[(dsl, DELTA_RS_LABEL)] = _style_delta_only(
+                delta_from_baseline(dsl, m, raw_rs, retrained_rs_per_ds),
+                delta_max_v,
+                delta_second_v,
             )
             if (ds, m, "revival") in g.index:
                 for col in OUT_METRIC_COLS:
@@ -1380,6 +1511,7 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
         for c in OUT_METRIC_COLS:
             ordered_cols.append((dsl, COL_LABELS[c]))
         ordered_cols.append((dsl, RS_LABEL))  # <-- use RS_LABEL here
+        ordered_cols.append((dsl, DELTA_RS_LABEL))
 
 
     table_df = pd.DataFrame(rows)
@@ -1394,8 +1526,9 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
                          .str.replace("&", r"\&", regex=False)
                          .str.replace("%", r"\%", regex=False))
 
-    cols_per_dataset = 1 + len(OUT_METRIC_COLS)  # RS + metrics
-    column_format = "c|c|" + ("{}|".format("c"*cols_per_dataset) * len(datasets)).rstrip("|")
+    cols_per_dataset = 2 + len(OUT_METRIC_COLS)  # metrics + RS + DeltaRS
+    block_format = ("c" * len(OUT_METRIC_COLS)) + "cc"
+    column_format = "c|c|" + ("{}|".format(block_format) * len(datasets)).rstrip("|")
 
     latex = table_df.to_latex(index=False, escape=False, multicolumn=True,
                               multicolumn_format="c", column_format=column_format)
@@ -1423,8 +1556,9 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
     caption = ( f"Comparison of different unlearning methods under the proposed "
                 f"source-free class relearning audit and {compared_baselines} on "
                 f"multi-class (2-Classes) unlearned ResNet-18 models on CIFAR-10 and CIFAR-100. "  
-               rf"For each dataset, \textbf{{bold}} indicates the highest displayed RS and "
-               rf"\underline{{underlined}} indicates the second-highest displayed RS.")
+               rf"Each RS entry also reports $\Delta$RS relative to the matched retrained control for the same audit variant. "
+               rf"For each dataset, \textbf{{bold}} and \underline{{underlined}} indicate "
+               rf"the highest and second-highest displayed values, respectively, for both RS and $\Delta$RS.")
     
 
 
@@ -1450,4 +1584,3 @@ PAIR_DATASETS = ["cifar10", "cifar100"]
 
 for mdl in MODELS:
     render_joint_table_for_model(mdl, df_all, PAIR_DATASETS)
-
