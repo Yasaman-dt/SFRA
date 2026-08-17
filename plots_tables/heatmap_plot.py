@@ -32,8 +32,8 @@ OUT_DIR.mkdir(parents=True, exist_ok=True)
 DATASETS = ["cifar10", "cifar100", "tiny_imagenet"]
 DATASET_PRETTY = {"cifar10":"CIFAR-10", "cifar100":"CIFAR-100", "tiny_imagenet":"TinyImageNet"}
 
-MODELS = ["resnet18", "vit-s-16", "vit-b-16", "swin-t", "vgg16"]
-MODEL_PRETTY = {"resnet18":"ResNet-18", "vit-s-16":"ViT-S/16", "vit-b-16":"ViT-B/16", "swin-t":"Swin-T", "vgg16":"VGG-16"}
+MODELS = ["resnet18", "vit-b-16", "swin-t", "vgg16"]
+MODEL_PRETTY = {"resnet18":"ResNet-18", "vit-b-16":"ViT-B/16", "swin-t":"Swin-T", "vgg16":"VGG-16"}
 
 METHOD_ORDER = [
     "retrained", "finetune",
