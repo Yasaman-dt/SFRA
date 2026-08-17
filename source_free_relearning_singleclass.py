@@ -447,14 +447,34 @@ def _parse_forget_arg(s: str, num_classes: int):
 
 
 def revival_score(A_r_tr, A_f_tr, A_r_tu, A_f_tu, directional=False):
-    # retain should stay close to A_r_tu; forget should improve over A_f_tu
-    retain_term = 1.0 - abs(A_r_tr - A_r_tu) / 100.0
-    forget_delta = (A_f_tr - A_f_tu) / 100.0
-    forget_term = max(0.0, forget_delta) if directional else abs(forget_delta)
-    # clamp to [0,1]
-    retain_term = float(np.clip(retain_term, 0.0, 1.0))
-    forget_term = float(np.clip(forget_term, 0.0, 1.0))
-    return retain_term * forget_term
+    """Relearning Score (RS) used in the paper/tables.
+
+    A_*_tu denotes the post-unlearning checkpoint and A_*_tr denotes the
+    checkpoint after source-free relearning. RS is the harmonic mean of:
+
+      R_r = 1 - max(0, A_r^u - A_r^t)
+      R_f = max(0, A_f^t - A_f^u)
+
+    Accuracies are passed in percent. The ``directional`` argument is kept for
+    backward-compatible CLI calls, but the current RS definition is always
+    directional: retain improvements are not rewarded beyond 1, and forget
+    decreases are not rewarded.
+    """
+    ar_after = float(A_r_tr) / 100.0
+    af_after = float(A_f_tr) / 100.0
+    ar_unlearned = float(A_r_tu) / 100.0
+    af_unlearned = float(A_f_tu) / 100.0
+
+    retain_drop = max(0.0, ar_unlearned - ar_after)
+    forget_gain = max(0.0, af_after - af_unlearned)
+
+    retain_score = float(np.clip(1.0 - retain_drop, 0.0, 1.0))
+    forget_score = float(np.clip(forget_gain, 0.0, 1.0))
+
+    denominator = retain_score + forget_score
+    if denominator <= 0.0:
+        return 0.0
+    return float(2.0 * retain_score * forget_score / denominator)
 
 
 forget_classes = _parse_forget_arg(args.forget, num_classes)
@@ -934,4 +954,3 @@ for forget_class in forget_classes:
         )
     else:
         print(f"[BEST PER CLASS] No best row found for forget_class={forget_class}.")
-

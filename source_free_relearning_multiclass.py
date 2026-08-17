@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import List
 # ------------------ Argparse ------------------
 import argparse
-from eval_unlearned_model import _build_tags, checkpoint_for
+from test_unlearned_model import _build_tags, checkpoint_for
 
 
 parser = argparse.ArgumentParser("Class unlearning revival")
@@ -68,6 +68,17 @@ parser.add_argument('--retain_per_class', type=int, default=None,
                     help='Top-K retain synthetic embeddings per non-forget class (after sorting by confidence).')
 parser.add_argument('--forget_per_class', type=int, default=None,
                     help='Bottom-K per retain class used as forget samples. In multi-forget, interpreted as per-forget per retain class.')
+parser.add_argument(
+    '--forget_selection',
+    choices=['low_confidence', 'random'],
+    default='low_confidence',
+    help='How to select synthetic forget probes. Retain probes remain high-confidence.',
+)
+parser.add_argument(
+    '--output_dir',
+    default=None,
+    help='Directory for aggregate CSV and experiment outputs. Defaults to results/<method>.',
+)
 
 
 args = parser.parse_args()
@@ -108,12 +119,18 @@ save_dir2 = os.path.join(DIR, "tsne/tsne_prob")
 os.makedirs(save_dir1, exist_ok=True)
 os.makedirs(save_dir2, exist_ok=True)
 
-AGG_CSV_DIR = os.path.join("results", method)
+AGG_CSV_DIR = args.output_dir or os.path.join("results", method)
 AGG_CSV_PATH_SINGLE = os.path.join(
     AGG_CSV_DIR, f"{dataset_name}_{model_name}_unlearned_{method}_revival_by_forget_class_lr{lr}.csv"
 )
+selection_suffix = (
+    "" if args.forget_selection == "low_confidence"
+    else f"_forget_{args.forget_selection}"
+)
 AGG_CSV_PATH_MULTI = os.path.join(
-    AGG_CSV_DIR, f"{dataset_name}_{model_name}_unlearned_{method}_revival_multi_lr{lr}.csv"
+    AGG_CSV_DIR,
+    f"{dataset_name}_{model_name}_unlearned_{method}_revival_multi"
+    f"{selection_suffix}_lr{lr}.csv",
 )
 os.makedirs(AGG_CSV_DIR, exist_ok=True)
 
@@ -284,7 +301,8 @@ def _sample_predicted_as_class(
 
 def build_synthetic_embeddings_and_splits_multi(
     model, num_classes, forget_classes, device,
-    per_class, retain_top_k, per_retain_for_each_forget, loader_batch_size=256
+    per_class, retain_top_k, per_retain_for_each_forget,
+    forget_selection="low_confidence", loader_batch_size=256
 ):
     """
     Multi-forget version.
@@ -329,12 +347,18 @@ def build_synthetic_embeddings_and_splits_multi(
             W=W, b=b, emb_dim=emb_dim, target_class=r,
             per_class_strict=per_class, batch=4096, device=device
         )
-        # sort ascending by prob(r) -> weakest-as-retain first
-        pr = probs_r_full[:, r]
-        _, idx_low_asc = torch.sort(pr, descending=False)
-
-        # take a pool bigger than needed (in case of overlaps); here just take first needed
-        pool_idx = idx_low_asc[:max(needed_per_retain_class, 1)]
+        if forget_selection == "low_confidence":
+            # Weakest accepted samples for retain class r.
+            pool_idx = probs_r_full[:, r].argsort(descending=False)[
+                :max(needed_per_retain_class, 1)
+            ]
+        elif forget_selection == "random":
+            # A reproducible random subset (the global torch seed is fixed above).
+            pool_idx = torch.randperm(
+                feats_r.shape[0], device=feats_r.device
+            )[:max(needed_per_retain_class, 1)]
+        else:
+            raise ValueError(f"Unknown forget_selection={forget_selection!r}")
         pool_feats = feats_r.index_select(0, pool_idx)
         pool_probs = probs_r_full.index_select(0, pool_idx)
 
@@ -345,10 +369,16 @@ def build_synthetic_embeddings_and_splits_multi(
             candidates = (~chosen_mask).nonzero(as_tuple=False).squeeze(1)
             if candidates.numel() == 0:
                 break
-            # rank remaining by prob of forget class f
-            scores = pool_probs.index_select(0, candidates)[:, f]
-            sel_rel = scores.topk(k=min(quota_per_forget, candidates.numel()), dim=0).indices
-            sel_abs = candidates.index_select(0, sel_rel)
+            if forget_selection == "random":
+                # Random probes and a balanced random label assignment.
+                sel_abs = candidates[:min(quota_per_forget, candidates.numel())]
+            else:
+                # Rank remaining boundary probes by probability of forget class f.
+                scores = pool_probs.index_select(0, candidates)[:, f]
+                sel_rel = scores.topk(
+                    k=min(quota_per_forget, candidates.numel()), dim=0
+                ).indices
+                sel_abs = candidates.index_select(0, sel_rel)
 
             chosen_mask[sel_abs] = True
             forget_feats_chunks.append(pool_feats.index_select(0, sel_abs))
@@ -384,6 +414,8 @@ def build_synthetic_embeddings_and_splits_multi(
         "per_retain_for_each_forget": int(per_retain_for_each_forget),
         "forget_total": int(forget_feats.shape[0]),
         "forget_class_counts": per_forget_counts,
+        "forget_selection": forget_selection,
+        "retain_selection": "high_confidence",
     }
 
     return {
@@ -527,14 +559,34 @@ def _parse_forget_arg(s: str, num_classes: int):
 
 
 def revival_score(A_r_tr, A_f_tr, A_r_tu, A_f_tu, directional=False):
-    # retain should stay close to A_r_tu; forget should improve over A_f_tu
-    retain_term = 1.0 - abs(A_r_tr - A_r_tu) / 100.0
-    forget_delta = (A_f_tr - A_f_tu) / 100.0
-    forget_term = max(0.0, forget_delta) if directional else abs(forget_delta)
-    # clamp to [0,1]
-    retain_term = float(np.clip(retain_term, 0.0, 1.0))
-    forget_term = float(np.clip(forget_term, 0.0, 1.0))
-    return retain_term * forget_term
+    """Relearning Score (RS) used in the paper/tables.
+
+    A_*_tu denotes the post-unlearning checkpoint and A_*_tr denotes the
+    checkpoint after source-free relearning. RS is the harmonic mean of:
+
+      R_r = 1 - max(0, A_r^u - A_r^t)
+      R_f = max(0, A_f^t - A_f^u)
+
+    Accuracies are passed in percent. The ``directional`` argument is kept for
+    backward-compatible CLI calls, but the current RS definition is always
+    directional: retain improvements are not rewarded beyond 1, and forget
+    decreases are not rewarded.
+    """
+    ar_after = float(A_r_tr) / 100.0
+    af_after = float(A_f_tr) / 100.0
+    ar_unlearned = float(A_r_tu) / 100.0
+    af_unlearned = float(A_f_tu) / 100.0
+
+    retain_drop = max(0.0, ar_unlearned - ar_after)
+    forget_gain = max(0.0, af_after - af_unlearned)
+
+    retain_score = float(np.clip(1.0 - retain_drop, 0.0, 1.0))
+    forget_score = float(np.clip(forget_gain, 0.0, 1.0))
+
+    denominator = retain_score + forget_score
+    if denominator <= 0.0:
+        return 0.0
+    return float(2.0 * retain_score * forget_score / denominator)
 
 def _finalize_and_write_row(row, columns, csv_path):
     df = pd.DataFrame([row], columns=columns)
@@ -614,7 +666,11 @@ else:
 print(f"\n================= FORGET SET {tag_forget} =================")
 
 experiment_path = Path(
-    f"results/{method}/plots_{dataset_name}_{model_name}_lr{lr}/forget_class_{tag_forget}"
+    AGG_CSV_DIR
+) / (
+    f"plots_{dataset_name}_{model_name}_lr{lr}{selection_suffix}"
+) / (
+    f"forget_class_{tag_forget}"
 )
 experiment_path.mkdir(parents=True, exist_ok=True)
 
@@ -728,6 +784,7 @@ else:
         per_class=total_per_class,
         retain_top_k=retain_top_k,
         per_retain_for_each_forget=per_retain_for_forget,  # balanced per retain class
+        forget_selection=args.forget_selection,
         loader_batch_size=256,
     )
 
