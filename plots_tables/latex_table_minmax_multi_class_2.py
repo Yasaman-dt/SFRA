@@ -1218,17 +1218,16 @@ def center_method_phase_headers(latex_src: str, dataset_labels: List[str]) -> st
 
 def make_table(latex_src: str, caption: str, label: str) -> str:
     return (
-        "\\begin{table*}[t]\n"
+        "\\begin{table}[t]\n"
         "\\centering\n"
-        "\\scriptsize\n"
-        "\\setlength{\\tabcolsep}{3pt}\n"
-        "\\renewcommand{\\arraystretch}{0.92}\n"
         f"\\caption{{{caption}}}\n"
         f"\\label{{{label}}}\n"
-        "\\resizebox{\\textwidth}{!}{%\n"
+        "\\vspace{-3mm}\n"
+        "\\fontsize{10.5}{10.5}\\selectfont\n"
+        "\\resizebox{\\columnwidth}{!}{%\n"
         f"{latex_src}\n"
         "}\n"
-        "\\end{table*}\n"
+        "\\end{table}\n"
     )
 
     
@@ -1576,6 +1575,11 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
     out = base_dir / f"latex_table_{slugify(mdl)}_multi_class_2.tex"
     with open(out, "w", encoding="utf-8") as f:
         f.write(latex)
+    if mdl == "resnet18":
+        paper_out = base_dir.parent / "tables" / out.name
+        paper_out.parent.mkdir(parents=True, exist_ok=True)
+        paper_out.write_text(latex, encoding="utf-8")
+        print(f"[OK] wrote: {paper_out}")
     print(f"[OK] wrote: {out}")
     return out
 

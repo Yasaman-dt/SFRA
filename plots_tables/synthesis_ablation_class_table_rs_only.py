@@ -129,6 +129,12 @@ def parse_args():
         help="Optional exact strategy identifiers. Defaults to all discovered strategies.",
     )
     parser.add_argument(
+        "--exclude_strategies",
+        nargs="+",
+        default=None,
+        help="Exact strategy identifiers to omit from the generated CSV and LaTeX tables.",
+    )
+    parser.add_argument(
         "--precision",
         type=int,
         default=3,
@@ -352,6 +358,7 @@ def write_latex(
     frame_lookup,
     caption,
     label,
+    compact=False,
 ):
     best = {}
     if bold_best:
@@ -374,33 +381,36 @@ def write_latex(
                         max(finite) if finite else np.nan
                     )
 
-    # Vertical lines are placed after Unlearning Method, Sampling,
-    # Forget Probes, and Retain Probes.
+    # Vertical lines are placed after Unlearning Method, Forget Probes,
+    # and Retain Probes. Sampling is intentionally omitted from the LaTeX table.
     class_columns = r"@{\hspace{5pt}}".join("c" for _ in classes)
-    column_spec = r"l|l|l|l|" + class_columns
-    last_class_column = 4 + len(classes)
+    column_spec = r"l|l|l|" + class_columns
+    last_class_column = 3 + len(classes)
     lines = [
         r"\begin{table*}[t]",
         r"\centering",
+        r"\color{red}",
         rf"\caption{{{caption}}}",
         rf"\label{{{label}}}",
         r"\setlength{\tabcolsep}{4pt}",
-        r"\renewcommand{\arraystretch}{1}",
+        rf"\renewcommand{{\arraystretch}}{{{'1.35' if compact else '1'}}}",
+        r"\scriptsize" if compact else r"\normalsize",
         r"\resizebox{\textwidth}{!}{%",
         rf"\begin{{tabular}}{{{column_spec}}}",
-        r"\toprule",
+        r"\hline",
         r"\multirow{2}{*}{Unlearning Method} "
-        r"& \multirow{2}{*}{Sampling} "
         r"& \multirow{2}{*}{\shortstack{Forget\\Probes}} "
         r"& \multirow{2}{*}{\shortstack{Retain\\Probes}} "
         rf"& \multicolumn{{{len(classes)}}}{{c}}{{Forget Class}} \\",
-        rf"\cmidrule(lr){{5-{last_class_column}}}",
-        " & & & & "
+        rf"\cline{{4-{last_class_column}}}",
+        " & & & "
         + " & ".join(str(class_id) for class_id in classes)
         + r" \\",
-        r"\midrule",
-        r"\midrule",
+        r"\hline",
+        r"\hline",
     ]
+    if compact:
+        lines.pop()
 
     method_order = list(dict.fromkeys(strategy[0] for strategy in strategies))
     for method_index, method in enumerate(method_order):
@@ -447,6 +457,10 @@ def write_latex(
                         )
                     ):
                         cell = rf"\textbf{{{cell}}}"
+                    # Split tables keep compact numeric cells. The combined
+                    # table applies one consistent font size to all content.
+                    if not compact:
+                        cell = rf"{{\scriptsize {cell}}}"
                     cells.append(cell)
 
             # Values from METHOD_NAME_AND_REF intentionally contain LaTeX commands
@@ -460,8 +474,7 @@ def write_latex(
                 else ""
             )
             lines.append(
-                f"{method_cell} & {latex_escape(distribution.title())} & "
-                f"{latex_escape(forget_label)} & "
+                f"{method_cell} & {latex_escape(forget_label)} & "
                 f"{latex_escape(retain_label)} & "
                 + " & ".join(cells)
                 + r" \\"
@@ -469,14 +482,15 @@ def write_latex(
             first_method_row = False
             if strategy_index != len(method_strategies) - 1:
                 lines.append(
-                    r"\cmidrule(lr){2-" + str(4 + len(classes)) + "}"
+                    r"\cline{2-" + str(3 + len(classes)) + "}"
                 )
         if method_index != len(method_order) - 1:
-            lines.append(r"\midrule")
-            lines.append(r"\midrule")
+            lines.append(r"\hline")
+            if not compact:
+                lines.append(r"\hline")
     lines.extend(
         [
-            r"\bottomrule",
+            r"\hline",
             r"\end{tabular}%",
             r"}",
             r"\end{table*}",
@@ -540,6 +554,15 @@ def main():
         else sorted(frame["forget_class"].unique().tolist())
     )
     strategies = strategy_order(frame, methods, args.strategies)
+    if args.exclude_strategies:
+        excluded = set(args.exclude_strategies)
+        strategies = [
+            strategy_key
+            for strategy_key in strategies
+            if strategy_key[1] not in excluded
+        ]
+        if not strategies:
+            raise ValueError("No strategies remain after applying --exclude_strategies.")
     frame_lookup = {}
     for strategy_key in strategies:
         method, strategy = strategy_key
@@ -578,6 +601,27 @@ def main():
         classes,
         args.precision,
         frame_lookup,
+    )
+    # Also write one table containing every requested unlearning method.
+    combined_latex_path = prefix.with_suffix(".tex")
+    write_latex(
+        combined_latex_path,
+        means,
+        stds,
+        strategies,
+        args.metrics,
+        classes,
+        args.precision,
+        args.bold_best,
+        args.bold_scope,
+        frame_lookup,
+        caption=(
+            "Synthesis-strategy ablation on CIFAR-10 using a ResNet-18 "
+            "backbone for all unlearning methods. "
+            "Each entry reports the relearning score (RS)."
+        ),
+        label="tab:synthesis_ablation_all_methods",
+        compact=True,
     )
     # Split the rows by unlearning method, while keeping every forget-class
     # column in both tables. The first table contains the first five methods
@@ -626,6 +670,7 @@ def main():
         latex_paths.append(latex_path)
 
     print(f"[saved] {prefix.with_suffix('.csv').resolve()}")
+    print(f"[saved] {combined_latex_path.resolve()}")
     for latex_path in latex_paths:
         print(f"[saved] {latex_path.resolve()}")
 
