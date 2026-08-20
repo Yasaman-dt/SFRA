@@ -64,25 +64,25 @@ GROUPS = [
         "key": "cifar10_forget2",
         "dataset": "cifar10",
         "setting": "forget2",
-        "label": r"\shortstack{\textbf{CIFAR-10}\\\textbf{(2-Classes)}}",
+        "label": r"\shortstack{\textbf{CIFAR-10}\\\textbf{(2-Class)}}",
     },
     {
         "key": "cifar100_forget2",
         "dataset": "cifar100",
         "setting": "forget2",
-        "label": r"\shortstack{\textbf{CIFAR-100}\\\textbf{(2-Classes)}}",
+        "label": r"\shortstack{\textbf{CIFAR-100}\\\textbf{(2-Class)}}",
     },
     {
         "key": "cifar100_forget5",
         "dataset": "cifar100",
         "setting": "forget5",
-        "label": r"\shortstack{\textbf{CIFAR-100}\\\textbf{(5-Classes)}}",
+        "label": r"\shortstack{\textbf{CIFAR-100}\\\textbf{(5-Class)}}",
     },
     {
         "key": "cifar100_forget10",
         "dataset": "cifar100",
         "setting": "forget10",
-        "label": r"\shortstack{\textbf{CIFAR-100}\\\textbf{(10-Classes)}}",
+        "label": r"\shortstack{\textbf{CIFAR-100}\\\textbf{(10-Class)}}",
     },
 ]
 

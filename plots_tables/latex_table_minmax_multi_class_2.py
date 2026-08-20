@@ -765,7 +765,7 @@ def add_midrules_between_methods(latex_src: str) -> str:
                 continue
                         
 
-            if " & Relearned (ours) &" in line:
+            if " & SFRA (ours) &" in line:
                 # Double rule for Retrained's relearned row
                 if "Retrained" in line or re.search(r"\\multirow\{2\}\{\*\}\{Retrained\}", "\n".join(out[-3:])):
                     out.append(r"\midrule"); out.append(r"\midrule")
@@ -1082,7 +1082,7 @@ def render_table_for(ds: str, mdl: str, df_src: pd.DataFrame):
                 rows.append(row_pra)
 
             # --- Relearned row (RS cell blank to keep multirow) ---
-            row_re = {"Method": m, "Phase": "Relearned (ours)"}
+            row_re = {"Method": m, "Phase": "SFRA (ours)"}
             if (m, "revival") in g.index:
                 for col in OUT_METRIC_COLS:
                     mu = g.loc[(m, "revival"), (col, "mean")]
@@ -1478,7 +1478,7 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
             rows.append(row_pra)
 
         # -------- Revival row --------
-        row_rev = {"Method": "", "Phase": "Relearned (ours)"}
+        row_rev = {"Method": "", "Phase": "SFRA (ours)"}
         for ds in datasets:
             dsl = _latex_dataset_name(ds)
             raw_rs = rs_per_ds[dsl].get(m, np.nan)
@@ -1551,12 +1551,12 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
         if SHOW_LINEAR_PROBE
         else "the source-dependent PRA baseline"
     )
-    caption = ( f"Comparison of different unlearning methods under the proposed "
-                f"source-free class relearning audit and {compared_baselines} on "
-                f"multi-class (2-Classes) unlearned ResNet-18 models on CIFAR-10 and CIFAR-100. "  
-               rf"Each RS entry also reports $\Delta$RS relative to the matched retrained control for the same audit variant. "
-               rf"For each dataset, \textbf{{bold}} and \underline{{underlined}} indicate "
-               rf"the highest and second-highest displayed values, respectively, for both RS and $\Delta$RS.")
+    caption = ( f"Comparison of unlearning methods under the proposed Source-Free "
+                f"Relearning Audit (SFRA) and {compared_baselines} for 2-class unlearning "
+                f"on CIFAR-10 and CIFAR-100 with ResNet-18. "
+               rf"$\Delta$RS denotes the difference from the matched retrained control under the same audit variant. "
+               rf"The best and second-best results in each dataset are shown in "
+               rf"\textbf{{bold}} and \underline{{underlined}}, respectively.")
     
 
 

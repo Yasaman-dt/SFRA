@@ -56,6 +56,15 @@ FORGET_CLASS_FILTERS = {
     "tiny_imagenet": {0, 20, 40, 60, 80, 100, 120, 140, 160, 180}
 }
 
+# Do not summarize a partial set as though it represented the complete
+# requested ablation. This is currently enforced for the expanded
+# TinyImageNet/ViT-B/16 experiment while its remaining runs are being added.
+REQUIRED_COMPLETE_CLASS_SETS = {
+    ("tiny_imagenet", "vit-b-16"): {
+        0, 20, 40, 60, 80, 100, 120, 140, 160, 180
+    },
+}
+
 def _apply_forget_filter(df: pd.DataFrame, dataset: str) -> pd.DataFrame:
     """
     If a filter is defined for this dataset, keep only rows whose forget_class
@@ -68,6 +77,53 @@ def _apply_forget_filter(df: pd.DataFrame, dataset: str) -> pd.DataFrame:
     # Robust to strings like "40" or numbers; ignores NaN gracefully.
     fc_num = pd.to_numeric(df["forget_class"], errors="coerce").astype("Int64")
     return df[fc_num.isin(list(allowed))].copy()
+
+
+def _complete_requested_classes(
+    df: pd.DataFrame,
+    dataset: str,
+    model: str,
+) -> bool:
+    """Return whether a result contains every required forget class."""
+    required = REQUIRED_COMPLETE_CLASS_SETS.get((dataset, model))
+    if not required:
+        return True
+    if df is None or df.empty or "forget_class" not in df.columns:
+        return False
+    present = set(
+        pd.to_numeric(df["forget_class"], errors="coerce")
+        .dropna()
+        .astype(int)
+        .tolist()
+    )
+    return required.issubset(present)
+
+
+def _hide_incomplete_table_groups(df: pd.DataFrame) -> pd.DataFrame:
+    """Remove incomplete method/phase groups only from rendered tables."""
+    out = df.copy()
+    for (dataset, model), required in REQUIRED_COMPLETE_CLASS_SETS.items():
+        scoped = out[
+            out["dataset"].astype(str).eq(dataset)
+            & out["model"].astype(str).eq(model)
+            & out["phase"].astype(str).isin(["unlearned", "revival"])
+        ]
+        for (method, phase), group in scoped.groupby(["method", "phase"]):
+            if _complete_requested_classes(group, dataset, model):
+                continue
+            present = set(
+                pd.to_numeric(group["forget_class"], errors="coerce")
+                .dropna()
+                .astype(int)
+                .tolist()
+            )
+            missing = sorted(required - present)
+            print(
+                f"[WARN] Hiding incomplete table block for {dataset}/{model}/"
+                f"{method}/{phase}; missing forget classes {missing}"
+            )
+            out = out.drop(index=group.index)
+    return out
 
 def slugify(s: Optional[str]) -> str:
     """Safe tag for filenames/labels: keep letters/numbers/dashes; replace the rest with '_'."""
@@ -259,12 +315,15 @@ def _pick(value, hint, what: str, path: Path):
 
 def read_csv_keep_well_formed_rows(path: Path) -> pd.DataFrame:
     """
-    Read a CSV while tolerating rows with extra trailing fields.
+    Read a CSV while tolerating known legacy row-shape problems.
 
     This is useful for old result files where extra per-class accuracy columns
     were appended to only some rows. If a row has more fields than the header,
     keep the first header-width fields, which preserves the main aggregate
-    metrics and forget-class identifier. Rows with too few fields are dropped.
+    metrics and forget-class identifier. Some appended checkpoint rows repeat
+    the forget class immediately after the canonical forget_class field; that
+    duplicate is removed before width normalization. Rows with too few fields
+    are dropped.
     """
     text = path.read_text(encoding="utf-8", errors="replace")
     rows = list(csv.reader(StringIO(text)))
@@ -275,8 +334,20 @@ def read_csv_keep_well_formed_rows(path: Path) -> pd.DataFrame:
     width = len(header)
     good_rows = [header]
     truncated_count = 0
+    repaired_duplicate_class_count = 0
     dropped_count = 0
     for row in rows[1:]:
+        if (
+            len(row) > width
+            and len(header) >= 3
+            and header[:3] == ["method", "forget_class", "train_retain_acc"]
+            and len(row) >= 3
+            and row[1] == row[2]
+        ):
+            # Example legacy row: retrained,20,20,99.966,0.0,88.291,...
+            # The second "20" is accidental and shifts every metric column.
+            row = row[:2] + row[3:]
+            repaired_duplicate_class_count += 1
         if len(row) == width:
             good_rows.append(row)
         elif len(row) > width:
@@ -285,9 +356,11 @@ def read_csv_keep_well_formed_rows(path: Path) -> pd.DataFrame:
         else:
             dropped_count += 1
 
-    if truncated_count or dropped_count:
+    if truncated_count or repaired_duplicate_class_count or dropped_count:
         print(
-            f"[WARN] While reading {path}, truncated {truncated_count} rows "
+            f"[WARN] While reading {path}, repaired "
+            f"{repaired_duplicate_class_count} duplicated forget-class fields, "
+            f"truncated {truncated_count} rows "
             f"with extra fields and dropped {dropped_count} short rows; "
             f"expected {width} fields."
         )
@@ -509,6 +582,22 @@ def summarize_pra_results(
         return pd.DataFrame()
 
     d = _apply_forget_filter(df_pra.copy(), dataset)
+
+    model_values = d["model"].dropna().astype(str).unique()
+    model = model_values[0] if len(model_values) else ""
+    if not _complete_requested_classes(d, dataset, model):
+        required = REQUIRED_COMPLETE_CLASS_SETS.get((dataset, model), set())
+        present = set(
+            pd.to_numeric(d["forget_class"], errors="coerce")
+            .dropna()
+            .astype(int)
+            .tolist()
+        )
+        print(
+            f"[WARN] Ignoring incomplete PRA results for {dataset}/{model}; "
+            f"missing forget classes {sorted(required - present)}"
+        )
+        return pd.DataFrame()
 
     for col in [
         "test_retain_acc",
@@ -775,6 +864,10 @@ for c in ALL_METRIC_COLS:
     
 if "RS2" in df_all.columns:
     df_all["RS2"] = pd.to_numeric(df_all["RS2"], errors="coerce")
+
+# Preserve partial rows in the standardized CSVs, but do not use them to
+# produce aggregate paper values until the requested class set is complete.
+df_all = _hide_incomplete_table_groups(df_all)
     
 # Order you prefer; any extra/unknown methods present in the CSV will be appended at the end.
 METHOD_ORDER = [
@@ -856,7 +949,7 @@ def add_midrules_between_methods(latex_src: str) -> str:
         # One separator after every method block.
         # For DELETE, pandas adds \bottomrule afterward,
         # so the bottom of the table contains exactly two lines.
-        if re.search(r"&\s*Relearned\s*\(ours\)", line):
+        if re.search(r"&\s*SFRA\s*\(ours\)", line):
             out.append(r"\midrule")
 
     return "\n".join(out)
@@ -985,7 +1078,6 @@ def _max_rs_and_delta(
     frame: pd.DataFrame,
     rs_col: str,
     retrained_by_forget: dict,
-    select_by: str = "rs",
 ) -> tuple[float, float]:
     if frame is None or frame.empty or rs_col not in frame.columns:
         return np.nan, np.nan
@@ -1005,14 +1097,11 @@ def _max_rs_and_delta(
     tmp["_matched_retrained_rs"] = tmp["_forget_key"].map(retrained_by_forget)
     tmp["_matched_delta_rs"] = tmp[rs_col] - tmp["_matched_retrained_rs"]
 
-    if select_by == "delta" and tmp["_matched_delta_rs"].notna().any():
-        idx = tmp["_matched_delta_rs"].idxmax()
-    else:
-        idx = tmp[rs_col].idxmax()
-
-    rs = float(tmp.loc[idx, rs_col])
-    delta = tmp.loc[idx, "_matched_delta_rs"]
-    delta = float(delta) if pd.notna(delta) else np.nan
+    # Report the two maxima independently. The class attaining maximum RS need
+    # not be the class attaining maximum matched DeltaRS.
+    rs = float(tmp[rs_col].max())
+    matched_deltas = tmp["_matched_delta_rs"].dropna()
+    delta = float(matched_deltas.max()) if not matched_deltas.empty else np.nan
     return rs, delta
 
 
@@ -1242,7 +1331,7 @@ def render_table_for(ds: str, mdl: str, df_src: pd.DataFrame):
             # 3) Our source-free revival
             # -----------------------------------------------------
             phase = "revival"
-            row = {"Method": m, "Phase": "Relearned (ours)"}
+            row = {"Method": m, "Phase": "SFRA (ours)"}
             if (m, phase) in g.index:
                 for col in OUT_METRIC_COLS:
                     if col in (
@@ -1290,7 +1379,7 @@ def render_table_for(ds: str, mdl: str, df_src: pd.DataFrame):
     if SHOW_TRAIN_METRICS:
         cap = (
             f"{ds_latex} / {mdl_latex} — Comparison of PRA and "
-            f"the proposed source-free relearning audit. PRA uses five real "
+            f"the proposed Source-Free Relearning Audit (SFRA). PRA uses five real "
             f"forget-class samples and retain-constrained $\\alpha$ selection. "
             f"Retain accuracy is mean$\\pm$std and relearning "
             f"forget accuracy is reported as $({{\\min}},{{\\max}})$."
@@ -1298,7 +1387,7 @@ def render_table_for(ds: str, mdl: str, df_src: pd.DataFrame):
     else:
         cap = (
             f"{ds_latex} / {mdl_latex} — Comparison of PRA and "
-            f"the proposed source-free relearning audit. PRA uses five real "
+            f"the proposed Source-Free Relearning Audit (SFRA). PRA uses five real "
             f"forget-class samples and retain-constrained $\\alpha$ selection. "
             f"Retain accuracy is mean$\\pm$std and relearning "
             f"forget accuracy is reported as $({{\\min}},{{\\max}})$."
@@ -1499,7 +1588,6 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
                 sourcefree_rows,
                 "RS2",
                 retrained_rs_per_ds[dsl],
-                select_by="rs",
             )
             if m == "retrained":
                 rs_delta = np.nan
@@ -1520,7 +1608,6 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
                             pra_summary,
                             "PRA_RS2",
                             pra_retrained_rs_per_ds[dsl],
-                            select_by="rs",
                         )
                         if m == "retrained":
                             pra_delta = np.nan
@@ -1773,7 +1860,7 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
         # ---------------------------------------------------------
         # 4) Our relearning method
         # ---------------------------------------------------------
-        row_rev = {"Method": "", "Phase": "Relearned (ours)"}
+        row_rev = {"Method": "", "Phase": "SFRA (ours)"}
 
         for ds in datasets:
             dsl = _latex_dataset_name(ds)
@@ -1858,9 +1945,9 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
         else "the source-dependent PRA baseline"
     )
     forget_variant_text = (
-        "Linear Probe, PRA, and Relearned (ours)"
+        "Linear Probe, PRA, and SFRA (ours)"
         if SHOW_LINEAR_PROBE
-        else "PRA and Relearned (ours)"
+        else "PRA and SFRA (ours)"
     )
     rs_variant_text = (
         "Linear Probe, PRA, and our method"
@@ -1869,16 +1956,14 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
     )
 
     caption = (
-        f"Comparison of unlearning methods using the proposed source-free "
-        f"class-relearning audit and {compared_baselines} on {mdl_latex} models "
+        f"Comparison of unlearning methods using the proposed Source-Free "
+        f"Relearning Audit (SFRA) and {compared_baselines} on {mdl_latex} models "
         f"under single-class unlearning across three datasets. For all model "
         f"variants, retain accuracy $\\mathcal{{A}}^t_r$ is reported as the "
         f"mean $\\pm$ standard deviation across forget classes, while "
-        f"forget-class accuracy $\\mathcal{{A}}^t_f$ is reported as "
-        f"$(\\min,\\mathrm{{avg}},\\max)$. For each method, we report "
-        f"the maximum RS across forget classes, and $\\Delta$RS is computed "
-        f"relative to the matched retrained-from-scratch control for the "
-        f"same forget class. "
+        f"forget accuracy $\\mathcal{{A}}^t_f$ is reported as "
+        f"$(\\min,\\mathrm{{avg}},\\max)$. RS and $\\Delta$RS are "
+        f"independently reported as maxima across forget classes. "
         f"Within each dataset block, "
         r"\textbf{bold} and \underline{underlined} values denote the highest "
         r"and second-highest displayed values, respectively, for both RS and "

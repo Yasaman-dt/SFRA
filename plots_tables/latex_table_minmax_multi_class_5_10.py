@@ -82,8 +82,8 @@ method_name_and_ref = {
 
 
 SETTING_DISPLAY = {
-    "forget5": "5-Classes",
-    "forget10": "10-Classes",
+    "forget5": "5-class",
+    "forget10": "10-class",
 }
 
 
@@ -282,7 +282,7 @@ def add_midrules_between_methods(latex_src: str) -> str:
                 continue
 
             # after each method block (after Revival row)
-            if " & Relearned (ours) &" in line:
+            if " & SFRA (ours) &" in line:
                 if in_retrained_block:
                     out.append(r"\midrule")
                     out.append(r"\midrule")
@@ -1072,7 +1072,7 @@ def render_joint_table_same_dataset(mdl: str, df_src: pd.DataFrame, dataset: str
             rows.append(row_pra)
 
         # Revival row
-        row_rev = {"Method": "", "Phase": "Relearned (ours)"}
+        row_rev = {"Method": "", "Phase": "SFRA (ours)"}
         for s in settings:
             raw_rs = rs_per_setting[s].get(m, np.nan)
             max_v, second_v = rs_rank_thresholds[s]
@@ -1123,7 +1123,7 @@ def render_joint_table_same_dataset(mdl: str, df_src: pd.DataFrame, dataset: str
     latex = table_df.to_latex(index=False, escape=False, multicolumn=True,
                               multicolumn_format="c", column_format=column_format)
     
-    # 1) rename group headers to "5-Classes / 10-Classes"
+    # 1) rename group headers to "5-class / 10-class"
     display_groups = [SETTING_DISPLAY.get(s, s) for s in settings]
     latex = center_method_phase_headers_settings(latex, display_groups)
     latex = add_group_vertical_bars_settings(latex, display_groups)
@@ -1142,12 +1142,12 @@ def render_joint_table_same_dataset(mdl: str, df_src: pd.DataFrame, dataset: str
         if SHOW_LINEAR_PROBE
         else "the source-dependent PRA baseline"
     )
-    caption = ( f"Comparison of different unlearning methods under the proposed "
-                f"source-free class relearning audit and {compared_baselines} on "
-                f"multi-class (5-Classes and 10-Classes) unlearned ResNet-18 models on CIFAR-100. "
-               rf"Each RS entry also reports $\Delta$RS relative to the matched retrained control for the same audit variant. "
-               rf"For each setting, \textbf{{bold}} and \underline{{underlined}} indicate "
-               rf"the highest and second-highest displayed values, respectively, for both RS and $\Delta$RS.")
+    caption = ( f"Comparison of unlearning methods under the proposed Source-Free "
+                f"Relearning Audit (SFRA) and {compared_baselines} for 5-class and 10-class "
+                f"unlearning on CIFAR-100 with ResNet-18. "
+               rf"$\Delta$RS denotes the difference from the matched retrained control under the same audit variant. "
+               rf"The best and second-best results in each setting are shown in "
+               rf"\textbf{{bold}} and \underline{{underlined}}, respectively.")
     
  
     label = f"tab:{slugify(ds_latex)}_{slugify(mdl_latex)}_5v10"
