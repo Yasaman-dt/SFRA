@@ -5,7 +5,6 @@ from io import StringIO
 import numpy as np
 from pathlib import Path
 from typing import Optional, List
-from itertools import product
 
 # ----------------- Config -----------------
 # Resolve the results directory relative to this repo so the script works on
@@ -18,8 +17,8 @@ DATASETS = ["cifar10", "cifar100", "tiny_imagenet"]
 methods = [
     "original", "retrained",
     "random_label", "finetune", "gradient_ascent", "neggrad_plus",
-    "boundary_shrink", "boundary_expand",
-    "l2ul_adv", "l2ul_imp", "fisher", "wood_fisher", 
+    "boundary_shrink",
+    "l2ul_adv",
     "scrub", "bad_teacher", "salun", "delete",
 ]
 
@@ -320,10 +319,11 @@ def read_csv_keep_well_formed_rows(path: Path) -> pd.DataFrame:
     This is useful for old result files where extra per-class accuracy columns
     were appended to only some rows. If a row has more fields than the header,
     keep the first header-width fields, which preserves the main aggregate
-    metrics and forget-class identifier. Some appended checkpoint rows repeat
+    metrics and forget-class identifier. Rows missing only trailing optional
+    fields are padded with empty values rather than discarded. Some appended
+    checkpoint rows repeat
     the forget class immediately after the canonical forget_class field; that
-    duplicate is removed before width normalization. Rows with too few fields
-    are dropped.
+    duplicate is removed before width normalization.
     """
     text = path.read_text(encoding="utf-8", errors="replace")
     rows = list(csv.reader(StringIO(text)))
@@ -335,7 +335,7 @@ def read_csv_keep_well_formed_rows(path: Path) -> pd.DataFrame:
     good_rows = [header]
     truncated_count = 0
     repaired_duplicate_class_count = 0
-    dropped_count = 0
+    padded_count = 0
     for row in rows[1:]:
         if (
             len(row) > width
@@ -354,14 +354,15 @@ def read_csv_keep_well_formed_rows(path: Path) -> pd.DataFrame:
             good_rows.append(row[:width])
             truncated_count += 1
         else:
-            dropped_count += 1
+            good_rows.append(row + [""] * (width - len(row)))
+            padded_count += 1
 
-    if truncated_count or repaired_duplicate_class_count or dropped_count:
+    if truncated_count or repaired_duplicate_class_count or padded_count:
         print(
             f"[WARN] While reading {path}, repaired "
             f"{repaired_duplicate_class_count} duplicated forget-class fields, "
             f"truncated {truncated_count} rows "
-            f"with extra fields and dropped {dropped_count} short rows; "
+            f"with extra fields and padded {padded_count} short rows; "
             f"expected {width} fields."
         )
 
@@ -873,9 +874,7 @@ df_all = _hide_incomplete_table_groups(df_all)
 METHOD_ORDER = [
     "original", "retrained", "finetune", 
     "gradient_ascent", "neggrad_plus", "random_label", 
-    "boundary_shrink", "boundary_expand",
-    "l2ul_adv", "l2ul_imp",
-    "fisher", "wood_fisher",
+    "boundary_shrink", "l2ul_adv",
     "scrub", "bad_teacher", "salun", "delete",
 ]
 PHASE_ORDER = ["unlearned", "revival"]  # non-original methods get these two rows
@@ -1132,8 +1131,10 @@ def inject_rs2_multicolumn(latex_src: str, n_metric_cols: int) -> str:
 
 
 def wrap_with_resizebox(latex_src: str, caption: str, label: str,
-                        star: bool = True, width: str = r"\textwidth") -> str:
+                        star: bool = True, width: str = r"\textwidth",
+                        bottom_vspace: bool = False) -> str:
     env = "table*" if star else "table"
+    closing_space = "\\vspace{-0.3cm}\n" if bottom_vspace else ""
     return (
         f"\\begin{{{env}}}[t]\n"
         f"\\centering\n"
@@ -1141,6 +1142,7 @@ def wrap_with_resizebox(latex_src: str, caption: str, label: str,
         f"\\label{{{label}}}\n"
         f"\\vspace{{-0.3cm}}\n"
         f"\\resizebox{{{width}}}{{!}}{{%\n{latex_src}\n}}\n"
+        f"{closing_space}"
         f"\\end{{{env}}}\n"
     )
 
@@ -1405,12 +1407,10 @@ def render_table_for(ds: str, mdl: str, df_src: pd.DataFrame):
     return out
 
 
-# ---- choose the models you want, and the dataset (here: cifar10) ----
-   
-for ds, mdl in product(["cifar10", "cifar100", "tiny_imagenet"], MODELS):
-    render_table_for(ds, mdl, df_all)
-    
-    
+# Per-dataset/per-backbone tables are intentionally not generated. The paper
+# uses the joint, all-dataset table produced for each backbone below.
+
+
 def add_group_vertical_bars(latex_src: str, datasets: List[str]) -> str:
     """
     Ensure vertical rules continue through the dataset \\multicolumn headers.
@@ -1974,7 +1974,14 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
 
     label   = f"tab:{slugify(mdl_latex)}_single_class_all_datasets"
 
-    latex = wrap_with_resizebox(latex, caption, label, star=True, width=r"\textwidth")
+    latex = wrap_with_resizebox(
+        latex,
+        caption,
+        label,
+        star=True,
+        width=r"\textwidth",
+        bottom_vspace=(mdl == "resnet18"),
+    )
 
     out = base_dir / f"latex_table_{slugify(mdl)}_single_class.tex"
     with open(out, "w", encoding="utf-8") as f:
