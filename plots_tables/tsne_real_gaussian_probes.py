@@ -107,6 +107,14 @@ def parse_args():
         default=200,
         help="Maximum real test features displayed per class; 0 uses all.",
     )
+    parser.add_argument(
+        "--real_only",
+        action="store_true",
+        help=(
+            "Plot only matched real retain/forget samples. Skip synthetic-probe "
+            "generation and omit synthetic entries from the legend."
+        ),
+    )
     parser.add_argument("--batch_size", type=int, default=256)
     parser.add_argument("--num_workers", type=int, default=4)
     parser.add_argument("--sample_batch_size", type=int, default=65536)
@@ -385,6 +393,7 @@ def plot_figure(
     output_path,
 ):
     colors = class_colors(num_classes)
+    has_synthetic = len(retain_labels) > 0 or len(boundary_origins) > 0
     real_retain_size = 34
     real_forget_size = 42
     synthetic_size = 34
@@ -470,16 +479,18 @@ def plot_figure(
             color="black",
             label="Real Forget Set",
         ),
-        Line2D([0], [0], marker="s", linestyle="", color="gray", label="Synthetic Retain Set"),
-        Line2D(
-            [0],
-            [0],
-            marker="x",
-            linestyle="",
-            color="gray",
-            label="Synthetic Forget Set",
-        ),
     ]
+    if has_synthetic:
+        source_legend.extend([
+            Line2D(
+                [0], [0], marker="s", linestyle="", color="gray",
+                label="Synthetic Retain Set",
+            ),
+            Line2D(
+                [0], [0], marker="x", linestyle="", color="gray",
+                label="Synthetic Forget Set",
+            ),
+        ])
     for class_id in range(num_classes):
         real_mask = real_labels.numpy() == class_id
         if not np.any(real_mask):
@@ -577,7 +588,10 @@ def main():
     num_classes = NUM_CLASSES[args.dataset]
     if not 0 <= args.forget_class < num_classes:
         raise ValueError(f"--forget_class must be in [0, {num_classes - 1}].")
-    if args.generated_per_class < max(args.retain_per_class, args.forget_per_class):
+    if (
+        not args.real_only
+        and args.generated_per_class < max(args.retain_per_class, args.forget_per_class)
+    ):
         raise ValueError(
             "--generated_per_class must be at least as large as both selection sizes."
         )
@@ -627,17 +641,28 @@ def main():
         f"plotting {len(real_features_plot)}"
     )
 
-    probes = build_selected_probes(
-        model=model,
-        num_classes=num_classes,
-        forget_class=args.forget_class,
-        generated_per_class=args.generated_per_class,
-        retain_per_class=args.retain_per_class,
-        forget_per_class=args.forget_per_class,
-        sample_batch_size=args.sample_batch_size,
-        device=device,
-        seed=args.seed,
-    )
+    if args.real_only:
+        empty_features = torch.empty((0, real_features_plot.shape[1]), dtype=torch.float32)
+        empty_labels = torch.empty(0, dtype=torch.long)
+        probes = {
+            "retain_features": empty_features,
+            "retain_labels": empty_labels,
+            "boundary_features": empty_features.clone(),
+            "boundary_origins": empty_labels.clone(),
+        }
+        print("[sampling] real-only mode: synthetic probe generation skipped")
+    else:
+        probes = build_selected_probes(
+            model=model,
+            num_classes=num_classes,
+            forget_class=args.forget_class,
+            generated_per_class=args.generated_per_class,
+            retain_per_class=args.retain_per_class,
+            forget_per_class=args.forget_per_class,
+            sample_batch_size=args.sample_batch_size,
+            device=device,
+            seed=args.seed,
+        )
 
     all_features = torch.cat(
         [
@@ -674,13 +699,18 @@ def main():
     projected_retain_logits = projected_logits[n_real : n_real + n_retain]
     projected_boundary_logits = projected_logits[n_real + n_retain :]
 
+    default_stem = (
+        f"{args.dataset}_{args.model_name}_{args.method}_fg{args.forget_class}_real_only_tsne.png"
+        if args.real_only
+        else (
+            f"{args.dataset}_{args.model_name}_{args.method}_lr{args.lr:g}_"
+            f"fg{args.forget_class}_real_gaussian_tsne.png"
+        )
+    )
     output_path = Path(args.out) if args.out else Path(
         "results",
         args.method,
-        (
-            f"{args.dataset}_{args.model_name}_{args.method}_lr{args.lr:g}_"
-            f"fg{args.forget_class}_real_gaussian_tsne.png"
-        ),
+        default_stem,
     )
     plot_figure(
         projected_real=projected_real,

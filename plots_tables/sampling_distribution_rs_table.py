@@ -1,8 +1,9 @@
-"""Make a compact Gaussian-vs-Uniform RS table across forget classes.
+"""Make a compact Gaussian-vs-Uniform-vs-Laplace RS table across forget classes.
 
 This table combines:
   * Gaussian source-free relearning results from results_single_class;
-  * Uniform synthesis-ablation results from results_synthesis_ablation.
+  * Uniform and Laplace synthesis-ablation results from
+    results_synthesis_ablation.
 
 The intended use is the appendix ablation where the only displayed strategy
 factor is the embedding sampling distribution.
@@ -72,7 +73,10 @@ METHOD_NAME_AND_REF = {
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Build Gaussian-vs-Uniform RS table across forget classes."
+        description=(
+            "Build a Gaussian-vs-Uniform-vs-Laplace RS table across forget "
+            "classes."
+        )
     )
     parser.add_argument("--dataset", default="cifar10")
     parser.add_argument("--model_name", "--model", dest="model_name", default="resnet18")
@@ -107,14 +111,18 @@ def parse_args() -> argparse.Namespace:
         default=REPO_ROOT / "results_synthesis_ablation",
     )
     parser.add_argument(
+        "--ablation_forget_selection",
         "--uniform_forget_selection",
+        dest="ablation_forget_selection",
         default="low_confidence",
-        help="Uniform ablation forget-probe selection to report.",
+        help="Uniform/Laplace ablation forget-probe selection to report.",
     )
     parser.add_argument(
+        "--ablation_retain_selection",
         "--uniform_retain_selection",
+        dest="ablation_retain_selection",
         default="high_confidence",
-        help="Uniform ablation retain-probe selection to report.",
+        help="Uniform/Laplace ablation retain-probe selection to report.",
     )
     parser.add_argument(
         "--precision",
@@ -125,12 +133,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--bold_best",
         action="store_true",
-        help="Bold the best RS between Gaussian and Uniform within each method/class.",
+        help=(
+            "Bold the best RS among Gaussian, Uniform, and Laplace within "
+            "each method/class."
+        ),
     )
     parser.add_argument(
         "--include_missing_methods",
         action="store_true",
-        help="Keep methods even if both Gaussian and Uniform rows are missing.",
+        help="Keep methods even if all distribution rows are missing.",
     )
     parser.add_argument(
         "--caption",
@@ -241,42 +252,56 @@ def parse_forget_class_from_dir(path: Path) -> Optional[int]:
     return int(match.group(1)) if match else None
 
 
-def load_uniform_rs(
+def load_ablation_distribution_rs(
     ablation_root: Path,
     dataset: str,
     model_name: str,
     classes: Iterable[int],
+    distribution: str,
     forget_selection: str,
     retain_selection: str,
 ) -> pd.DataFrame:
-    """Load Uniform RS from synthesis-ablation summary.csv files."""
+    """Load one distribution's RS from synthesis-ablation summary files."""
     class_set = set(classes)
     rows = []
 
     for method_dir in sorted(p for p in ablation_root.iterdir() if p.is_dir()):
         method = method_dir.name
-        for summary_path in method_dir.glob(
-            f"{dataset}_{model_name}_lr*_fg*/summary.csv"
+        for run_dir in method_dir.glob(
+            f"{dataset}_{model_name}_lr*_fg*"
         ):
-            forget_class = parse_forget_class_from_dir(summary_path.parent)
+            forget_class = parse_forget_class_from_dir(run_dir)
             if forget_class is None or forget_class not in class_set:
                 continue
 
-            summary = pd.read_csv(summary_path)
+            # runs.csv is cumulative across invocations, whereas summary.csv may
+            # contain only the strategies requested by the most recent command.
+            # Prefer runs.csv so a Laplace-only continuation does not hide older
+            # Uniform results.
+            runs_path = run_dir / "runs.csv"
+            summary_path = run_dir / "summary.csv"
+            if runs_path.is_file():
+                summary = pd.read_csv(runs_path)
+                rs_column = "RS"
+            elif summary_path.is_file():
+                summary = pd.read_csv(summary_path)
+                rs_column = "RS_mean"
+            else:
+                continue
             required = {
                 "distribution",
                 "forget_selection",
                 "retain_selection",
-                "RS_mean",
+                rs_column,
             }
             missing = required - set(summary.columns)
             if missing:
                 raise KeyError(
-                    f"Uniform summary missing columns {sorted(missing)}: {summary_path}"
+                    f"Ablation summary missing columns {sorted(missing)}: {summary_path}"
                 )
 
             matched = summary[
-                summary["distribution"].astype(str).eq("uniform")
+                summary["distribution"].astype(str).eq(distribution.lower())
                 & summary["forget_selection"].astype(str).eq(forget_selection)
                 & summary["retain_selection"].astype(str).eq(retain_selection)
             ].copy()
@@ -287,8 +312,8 @@ def load_uniform_rs(
                 {
                     "method": method,
                     "forget_class": forget_class,
-                    "sampling": "Uniform",
-                    "RS": pd.to_numeric(matched["RS_mean"], errors="coerce").mean(),
+                    "sampling": distribution.title(),
+                    "RS": pd.to_numeric(matched[rs_column], errors="coerce").mean(),
                 }
             )
 
@@ -304,18 +329,18 @@ def load_uniform_rs(
 
 def build_records(
     gaussian_df: pd.DataFrame,
-    uniform_df: pd.DataFrame,
+    ablation_dfs: List[pd.DataFrame],
     methods: List[str],
     classes: List[int],
     include_missing_methods: bool,
 ) -> pd.DataFrame:
-    data = pd.concat([gaussian_df, uniform_df], ignore_index=True)
+    data = pd.concat([gaussian_df] + ablation_dfs, ignore_index=True)
     rows = []
     for method in methods:
         method_data = data[data["method"].eq(method)]
         if method_data.empty and not include_missing_methods:
             continue
-        for sampling in ["Gaussian", "Uniform"]:
+        for sampling in ["Gaussian", "Uniform", "Laplace"]:
             row = {"method": method, "sampling": sampling}
             sampling_data = method_data[method_data["sampling"].eq(sampling)]
             for class_id in classes:
@@ -387,9 +412,10 @@ def make_latex_table(
             f"Synthesis-distribution ablation on {latex_dataset_name(dataset)} "
             f"using a {latex_model_name(model_name)} backbone. Each entry reports "
             "the relearning score (RS). Gaussian denotes the original source-free "
-            "relearning results, while Uniform uses the same low-confidence "
-            "forget-probe and high-confidence retain-probe selection with uniform "
-            "embedding sampling."
+            "relearning results, while Uniform and Laplace use the same "
+            "low-confidence forget-probe and high-confidence retain-probe "
+            "selection with their respective embedding distributions. A dash "
+            "indicates that the corresponding run is not yet available."
         )
     if label is None:
         label = f"tab:{slugify(dataset)}_{slugify(model_name)}_sampling_distribution_rs"
@@ -402,10 +428,10 @@ def make_latex_table(
     lines.append(r"\centering")
     lines.append(rf"\caption{{{caption}}}")
     lines.append(rf"\label{{{label}}}")
-    lines.append(r"\setlength{\tabcolsep}{4pt}")
-    lines.append(r"\renewcommand{\arraystretch}{1.05}")
+    lines.append(r"\setlength{\tabcolsep}{3pt}")
+    lines.append(r"\renewcommand{\arraystretch}{1.00}")
     lines.append(r"\scriptsize")
-    lines.append(r"\resizebox{0.90\textwidth}{!}{%")
+    lines.append(r"\resizebox{0.78\textwidth}{!}{%")
     lines.append(rf"\begin{{tabular}}{{{colspec}}}")
     lines.append(r"\toprule")
     lines.append(
@@ -459,18 +485,22 @@ def main() -> None:
         args.model_name,
         classes,
     )
-    uniform = load_uniform_rs(
-        args.ablation_root,
-        args.dataset,
-        args.model_name,
-        classes,
-        args.uniform_forget_selection,
-        args.uniform_retain_selection,
-    )
+    ablation_dfs = [
+        load_ablation_distribution_rs(
+            args.ablation_root,
+            args.dataset,
+            args.model_name,
+            classes,
+            distribution,
+            args.ablation_forget_selection,
+            args.ablation_retain_selection,
+        )
+        for distribution in ("uniform", "laplace")
+    ]
 
     table_numeric = build_records(
         gaussian,
-        uniform,
+        ablation_dfs,
         methods,
         classes,
         args.include_missing_methods,
@@ -513,9 +543,9 @@ def main() -> None:
     print(f"[OK] wrote {csv_out}")
     print(f"[OK] wrote {tex_out}")
     print(
-        "[info] Uniform row uses "
-        f"forget_selection={args.uniform_forget_selection}, "
-        f"retain_selection={args.uniform_retain_selection}"
+        "[info] Uniform/Laplace rows use "
+        f"forget_selection={args.ablation_forget_selection}, "
+        f"retain_selection={args.ablation_retain_selection}"
     )
 
 
