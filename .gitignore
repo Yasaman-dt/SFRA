@@ -21,6 +21,7 @@ __pycache__/
 
 results
 synth_pools
+logs
 
 results_single_class
 results_multi_class_2
