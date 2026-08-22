@@ -335,13 +335,32 @@ This script aggregates the per-forget-class confidence CSVs into one compact tab
 
 ### Synthesis-strategy ablation runner
 
+The following command runs the Laplace-only synthesis ablation for SCRUB on
+CIFAR-10 with ResNet-18. It uses the same candidate pool for selecting the
+high-confidence retain probes and low-confidence forget probes. The Gaussian
+baseline is skipped because its existing results are reused.
+
 ```bash
-CUDA_VISIBLE_DEVICES=0 python -m ablation.synthesis_strategy_ablation \
-  --method bad_teacher \
+CUDA_VISIBLE_DEVICES=2 python -m ablation.synthesis_strategy_ablation \
   --dataset cifar10 \
   --model_name resnet18 \
-  --lr 0.001 \
-  --forget_classes 0 1 2 3 4 5 6 7 8 9 \
   --generated_per_class 500000 \
   --retain_per_class 500 \
-  --forget_per_class 500
+  --forget_per_class 500 \
+  --sample_batch_size 4096 \
+  --train_batch_size 256 \
+  --epochs 200 \
+  --head_lr 0.01 \
+  --weight_decay 0.0001 \
+  --retain_floor_frac 0.90 \
+  --grid one_factor \
+  --distributions laplace \
+  --skip_gaussian_baseline \
+  --forget_selections low_confidence \
+  --retain_selections high_confidence \
+  --uncertainty_scores softmax \
+  --seeds 0 \
+  --method scrub \
+  --lr 0.001 \
+  --forget_classes 0 1 2 3 4 5 6 7 8 9
+```

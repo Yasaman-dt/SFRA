@@ -7,11 +7,12 @@ paper baseline:
     retain_selection=high_confidence.
 
 This yields five interpretable strategies rather than a large Cartesian grid:
-two sampling distributions, three forget-probe selection rules, and two
+three sampling distributions, three forget-probe selection rules, and two
 retain-probe selection rules. The distributions are variance matched:
 
 * Gaussian: N(0, I)
 * Uniform: U[-sqrt(3), sqrt(3)]
+* Laplace: Laplace(0, 1/sqrt(2))
 
 For every strategy, the script freezes the feature extractor, relearns only
 the classifier head, and reports baseline/relearned forget accuracy, retain
@@ -60,7 +61,8 @@ from plots_tables.tsne_real_gaussian_probes import (  # noqa: E402
 from utils import get_dataset, get_transforms  # noqa: E402
 
 
-DISTRIBUTIONS = ("gaussian", "uniform")
+DISTRIBUTIONS = ("gaussian", "uniform", "laplace")
+UNCERTAINTY_SCORES = ("msp", "softmax", "entropy", "energy")
 FORGET_SELECTIONS = ("low_confidence", "high_confidence", "random")
 RETAIN_SELECTIONS = ("high_confidence", "random")
 
@@ -70,13 +72,17 @@ class Strategy:
     distribution: str
     forget_selection: str
     retain_selection: str
+    uncertainty_score: str = "softmax"
 
     @property
     def name(self):
-        return (
+        base = (
             f"dist={self.distribution}__forget={self.forget_selection}"
             f"__retain={self.retain_selection}"
         )
+        if self.uncertainty_score != "softmax":
+            base += f"__score={self.uncertainty_score}"
+        return base
 
 
 def parse_args():
@@ -114,7 +120,7 @@ def parse_args():
     parser.add_argument("--generated_per_class", type=int, default=500000)
     parser.add_argument("--retain_per_class", type=int, default=500)
     parser.add_argument("--forget_per_class", type=int, default=500)
-    parser.add_argument("--sample_batch_size", type=int, default=65536)
+    parser.add_argument("--sample_batch_size", type=int, default=4096)
     parser.add_argument("--train_batch_size", type=int, default=256)
     parser.add_argument("--eval_batch_size", type=int, default=4096)
     parser.add_argument("--num_workers", type=int, default=4)
@@ -135,10 +141,30 @@ def parse_args():
         default="one_factor",
     )
     parser.add_argument(
+        "--skip_gaussian_baseline",
+        action="store_true",
+        help=(
+            "Do not add the Gaussian/low-confidence/high-confidence baseline "
+            "automatically in the one-factor grid. Useful when that baseline "
+            "has already been run and only a new distribution is requested."
+        ),
+    )
+    parser.add_argument(
         "--distributions",
         nargs="+",
         choices=DISTRIBUTIONS,
         default=list(DISTRIBUTIONS),
+    )
+    parser.add_argument(
+        "--uncertainty_scores", "--uncertainty_metric",
+        nargs="+",
+        choices=UNCERTAINTY_SCORES,
+        default=["softmax"],
+        help=(
+            "Score used to rank both forget and retain probes. 'msp' (alias "
+            "'softmax') uses assigned-class probability, 'entropy' uses "
+            "predictive entropy, and 'energy' uses -logsumexp(logits) at T=1."
+        ),
     )
     parser.add_argument(
         "--forget_selections",
@@ -171,30 +197,57 @@ def parse_args():
 
 
 def make_strategies(args):
-    baseline = Strategy("gaussian", "low_confidence", "high_confidence")
+    baseline_score = "msp" if "msp" in args.uncertainty_scores else "softmax"
+    baseline = Strategy("gaussian", "low_confidence", "high_confidence", baseline_score)
     if args.grid == "full":
         return [
-            Strategy(distribution, forget_selection, retain_selection)
+            Strategy(distribution, forget_selection, retain_selection, uncertainty_score)
             for distribution in args.distributions
+            for uncertainty_score in args.uncertainty_scores
             for forget_selection in args.forget_selections
             for retain_selection in args.retain_selections
         ]
 
-    strategies = [baseline]
+    strategies = [] if args.skip_gaussian_baseline else [baseline]
     strategies.extend(
-        Strategy(distribution, baseline.forget_selection, baseline.retain_selection)
+        Strategy(
+            distribution,
+            baseline.forget_selection,
+            baseline.retain_selection,
+            baseline.uncertainty_score,
+        )
         for distribution in args.distributions
         if distribution != baseline.distribution
     )
     strategies.extend(
-        Strategy(baseline.distribution, forget_selection, baseline.retain_selection)
+        Strategy(
+            baseline.distribution,
+            forget_selection,
+            baseline.retain_selection,
+            baseline.uncertainty_score,
+        )
         for forget_selection in args.forget_selections
         if forget_selection != baseline.forget_selection
     )
     strategies.extend(
-        Strategy(baseline.distribution, baseline.forget_selection, retain_selection)
+        Strategy(
+            baseline.distribution,
+            baseline.forget_selection,
+            retain_selection,
+            baseline.uncertainty_score,
+        )
         for retain_selection in args.retain_selections
         if retain_selection != baseline.retain_selection
+    )
+    strategies.extend(
+        Strategy(
+            baseline.distribution,
+            baseline.forget_selection,
+            baseline.retain_selection,
+            uncertainty_score,
+        )
+        for uncertainty_score in args.uncertainty_scores
+        if uncertainty_score != baseline.uncertainty_score
     )
     # Preserve order while removing duplicates introduced by restricted CLI lists.
     return list(dict.fromkeys(strategies))
@@ -206,6 +259,17 @@ def sample_distribution(shape, distribution, generator, device):
     if distribution == "uniform":
         samples = torch.rand(*shape, generator=generator, device=device)
         return samples.mul_(2 * math.sqrt(3)).sub_(math.sqrt(3))
+    if distribution == "laplace":
+        # Inverse-CDF sampling for zero-mean, unit-variance Laplace probes.
+        # A Laplace distribution has variance 2*b^2, hence b=1/sqrt(2).
+        uniform = torch.rand(*shape, generator=generator, device=device)
+        eps = torch.finfo(uniform.dtype).eps
+        centered = uniform.clamp_(min=eps, max=1.0 - eps).sub_(0.5)
+        return (
+            -math.sqrt(0.5)
+            * torch.sign(centered)
+            * torch.log1p(-2.0 * torch.abs(centered))
+        )
     raise ValueError(distribution)
 
 
@@ -219,10 +283,10 @@ def sample_accepted_pool(
     batch_size,
     generator,
 ):
-    """Return accepted features and full probabilities for one predicted class."""
+    """Return accepted features, logits, and full probabilities for one predicted class."""
     device = weight.device
     embedding_dim = weight.shape[1]
-    feature_chunks, probability_chunks = [], []
+    feature_chunks, logit_chunks, probability_chunks = [], [], []
     accepted = 0
     draws = 0
     max_draws = max(10_000_000, wanted * weight.shape[0] * 400)
@@ -237,37 +301,62 @@ def sample_accepted_pool(
         samples = sample_distribution(
             (current_batch, embedding_dim), distribution, generator, device
         )
-        probabilities = F.softmax(samples @ weight.T + bias, dim=1)
+        logits = samples @ weight.T + bias
+        probabilities = F.softmax(logits, dim=1)
         mask = probabilities.argmax(dim=1).eq(target_class)
         if mask.any():
             feature_chunks.append(samples[mask].cpu())
+            logit_chunks.append(logits[mask].cpu())
             probability_chunks.append(probabilities[mask].cpu())
             accepted += int(mask.sum())
         draws += current_batch
 
     return (
         torch.cat(feature_chunks)[:wanted],
+        torch.cat(logit_chunks)[:wanted],
         torch.cat(probability_chunks)[:wanted],
         draws,
     )
 
 
-def forget_score(probabilities, target_class, rule):
-    if rule == "low_confidence":
-        # Larger score means more boundary-like.
+def energy_score(logits):
+    # Standard energy score with temperature T=1. Larger values correspond to
+    # lower log-sum-exp and are commonly interpreted as more uncertain.
+    return -torch.logsumexp(logits, dim=1)
+
+
+def uncertainty_values(probabilities, logits, target_class, uncertainty_score):
+    """Return scores where larger always means more uncertain."""
+    if uncertainty_score in {"msp", "softmax"}:
         return -probabilities[:, target_class]
+    if uncertainty_score == "entropy":
+        return -(probabilities * probabilities.clamp_min(1e-12).log()).sum(dim=1)
+    if uncertainty_score == "energy":
+        # E=-logsumexp(logits) at T=1; larger (less negative) is more uncertain.
+        return energy_score(logits)
+    raise ValueError(uncertainty_score)
+
+
+def forget_score(probabilities, logits, target_class, rule, uncertainty_score):
+    uncertainty = uncertainty_values(
+        probabilities, logits, target_class, uncertainty_score
+    )
+    if rule == "low_confidence":
+        return uncertainty
     if rule == "high_confidence":
-        return probabilities[:, target_class]
+        return -uncertainty
     if rule == "random":
         return torch.zeros(len(probabilities))
-    raise ValueError(rule)
+    raise ValueError(f"rule={rule}, uncertainty_score={uncertainty_score}")
 
 
 def select_indices(
     probabilities,
+    logits,
     target_class,
     forget_rule,
     retain_rule,
+    uncertainty_score,
     forget_k,
     retain_k,
     generator,
@@ -282,7 +371,13 @@ def select_indices(
     if forget_rule == "random":
         forget_indices = torch.randperm(count, generator=generator)[:forget_k]
     else:
-        scores = forget_score(probabilities, target_class, forget_rule)
+        scores = forget_score(
+            probabilities,
+            logits,
+            target_class,
+            forget_rule,
+            uncertainty_score,
+        )
         forget_indices = scores.argsort(descending=True)[:forget_k]
 
     available_mask = torch.ones(count, dtype=torch.bool)
@@ -294,8 +389,10 @@ def select_indices(
             torch.randperm(len(available), generator=generator)[:retain_k]
         ]
     else:
-        confidence = probabilities[available, target_class]
-        retain_indices = available[confidence.argsort(descending=True)[:retain_k]]
+        uncertainty = uncertainty_values(
+            probabilities[available], logits[available], target_class, uncertainty_score
+        )
+        retain_indices = available[uncertainty.argsort(descending=False)[:retain_k]]
     return retain_indices, forget_indices
 
 
@@ -333,11 +430,12 @@ def build_synthetic_sets_for_strategies(
         for strategy in strategies
     }
     total_draws = 0
+    agreement_rows = []
 
     for retain_class in range(num_classes):
         if retain_class == forget_class:
             continue
-        features, probabilities, draws = sample_accepted_pool(
+        features, logits, probabilities, draws = sample_accepted_pool(
             weight=weight,
             bias=bias,
             target_class=retain_class,
@@ -346,12 +444,15 @@ def build_synthetic_sets_for_strategies(
             batch_size=sample_batch_size,
             generator=sample_generator,
         )
+        forget_indices_by_score = {}
         for strategy in strategies:
             retain_indices, forget_indices = select_indices(
                 probabilities=probabilities,
+                logits=logits,
                 target_class=retain_class,
                 forget_rule=strategy.forget_selection,
                 retain_rule=strategy.retain_selection,
+                uncertainty_score=strategy.uncertainty_score,
                 forget_k=forget_per_class,
                 retain_k=retain_per_class,
                 generator=selection_generator,
@@ -361,6 +462,24 @@ def build_synthetic_sets_for_strategies(
                 torch.full((retain_per_class,), retain_class, dtype=torch.long)
             )
             selected[strategy]["forget_features"].append(features[forget_indices])
+            if (
+                strategy.distribution == "gaussian"
+                and strategy.forget_selection == "low_confidence"
+                and strategy.retain_selection == "high_confidence"
+            ):
+                score_name = "msp" if strategy.uncertainty_score == "softmax" else strategy.uncertainty_score
+                forget_indices_by_score[score_name] = forget_indices
+        score_names = [name for name in ("msp", "entropy", "energy") if name in forget_indices_by_score]
+        for left_index, left in enumerate(score_names):
+            left_set = set(forget_indices_by_score[left].tolist())
+            for right in score_names[left_index + 1:]:
+                right_set = set(forget_indices_by_score[right].tolist())
+                agreement_rows.append({
+                    "retain_class": retain_class,
+                    "metric_a": left,
+                    "metric_b": right,
+                    "overlap_at_m": len(left_set & right_set) / max(forget_per_class, 1),
+                })
         total_draws += draws
 
     outputs = {}
@@ -378,7 +497,7 @@ def build_synthetic_sets_for_strategies(
             forget_labels,
             total_draws,
         )
-    return outputs
+    return outputs, agreement_rows
 
 
 @torch.inference_mode()
@@ -525,8 +644,20 @@ def train_one_strategy(
 def append_csv(path, row):
     path.parent.mkdir(parents=True, exist_ok=True)
     exists = path.exists()
+    if exists:
+        with path.open(newline="") as handle:
+            existing_fields = next(csv.reader(handle), [])
+        missing_fields = [field for field in row if field not in existing_fields]
+        if missing_fields:
+            # Older resumable runs predate uncertainty_score/ranking metadata.
+            # Evolve their schema before appending so columns never shift.
+            prior = pd.read_csv(path)
+            for field in missing_fields:
+                prior[field] = ""
+            prior.to_csv(path, index=False)
     with path.open("a", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(row.keys()))
+        fieldnames = list(pd.read_csv(path, nrows=0).columns) if exists else list(row.keys())
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
         if not exists:
             writer.writeheader()
         writer.writerow(row)
@@ -534,7 +665,14 @@ def append_csv(path, row):
 
 def aggregate_results(run_csv):
     frame = pd.read_csv(run_csv)
-    group_columns = ["strategy", "distribution", "forget_selection", "retain_selection"]
+    group_columns = [
+        "strategy",
+        "distribution",
+        "forget_selection",
+        "retain_selection",
+    ]
+    if "uncertainty_score" in frame.columns:
+        group_columns.append("uncertainty_score")
     metrics = [
         "baseline_retain_acc",
         "baseline_forget_acc",
@@ -564,7 +702,7 @@ def write_latex_table(summary, path):
     lines = [
         rf"\begin{{tabular}}{{{columns}}}",
         r"\toprule",
-        "Distribution & Forget selection & Retain selection & "
+        "Distribution & Forget selection & Retain selection & Score & "
         + r"$A_f^{\mathrm{re}}$ & $A_r^{\mathrm{re}}$ & Gain$_f$ & RS \\",
         r"\midrule",
     ]
@@ -573,6 +711,7 @@ def write_latex_table(summary, path):
             str(row["distribution"]).replace("_", r"\_"),
             str(row["forget_selection"]).replace("_", r"\_"),
             str(row["retain_selection"]).replace("_", r"\_"),
+            str(row.get("uncertainty_score", "softmax")).replace("_", r"\_"),
             fmt(row, "relearned_forget_acc"),
             fmt(row, "relearned_retain_acc"),
             fmt(row, "forget_gain"),
@@ -593,7 +732,10 @@ def plot_summary(summary, output_path):
         }
     )
     labels = [
-        f"{row.distribution}\n{row.forget_selection}\n{row.retain_selection}"
+        (
+            f"{row.distribution}\n{row.forget_selection}\n"
+            f"{row.retain_selection}\n{getattr(row, 'uncertainty_score', 'softmax')}"
+        )
         for row in summary.itertuples()
     ]
     x = np.arange(len(summary))
@@ -696,7 +838,7 @@ def run_for_forget_class(args, forget_class, test_dataset, strategies, device):
                 f"\n[pool] distribution={distribution} seed={seed}; "
                 f"strategies={len(distribution_strategies)}"
             )
-            synthetic_by_strategy = build_synthetic_sets_for_strategies(
+            synthetic_by_strategy, agreement_rows = build_synthetic_sets_for_strategies(
                 classifier=classifier,
                 num_classes=num_classes,
                 forget_class=forget_class,
@@ -708,6 +850,17 @@ def run_for_forget_class(args, forget_class, test_dataset, strategies, device):
                 device=device,
                 seed=seed,
             )
+            agreement_path = run_root / "ranking_agreement.csv"
+            for agreement in agreement_rows:
+                append_csv(agreement_path, {
+                    "method": args.method,
+                    "dataset": args.dataset,
+                    "model": args.model_name,
+                    "forget_class": forget_class,
+                    "seed": seed,
+                    "selected_m": args.forget_per_class,
+                    **agreement,
+                })
             for strategy in distribution_strategies:
                 print(f"[train] {strategy.name} seed={seed}")
                 synthetic = synthetic_by_strategy[strategy]
@@ -733,6 +886,7 @@ def run_for_forget_class(args, forget_class, test_dataset, strategies, device):
                     "distribution": strategy.distribution,
                     "forget_selection": strategy.forget_selection,
                     "retain_selection": strategy.retain_selection,
+                    "uncertainty_score": strategy.uncertainty_score,
                     "generated_per_class": args.generated_per_class,
                     "retain_per_class": args.retain_per_class,
                     "forget_per_class": args.forget_per_class,
