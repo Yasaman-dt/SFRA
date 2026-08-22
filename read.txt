@@ -53,13 +53,13 @@ CUDA_VISIBLE_DEVICES=0 python eval_unlearned_model.py   --dataset_name cifar100 
 
 Run our class revival method:
 single_class:
-CUDA_VISIBLE_DEVICES=0 python revival_singleclass.py 	--method bad_teacher  --model_name resnet18 	--dataset cifar10	    	--lr 1e-3 	--epochs 500  --forget 0,1,2,3,4,5,6,7,8,9    	--retain_per_class 500   	--forget_per_class 500   --tpr 500000
-CUDA_VISIBLE_DEVICES=0 python revival_singleclass.py 	--method bad_teacher  --model_name resnet18 	--dataset cifar100	    	--lr 1e-3 	--epochs 500  --forget 0,20,40,60,80    	--retain_per_class 100   	--forget_per_class 100   --tpr 100000
-CUDA_VISIBLE_DEVICES=0 python revival_singleclass.py 	--method bad_teacher  --model_name resnet18 	--dataset tiny_imagenet		--lr 1e-3 	--epochs 200  --forget 0,40,80,120,160  	--retain_per_class 25   	--forget_per_class 25 	 --tpr 50000
+CUDA_VISIBLE_DEVICES=0 python source_free_relearning_singleclass.py 	--method bad_teacher  --model_name resnet18 	--dataset cifar10	    	--lr 1e-3 	--epochs 500  --forget 0,1,2,3,4,5,6,7,8,9    	--retain_per_class 500   	--forget_per_class 500   --tpr 500000
+CUDA_VISIBLE_DEVICES=0 python source_free_relearning_singleclass.py 	--method bad_teacher  --model_name resnet18 	--dataset cifar100	    	--lr 1e-3 	--epochs 500  --forget 0,20,40,60,80    	--retain_per_class 100   	--forget_per_class 100   --tpr 100000
+CUDA_VISIBLE_DEVICES=0 python source_free_relearning_singleclass.py 	--method bad_teacher  --model_name resnet18 	--dataset tiny_imagenet		--lr 1e-3 	--epochs 200  --forget 0,40,80,120,160  	--retain_per_class 25   	--forget_per_class 25 	 --tpr 50000
 
 multi_class:
-CUDA_VISIBLE_DEVICES=0 python revival_multiclass.py  --dataset cifar10   	--model resnet18   --method bad_teacher  --lr 2e-2   --epochs 200   --forget 1,6   	--tpr 500000   	--retain_per_class 500   --forget_per_class 500
-CUDA_VISIBLE_DEVICES=0 python revival_multiclass.py  --dataset cifar100   	--model resnet18   --method bad_teacher	 --lr 2e-2   --epochs 200   --forget 25,58   	--tpr 500000   	--retain_per_class 200   --forget_per_class 200
+CUDA_VISIBLE_DEVICES=0 python source_free_relearning_multiclass.py  --dataset cifar10   	--model resnet18   --method bad_teacher  --lr 2e-2   --epochs 200   --forget 1,6   	--tpr 500000   	--retain_per_class 500   --forget_per_class 500
+CUDA_VISIBLE_DEVICES=0 python source_free_relearning_multiclass.py  --dataset cifar100   	--model resnet18   --method bad_teacher	 --lr 2e-2   --epochs 200   --forget 25,58   	--tpr 500000   	--retain_per_class 200   --forget_per_class 200
 
 
 ablation on different M and N:
