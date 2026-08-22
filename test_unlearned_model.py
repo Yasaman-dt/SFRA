@@ -114,6 +114,12 @@ def main():
     p.add_argument('--batch_size',   type=int, default=256)
     p.add_argument('--num_workers',  type=int, default=8)
     p.add_argument('--ckpt_path',    type=str, default=None, help="(optional) direct path to .pth")
+    p.add_argument(
+        '--out_csv',
+        type=str,
+        default=None,
+        help="Optional exact output CSV path. Defaults to results/<method>/...",
+    )
     
     args = p.parse_args()
 
@@ -157,9 +163,11 @@ def main():
     forget_count = len(set(forget_indices))   # e.g., 3 for [1,3,7]
 
     # (optional) zero-pad for nicer sorting: f"{forget_count:02d}"
-    out_csv = Path("results") / args.method / (
-        f"{args.dataset_name}_{args.model_name}_unlearned_"
-        f"{args.method}_forget{forget_count}_model_metrics_lr{args.unlearn_rate}.csv"
+    out_csv = Path(args.out_csv).expanduser() if args.out_csv else (
+        Path("results") / args.method / (
+            f"{args.dataset_name}_{args.model_name}_unlearned_"
+            f"{args.method}_forget{forget_count}_model_metrics_lr{args.unlearn_rate}.csv"
+        )
     )
     out_csv.parent.mkdir(parents=True, exist_ok=True)
 
