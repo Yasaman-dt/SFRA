@@ -10,6 +10,7 @@ from typing import Optional, List
 # Resolve the results directory relative to this repo so the script works on
 # Linux/macOS/Windows without editing the path by hand.
 base_dir = Path(__file__).resolve().parents[1] / "results_single_class"
+table_dir = base_dir / "tables"
 
 DATASETS = ["cifar10", "cifar100", "tiny_imagenet"]
 
@@ -59,6 +60,9 @@ FORGET_CLASS_FILTERS = {
 # requested ablation. This is currently enforced for the expanded
 # TinyImageNet/ViT-B/16 experiment while its remaining runs are being added.
 REQUIRED_COMPLETE_CLASS_SETS = {
+    ("cifar100", "vit-b-16"): {
+        0, 10, 20, 30, 40, 50, 60, 70, 80, 90
+    },
     ("tiny_imagenet", "vit-b-16"): {
         0, 20, 40, 60, 80, 100, 120, 140, 160, 180
     },
@@ -1983,7 +1987,8 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
         bottom_vspace=(mdl == "resnet18"),
     )
 
-    out = base_dir / f"latex_table_{slugify(mdl)}_single_class.tex"
+    table_dir.mkdir(parents=True, exist_ok=True)
+    out = table_dir / f"latex_table_{slugify(mdl)}_single_class.tex"
     with open(out, "w", encoding="utf-8") as f:
         f.write(latex)
     print(f"[OK] wrote: {out}")

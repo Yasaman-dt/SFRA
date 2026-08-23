@@ -3,7 +3,7 @@
 This script reads the per-forget-class files produced by
 retain_forget_assigned_confidence.py, e.g.
 
-  results/bad_teacher/confidence_tables/
+  results_single_class/analysis/confidence_tables/bad_teacher/
     cifar10_resnet18_bad_teacher_lr0.001_fg0_correct_retain_vs_forget_assigned.csv
     ...
     cifar10_resnet18_bad_teacher_lr0.001_fg9_correct_retain_vs_forget_assigned.csv
@@ -20,7 +20,7 @@ assigned samples contribute proportionally more to the average.
 
 Example:
     python plots_tables/aggregate_confidence_by_forget_class.py \
-      --root results/bad_teacher/confidence_tables \
+      --root results_single_class/analysis/confidence_tables/bad_teacher \
       --method bad_teacher \
       --dataset cifar10 \
       --model_name resnet18 \
@@ -74,8 +74,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--root",
         type=Path,
-        default=Path("results/bad_teacher/confidence_tables"),
-        help="Directory containing *_correct_retain_vs_forget_assigned.csv files.",
+        default=None,
+        help=(
+            "Directory containing *_correct_retain_vs_forget_assigned.csv files. "
+            "Default: results_single_class/analysis/confidence_tables/<method>."
+        ),
     )
     parser.add_argument("--method", default="bad_teacher")
     parser.add_argument("--dataset", default="cifar10")
@@ -110,7 +113,15 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Also include the total retain/forget counts used in the weighted averages.",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.root is None:
+        args.root = (
+            Path("results_single_class")
+            / "analysis"
+            / "confidence_tables"
+            / args.method
+        )
+    return args
 
 
 def slugify(value: str) -> str:

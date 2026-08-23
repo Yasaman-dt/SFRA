@@ -269,7 +269,7 @@ CUDA_VISIBLE_DEVICES=0 python plots_tables/synthetic_real_alignment.py \
   --seeds 0 \
   --N 1000 --M 100 \
   --skip_retain_pass \
-  --output_dir results/alignment_analysis_smoke
+  --output_dir results_single_class/analysis/alignment_analysis_smoke
 ```
 
 Then run the full CIFAR-10/ResNet-18 analysis with the settings used by the
@@ -283,7 +283,7 @@ CUDA_VISIBLE_DEVICES=0 python plots_tables/synthetic_real_alignment.py \
   --forget_classes 0 1 2 3 4 5 6 7 8 9 \
   --seeds 0 \
   --N 500000 --M 500 \
-  --output_dir results/alignment_analysis
+  --output_dir results_single_class/analysis/alignment_analysis
 ```
 
 Omitting `--skip_retain_pass` preserves the original generator's RNG-consuming
@@ -321,7 +321,7 @@ This script evaluates the unlearned model on real test samples and measures how 
 
 ```bash
 python plots_tables/aggregate_confidence_by_forget_class.py \
-  --root results/bad_teacher/confidence_tables \
+  --root results_single_class/analysis/confidence_tables/bad_teacher \
   --method bad_teacher \
   --dataset cifar10 \
   --model_name resnet18 \

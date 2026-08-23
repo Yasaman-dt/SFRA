@@ -116,7 +116,10 @@ def parse_args() -> argparse.Namespace:
         "--out_dir",
         type=Path,
         default=None,
-        help="Output directory. Default: results/<method>/confidence_tables",
+        help=(
+            "Output directory. Default: "
+            "results_single_class/analysis/confidence_tables/<method>"
+        ),
     )
     parser.add_argument(
         "--precision",
@@ -396,7 +399,10 @@ def main() -> None:
         pin_memory=device.type == "cuda",
     )
 
-    out_dir = args.out_dir or Path("results") / args.method / "confidence_tables"
+    out_dir = (
+        args.out_dir
+        or Path("results_single_class") / "analysis" / "confidence_tables" / args.method
+    )
 
     for forget_class in forget_classes:
         checkpoint = args.checkpoint or checkpoint_for(

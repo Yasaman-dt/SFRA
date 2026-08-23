@@ -37,6 +37,15 @@ parser.add_argument('--lr', type=float, default=5e-5)
 parser.add_argument('--epochs', type=int, default=500)
 parser.add_argument('--base-dir', type=str, default='/export/livia/home/vision/Zdehghani/classification/exps',
                     help='Base directory where checkpoints and experiment folders are stored')
+parser.add_argument(
+    '--output-dir',
+    type=str,
+    default='results_single_class',
+    help=(
+        'Root directory for revival CSVs and per-class plots '
+        '(default: results_single_class).'
+    ),
+)
 
 parser.add_argument(
     '--forget',
@@ -97,6 +106,7 @@ except KeyError:
 
 # ------------------ Load Pre-Trained ResNet-18 and Run the Function ------------------
 DIR = args.base_dir
+OUTPUT_DIR = Path(args.output_dir).expanduser()
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 seed=42
@@ -114,7 +124,7 @@ save_dir2 = os.path.join(DIR, "tsne/tsne_prob")
 os.makedirs(save_dir1, exist_ok=True)
 os.makedirs(save_dir2, exist_ok=True)
 
-AGG_CSV_DIR = os.path.join("results", method)
+AGG_CSV_DIR = OUTPUT_DIR / method
 AGG_CSV_PATH = os.path.join(
     AGG_CSV_DIR,
     f"{dataset_name}_{model_name}_unlearned_{method}_revival_by_forget_class_lr{lr}.csv"
@@ -483,8 +493,14 @@ for forget_class in forget_classes:
     print(f"\n================= FORGET CLASS {forget_class} =================")
 
     # per-class experiment folder
-    experiment_path = Path(
-        f"results/{method}/plots_{dataset_name}_{model_name}_lr{lr}_rpc{retain_top_k}_fpc{per_retain_for_forget}/forget_class_{forget_class}"
+    experiment_path = (
+        OUTPUT_DIR
+        / method
+        / (
+            f"plots_{dataset_name}_{model_name}_lr{lr}_"
+            f"rpc{retain_top_k}_fpc{per_retain_for_forget}"
+        )
+        / f"forget_class_{forget_class}"
     )
     experiment_path.mkdir(parents=True, exist_ok=True)
 

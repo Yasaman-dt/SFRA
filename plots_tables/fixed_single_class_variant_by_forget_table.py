@@ -100,6 +100,9 @@ RESNET18_EXTENDED_CLASSES = {
 MODEL_DATASET_CLASS_OVERRIDES = {
     ("resnet18", "cifar100"): RESNET18_EXTENDED_CLASSES["cifar100"],
     ("resnet18", "tiny_imagenet"): RESNET18_EXTENDED_CLASSES["tiny_imagenet"],
+    ("vit-b-16", "cifar100"): [
+        0, 10, 20, 30, 40, 50, 60, 70, 80, 90
+    ],
     ("vit-b-16", "tiny_imagenet"): [
         0, 20, 40, 60, 80, 100, 120, 140, 160, 180
     ],
@@ -116,7 +119,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--sourcefree_root", type=Path, default=Path("results_single_class"))
     parser.add_argument("--pra_root", type=Path, default=Path("pra_single"))
     parser.add_argument("--linear_probe_root", type=Path, default=Path("linear_probe_single"))
-    parser.add_argument("--out_dir", type=Path, default=Path("tables"))
+    parser.add_argument(
+        "--out_dir",
+        type=Path,
+        default=Path("results_single_class/tables"),
+    )
     parser.add_argument("--methods", nargs="+", default=None)
     parser.add_argument("--precision", type=int, default=2)
     parser.add_argument("--rs_precision", type=int, default=3)
@@ -473,6 +480,11 @@ def write_latex_one(
     class_header = " & ".join(str(c) for c in classes)
     caption_extra = f" {caption_suffix}" if caption_suffix else ""
     is_five_class_table = len(classes) <= 5
+    compact_cifar100_vit = (
+        args.dataset == "cifar100"
+        and args.model_name == "vit-b-16"
+        and len(classes) == 10
+    )
     table_environment = "table" if is_five_class_table else "table*"
     lines = [
         rf"\begin{{{table_environment}}}[t]",
@@ -494,12 +506,16 @@ def write_latex_one(
     # Five-class parts occupy one WACV column each; ten-class tables span both.
     font_size = r"\fontsize{5.5}{5.8}\selectfont" if is_five_class_table else r"\scriptsize"
     tabcolsep = "1.5pt" if is_five_class_table else "2pt"
-    arraystretch = "0.72" if is_five_class_table else "0.80"
+    arraystretch = (
+        "0.72"
+        if is_five_class_table
+        else "0.70" if compact_cifar100_vit else "0.80"
+    )
     compact_numbers = False
     number_scale = 1.0
     resize_width = (
         r"0.85\textwidth"
-        if args.model_name == "resnet18"
+        if args.model_name == "resnet18" or compact_cifar100_vit
         else r"\textwidth"
     )
     lines.extend([

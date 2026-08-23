@@ -79,7 +79,10 @@ def parse_args() -> argparse.Namespace:
         default="/export/livia/home/vision/Zdehghani/classification/exps",
     )
     parser.add_argument("--results_root", default="results_single_class")
-    parser.add_argument("--output_dir", default="results/alignment_analysis")
+    parser.add_argument(
+        "--output_dir",
+        default="results_single_class/analysis/alignment_analysis",
+    )
     parser.add_argument(
         "--append", action="store_true",
         help=(

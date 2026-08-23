@@ -34,11 +34,17 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--input", type=Path,
-        default=Path("results/alignment_analysis/combined/alignment_per_class_seed_combined.csv"),
+        default=Path(
+            "results_single_class/analysis/alignment_analysis/combined/"
+            "alignment_per_class_seed_combined.csv"
+        ),
     )
     parser.add_argument(
         "--output", type=Path,
-        default=Path("results/alignment_analysis/combined/alignment_per_class_table_combined.tex"),
+        default=Path(
+            "results_single_class/analysis/alignment_analysis/combined/"
+            "alignment_per_class_table_combined.tex"
+        ),
     )
     parser.add_argument("--classes", type=int, nargs="+", default=list(range(10)))
     parser.add_argument("--precision", type=int, default=2)

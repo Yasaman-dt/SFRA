@@ -43,12 +43,17 @@ METHOD_ORDER = [
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--root", default="results/alignment_analysis")
+    parser.add_argument(
+        "--root", default="results_single_class/analysis/alignment_analysis"
+    )
     parser.add_argument(
         "--input_dirs", nargs="+",
         default=["bad_teacher", "delete", "scrub", "retrained"],
     )
-    parser.add_argument("--output_dir", default="results/alignment_analysis/combined")
+    parser.add_argument(
+        "--output_dir",
+        default="results_single_class/analysis/alignment_analysis/combined",
+    )
     return parser.parse_args()
 
 
