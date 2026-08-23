@@ -69,8 +69,9 @@ def _slug(s: str) -> str:
     return "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in s)
 
 def _load_df(base: Path, ds: str, mdl: str) -> pd.DataFrame:
-    per_file = base / f"z_standardized_selected_all_methods_{_slug(ds)}_{_slug(mdl)}.csv"
-    global_file = base / "z_standardized_selected_all_methods.csv"
+    csv_base = base / "csvs"
+    per_file = csv_base / f"z_standardized_selected_all_methods_{_slug(ds)}_{_slug(mdl)}.csv"
+    global_file = csv_base / "z_standardized_selected_all_methods.csv"
     if per_file.exists():
         df = pd.read_csv(per_file)
     else:

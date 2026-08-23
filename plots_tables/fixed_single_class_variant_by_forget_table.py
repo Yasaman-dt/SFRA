@@ -163,11 +163,12 @@ def class_list(args: argparse.Namespace) -> list[int]:
 
 
 def sourcefree_candidates(root: Path, dataset: str, model_name: str) -> list[Path]:
+    csv_root = root / "csvs"
     return [
-        root / f"z_standardized_selected_all_methods_{dataset}_{model_name}.csv",
-        root / f"z_standardized_revival_all_methods_{dataset}_{model_name}.csv",
-        root / "z_standardized_selected_all_methods.csv",
-        root / "z_standardized_revival_all_methods.csv",
+        csv_root / f"z_standardized_selected_all_methods_{dataset}_{model_name}.csv",
+        csv_root / f"z_standardized_revival_all_methods_{dataset}_{model_name}.csv",
+        csv_root / "z_standardized_selected_all_methods.csv",
+        csv_root / "z_standardized_revival_all_methods.csv",
     ]
 
 

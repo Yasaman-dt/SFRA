@@ -11,6 +11,7 @@ from typing import Optional, List
 # Linux/macOS/Windows without editing the path by hand.
 base_dir = Path(__file__).resolve().parents[1] / "results_single_class"
 table_dir = base_dir / "tables"
+csv_dir = base_dir / "csvs"
 
 DATASETS = ["cifar10", "cifar100", "tiny_imagenet"]
 
@@ -820,30 +821,31 @@ for ds in DATASETS:
 # ------------- Write merged outputs -------------
 if all_rows:
     merged = pd.concat(all_rows, ignore_index=True)
+    csv_dir.mkdir(parents=True, exist_ok=True)
 
     # (A) Global merged (all datasets/models)
-    global_merged = base_dir / "z_standardized_selected_all_methods.csv"
+    global_merged = csv_dir / "z_standardized_selected_all_methods.csv"
     merged.to_csv(global_merged, index=False)
 
     (merged[merged["phase"] == "unlearned"]
-        .to_csv(base_dir / "z_standardized_forget_all_methods.csv", index=False))
+        .to_csv(csv_dir / "z_standardized_forget_all_methods.csv", index=False))
     (merged[merged["phase"] == "revival"]
-        .to_csv(base_dir / "z_standardized_revival_all_methods.csv", index=False))
+        .to_csv(csv_dir / "z_standardized_revival_all_methods.csv", index=False))
     (merged[merged["phase"] == "original"]
-        .to_csv(base_dir / "z_standardized_original_all_methods.csv", index=False))
+        .to_csv(csv_dir / "z_standardized_original_all_methods.csv", index=False))
 
     # (B) Per-(dataset, model) files
     for (ds_i, mdl_i), df_i in merged.groupby(["dataset", "model"], dropna=False):
         ds_tag  = slugify(ds_i)
         mdl_tag = slugify(mdl_i)
 
-        out_merged = base_dir / f"z_standardized_selected_all_methods_{ds_tag}_{mdl_tag}.csv"
+        out_merged = csv_dir / f"z_standardized_selected_all_methods_{ds_tag}_{mdl_tag}.csv"
         df_i.to_csv(out_merged, index=False)
 
         for ph in ["unlearned", "revival", "original"]:
             df_ph = df_i[df_i["phase"] == ph]
             if not df_ph.empty:
-                out_ph = base_dir / f"z_standardized_{ph}_all_methods_{ds_tag}_{mdl_tag}.csv"
+                out_ph = csv_dir / f"z_standardized_{ph}_all_methods_{ds_tag}_{mdl_tag}.csv"
                 df_ph.to_csv(out_ph, index=False)
 
     print("Saved global:", global_merged)
@@ -861,7 +863,7 @@ else:
 
 # ==== Per-model LaTeX tables ====
 
-merged_path = base_dir / "z_standardized_selected_all_methods.csv"
+merged_path = csv_dir / "z_standardized_selected_all_methods.csv"
 df_all = pd.read_csv(merged_path)
 
 for c in ALL_METRIC_COLS:

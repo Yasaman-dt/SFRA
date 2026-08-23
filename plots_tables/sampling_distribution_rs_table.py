@@ -210,11 +210,12 @@ def load_gaussian_rs(
     classes: Iterable[int],
 ) -> pd.DataFrame:
     """Load Gaussian RS2 from standardized single-class revival results."""
+    csv_root = single_root / "csvs"
     candidates = [
-        single_root / f"z_standardized_revival_all_methods_{dataset}_{model_name}.csv",
-        single_root / f"z_standardized_selected_all_methods_{dataset}_{model_name}.csv",
-        single_root / "z_standardized_revival_all_methods.csv",
-        single_root / "z_standardized_selected_all_methods.csv",
+        csv_root / f"z_standardized_revival_all_methods_{dataset}_{model_name}.csv",
+        csv_root / f"z_standardized_selected_all_methods_{dataset}_{model_name}.csv",
+        csv_root / "z_standardized_revival_all_methods.csv",
+        csv_root / "z_standardized_selected_all_methods.csv",
     ]
     path = next((p for p in candidates if p.is_file()), None)
     if path is None:
