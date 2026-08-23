@@ -568,11 +568,6 @@ def plot_figure(
         panel_fig.tight_layout()
         separate_path = output_path.with_name(f"{output_path.stem}_{tag}{suffix}")
         panel_fig.savefig(separate_path, dpi=600, bbox_inches="tight")
-        if suffix.lower() != ".pdf":
-            panel_fig.savefig(
-                separate_path.with_suffix(".pdf"),
-                bbox_inches="tight",
-            )
         plt.close(panel_fig)
 
 
@@ -735,8 +730,6 @@ def main():
     for tag in ["a_feature_tsne", "b_logit_tsne"]:
         separate_path = output_path.with_name(f"{output_path.stem}_{tag}{suffix}")
         print(f"[saved] {separate_path.resolve()}")
-        if suffix.lower() != ".pdf":
-            print(f"[saved] {separate_path.with_suffix('.pdf').resolve()}")
 
 
 if __name__ == "__main__":
