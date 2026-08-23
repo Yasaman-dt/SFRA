@@ -52,6 +52,10 @@ MODEL_LABELS = {
 }
 
 SCORES = ["softmax", "entropy", "energy"]
+METHODS_EXCLUDED_BY_MODEL = {
+    "vit-b-16": {"boundary_shrink"},
+    "swin-t": {"boundary_shrink"},
+}
 SCORE_LABELS = {
     "softmax": "Softmax",
     "entropy": "Entropy",
@@ -155,16 +159,41 @@ def summarize(frame: pd.DataFrame) -> pd.DataFrame:
     )
 
 
+def summarize_across_classes(
+    frame: pd.DataFrame, classes: list[int]
+) -> pd.DataFrame:
+    """Average classes within each seed, then summarize across audit seeds."""
+    if frame.empty:
+        return pd.DataFrame()
+    wanted = set(classes)
+    per_seed = (
+        frame[frame["forget_class"].isin(wanted)]
+        .groupby(["method", "uncertainty_score", "seed"], as_index=False)
+        .agg(rs_class_average=("RS", "mean"), classes=("forget_class", "nunique"))
+    )
+    # Do not report an average based on an incomplete set of forget classes.
+    per_seed = per_seed[per_seed["classes"].eq(len(wanted))]
+    return (
+        per_seed.groupby(["method", "uncertainty_score"], as_index=False)
+        .agg(
+            rs_mean=("rs_class_average", "mean"),
+            rs_std=("rs_class_average", "std"),
+            seeds=("seed", "nunique"),
+        )
+    )
+
+
 def format_cell(
     mean: float,
     std: float,
     seeds: int,
     args: argparse.Namespace,
     bold: bool = False,
+    show_std: bool = True,
 ) -> str:
     if seeds < args.min_seeds or pd.isna(mean):
         return "-"
-    if pd.isna(std):
+    if not show_std or pd.isna(std):
         cell = rf"${mean:.{args.precision}f}$"
         return rf"\textbf{{{cell}}}" if bold else cell
     cell = (
@@ -174,15 +203,20 @@ def format_cell(
     return rf"\textbf{{{cell}}}" if bold else cell
 
 
-def make_latex(summary: pd.DataFrame, args: argparse.Namespace) -> str:
+def make_latex(
+    summary: pd.DataFrame,
+    average_summary: pd.DataFrame,
+    args: argparse.Namespace,
+) -> str:
     model_label = MODEL_LABELS.get(args.model_name, args.model_name)
     caption = args.caption or (
         "Uncertainty-score ablation on CIFAR-10 using a "
-        f"{model_label} backbone. Each entry reports RS mean "
-        r"$\pm$ standard deviation across three independent audit seeds."
+        f"{model_label} backbone. Per-class entries report RS mean "
+        r"$\pm$ standard deviation across three independent audit seeds. "
+        r"Avg. reports the mean RS across forget classes and seeds."
     )
     label = args.label or f"tab:uncertainty_per_class_{args.model_name.replace('-', '_')}"
-    columns = "l|l|" + "c" * len(args.classes)
+    columns = "l|l|" + "c" * len(args.classes) + "|c"
     lines = [
         r"\begin{table*}[h]",
         r"\color{red}",
@@ -197,8 +231,9 @@ def make_latex(summary: pd.DataFrame, args: argparse.Namespace) -> str:
         r"\toprule",
         rf"\multirow{{2}}{{*}}{{Unlearning Method}} & "
         rf"\multirow{{2}}{{*}}{{Uncertainty}} & "
-        rf"\multicolumn{{{len(args.classes)}}}{{c}}{{Forget Class}} \\",
-        " & & " + " & ".join(str(value) for value in args.classes) + r" \\",
+        rf"\multicolumn{{{len(args.classes)}}}{{c|}}{{Forget Class}} & "
+        rf"\multirow{{2}}{{*}}{{Avg.}} \\",
+        " & & " + " & ".join(str(value) for value in args.classes) + r" & \\",
         r"\midrule",
     ]
 
@@ -207,6 +242,12 @@ def make_latex(summary: pd.DataFrame, args: argparse.Namespace) -> str:
         lookup = {
             (row.method, row.uncertainty_score, int(row.forget_class)): row
             for row in summary.itertuples(index=False)
+        }
+    average_lookup = {}
+    if not average_summary.empty:
+        average_lookup = {
+            (row.method, row.uncertainty_score): row
+            for row in average_summary.itertuples(index=False)
         }
     for method_index, method in enumerate(args.methods):
         if method_index:
@@ -220,6 +261,13 @@ def make_latex(summary: pd.DataFrame, args: argparse.Namespace) -> str:
                 and int(lookup[(method, score, forget_class)].seeds) >= args.min_seeds
             ]
             best_by_class[forget_class] = max(eligible) if eligible else np.nan
+        eligible_averages = [
+            average_lookup[(method, score)].rs_mean
+            for score in SCORES
+            if (method, score) in average_lookup
+            and int(average_lookup[(method, score)].seeds) >= args.min_seeds
+        ]
+        best_average = max(eligible_averages) if eligible_averages else np.nan
         for score_index, score in enumerate(SCORES):
             method_cell = (
                 rf"\multirow{{{len(SCORES)}}}{{*}}{{{METHOD_LABELS.get(method, method)}}}"
@@ -243,6 +291,22 @@ def make_latex(summary: pd.DataFrame, args: argparse.Namespace) -> str:
                         ),
                     )
                 )
+            average_row = average_lookup.get((method, score))
+            cells.append(
+                "-"
+                if average_row is None
+                else format_cell(
+                    average_row.rs_mean,
+                    average_row.rs_std,
+                    int(average_row.seeds),
+                    args,
+                    bold=(
+                        pd.notna(best_average)
+                        and np.isclose(average_row.rs_mean, best_average)
+                    ),
+                    show_std=False,
+                )
+            )
             lines.append(" & ".join(cells) + r" \\")
     lines.extend(
         [r"\bottomrule", r"\end{tabular}%", r"}", r"\end{table*}"]
@@ -252,14 +316,23 @@ def make_latex(summary: pd.DataFrame, args: argparse.Namespace) -> str:
 
 def main() -> None:
     args = parse_args()
+    excluded = METHODS_EXCLUDED_BY_MODEL.get(args.model_name, set())
+    args.methods = [method for method in args.methods if method not in excluded]
     frame = load_runs(args)
     summary = summarize(frame)
+    average_summary = summarize_across_classes(frame, args.classes)
     output = args.out or (
         args.root / f"cifar10_{args.model_name}_uncertainty_per_class_rs_table.tex"
     )
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(make_latex(summary, args), encoding="utf-8")
-    summary.to_csv(output.with_suffix(".csv"), index=False)
+    output.write_text(make_latex(summary, average_summary, args), encoding="utf-8")
+    average_for_csv = average_summary.copy()
+    if not average_for_csv.empty:
+        average_for_csv["forget_class"] = "Avg."
+    csv_summary = pd.concat(
+        [summary, average_for_csv], ignore_index=True, sort=False
+    )
+    csv_summary.to_csv(output.with_suffix(".csv"), index=False)
     print(f"[OK] wrote {output}")
     print(f"[OK] wrote {output.with_suffix('.csv')}")
 
