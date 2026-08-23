@@ -703,7 +703,9 @@ def main():
         )
     )
     output_path = Path(args.out) if args.out else Path(
-        "results",
+        "results_single_class",
+        "plots",
+        "plots_tsne",
         args.method,
         default_stem,
     )

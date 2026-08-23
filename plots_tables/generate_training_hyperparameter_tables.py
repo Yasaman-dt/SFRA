@@ -47,7 +47,7 @@ def parse_args() -> argparse.Namespace:
         "--exps-dir",
         default="/export/livia/home/vision/Zdehghani/classification/exps",
     )
-    parser.add_argument("--output-dir", default="results/hyperparameters")
+    parser.add_argument("--output-dir", default="hyperparameters")
     parser.add_argument("--unlearning-model", default="resnet18")
     parser.add_argument(
         "--lr-source-dir", default="results/hyperparameters",

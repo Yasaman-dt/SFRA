@@ -278,6 +278,7 @@ for mdl in MODELS:
     panel = PANEL_TAGS.get(mdl, f"{MODEL_PRETTY.get(mdl, mdl)}")
 
     out_pdf = OUT_DIR / f"fig_RS_violin_{mdl}.pdf"
+    fig.savefig(out_pdf, bbox_inches="tight")
     if SAVE_PNG_TOO:
         fig.savefig(out_pdf.with_suffix(".png"), dpi=300, bbox_inches="tight")
 
@@ -388,38 +389,34 @@ else:
         ax.set_xticks(range(1, len(labels) + 1))
         ax.set_xticklabels([])
         
-    for i, lab in enumerate(labels, start=1):
-        lines = lab.split("\n")
-    
-        # --- Method name (BIGGER + BOLD) ---
-        ax.text(
-            i,
-            -0.03,
-            lines[0],
-            transform=ax.get_xaxis_transform(),
-            rotation=45,
-            ha="right",
-            va="top",
-            fontsize=11,          # bigger
-            fontweight="bold"
-        )
-    
-        # --- Conference name (SMALLER) ---
-        if len(lines) > 1:
+        for i, lab in enumerate(labels, start=1):
+            lines = lab.split("\n")
+
+            # --- Method name (BIGGER + BOLD) ---
             ax.text(
                 i,
-                -0.15,
-                lines[1],
+                -0.03,
+                lines[0],
                 transform=ax.get_xaxis_transform(),
                 rotation=45,
                 ha="right",
                 va="top",
-                fontsize=7           # smaller
+                fontsize=11,
+                fontweight="bold"
             )
-                                            
-        for t in ax.get_xticklabels():
-            t.set_fontsize(12)
-            t.set_ha("center")
+
+            # --- Conference name (SMALLER) ---
+            if len(lines) > 1:
+                ax.text(
+                    i,
+                    -0.15,
+                    lines[1],
+                    transform=ax.get_xaxis_transform(),
+                    rotation=45,
+                    ha="right",
+                    va="top",
+                    fontsize=7
+                )
 
         ax.set_ylim(-0.02, 1.02)
         ax.yaxis.set_major_locator(MultipleLocator(0.2))
@@ -428,20 +425,11 @@ else:
         ax.set_ylabel("RS")
         ax.set_xlabel("Unlearning Method")
         ax.xaxis.set_label_coords(0.5, -0.9)
-        
 
         ax.set_axisbelow(True)
         ax.grid(True, axis="y", linestyle="--", linewidth=0.6, alpha=0.25)
 
         out_png = OUT_DIR / f"fig_RS_violin_{mdl}_{ds}_single.png"
-
-        fig.savefig(out_pdf, bbox_inches="tight")
-
-        if SAVE_PNG_TOO:
-            fig.savefig(out_png, dpi=600, bbox_inches="tight")
-
+        fig.savefig(out_png, dpi=600, bbox_inches="tight")
         plt.close(fig)
-
-        print("[OK] saved", out_pdf)
-        if SAVE_PNG_TOO:
-            print("[OK] saved", out_png)
+        print("[OK] saved", out_png)
