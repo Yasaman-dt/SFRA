@@ -277,13 +277,13 @@ for mdl in MODELS:
 
     panel = PANEL_TAGS.get(mdl, f"{MODEL_PRETTY.get(mdl, mdl)}")
 
-    out_pdf = OUT_DIR / f"fig_RS_violin_{mdl}.pdf"
-    fig.savefig(out_pdf, bbox_inches="tight")
+    out_png = OUT_DIR / f"fig_RS_violin_{mdl}.png"
     if SAVE_PNG_TOO:
-        fig.savefig(out_pdf.with_suffix(".png"), dpi=300, bbox_inches="tight")
+        fig.savefig(out_png, dpi=300, bbox_inches="tight")
 
     plt.close(fig)
-    print("[OK] saved", out_pdf)
+    if SAVE_PNG_TOO:
+        print("[OK] saved", out_png)
 
 
 # --------------------------
