@@ -43,6 +43,7 @@ from plots_tables.tsne_real_gaussian_probes import (  # noqa: E402
     make_feature_extractor,
 )
 from utils import get_dataset, get_transforms  # noqa: E402
+from plots_tables.method_colors import get_method_color  # noqa: E402
 
 
 METHOD_ORDER = [
@@ -89,31 +90,31 @@ DISPLAY_NAMES = {
 
 METHOD_STYLES = {
     "bad_teacher": {
-        "color": "#1f77b4", "marker": "o", "linestyle": ":",
+        "color": get_method_color("bad_teacher"), "marker": "o", "linestyle": ":",
     },
     "delete": {
-        "color": "#ff7f0e", "marker": "s", "linestyle": "--",
+        "color": get_method_color("delete"), "marker": "s", "linestyle": "--",
     },
     "gradient_ascent": {
-        "color": "#2ca02c", "marker": "^", "linestyle": "-.",
+        "color": get_method_color("gradient_ascent"), "marker": "^", "linestyle": "-.",
     },
     "random_label": {
-        "color": "#d62728", "marker": "D", "linestyle": "--",
+        "color": get_method_color("random_label"), "marker": "D", "linestyle": "--",
     },
     "salun": {
-        "color": "#9467bd", "marker": "X", "linestyle": ":",
+        "color": get_method_color("salun"), "marker": "X", "linestyle": ":",
     },
     "retrained": {
-        "color": "#8c564b", "marker": "P", "linestyle": "-.",
+        "color": get_method_color("retrained"), "marker": "P", "linestyle": "-.",
     },
     "finetune": {
-        "color": "#e377c2", "marker": "v", "linestyle": "--",
+        "color": get_method_color("finetune"), "marker": "v", "linestyle": "--",
     },
     "neggrad_plus": {
-        "color": "#7f7f7f", "marker": "*", "linestyle": ":",
+        "color": get_method_color("neggrad_plus"), "marker": "*", "linestyle": ":",
     },
     "l2ul_adv": {
-        "color": "#17becf", "marker": "h", "linestyle": "-.",
+        "color": get_method_color("l2ul_adv"), "marker": "h", "linestyle": "-.",
     },
 }
 
@@ -272,9 +273,46 @@ def trim_after_forget_saturation(frontier, epsilon_pp=SATURATION_EPSILON_PP):
     return frontier[frontier["retain_accuracy"] >= highest_retain_at_saturation].copy()
 
 
-def plot_results(all_tradeoffs, all_trajectories, output_dir):
+def plot_results(all_tradeoffs, all_trajectories, output_dir, expected_seeds=None):
     frame = pd.concat(all_tradeoffs, ignore_index=True)
     trajectories = pd.concat(all_trajectories, ignore_index=True)
+
+    if expected_seeds:
+        expected_seeds = set(expected_seeds)
+        tradeoff_seeds = frame.groupby("method")["seed"].agg(
+            lambda values: set(values.astype(int))
+        )
+        trajectory_seeds = trajectories.groupby("method")["seed"].agg(
+            lambda values: set(values.astype(int))
+        )
+        complete_methods = {
+            method
+            for method in set(tradeoff_seeds.index) & set(trajectory_seeds.index)
+            if expected_seeds.issubset(tradeoff_seeds[method])
+            and expected_seeds.issubset(trajectory_seeds[method])
+        }
+        incomplete_methods = sorted(
+            (set(frame["method"]) | set(trajectories["method"])) - complete_methods
+        )
+        for method in incomplete_methods:
+            available = sorted(
+                set(tradeoff_seeds.get(method, set()))
+                & set(trajectory_seeds.get(method, set()))
+            )
+            missing = sorted(expected_seeds - set(available))
+            print(
+                f"[warn] Excluding incomplete method {method}; "
+                f"missing seeds {missing}."
+            )
+        frame = frame[frame["method"].isin(complete_methods)].copy()
+        trajectories = trajectories[
+            trajectories["method"].isin(complete_methods)
+        ].copy()
+        if frame.empty or trajectories.empty:
+            raise ValueError(
+                f"No methods contain all requested seeds {sorted(expected_seeds)}."
+            )
+
     frame.to_csv(output_dir / "retain_forget_tradeoff_all_methods.csv", index=False)
     summary = frame.groupby(
         ["method", "allowed_retain_drop_pp"], sort=False
@@ -311,15 +349,30 @@ def plot_results(all_tradeoffs, all_trajectories, output_dir):
         std = frontier["forget_std"].fillna(0.0).to_numpy(dtype=float)
         axis.fill_between(
             x, mean - std, mean + std,
-            color=style.get("color"), alpha=0.16, linewidth=0,
+            color=style.get("color"), alpha=0.08, linewidth=0,
         )
         axis.plot(
-            x, mean, linewidth=1.8, markersize=5,
+            x, mean, linewidth=2.2, markersize=6,
             markevery=max(1, len(x) // 7),
             label=DISPLAY_NAMES.get(method, method), **style,
         )
-    axis.set_xlabel(r"Retain accuracy, $\mathcal{A}_r$ (\%)")
-    axis.set_ylabel(r"Forget accuracy, $\mathcal{A}_f$ (\%)")
+
+        # The Pareto and saturation filters may remove the unlearned
+        # checkpoint. Show its epoch-0 operating point explicitly.
+        epoch_zero = method_runs[method_runs["epoch"].eq(0)]
+        if not epoch_zero.empty:
+            axis.scatter(
+                epoch_zero["retain_accuracy"].mean(),
+                epoch_zero["forget_accuracy"].mean(),
+                color=style.get("color"),
+                marker=style.get("marker", "o"),
+                s=48,
+                edgecolors="black",
+                linewidths=0.65,
+                zorder=5,
+            )
+    axis.set_xlabel(r"$\mathcal{A}^{t}_r$")
+    axis.set_ylabel(r"$\mathcal{A}^{t}_f$")
     axis.grid(alpha=0.25)
     legend = axis.legend(
         frameon=True, fancybox=False, framealpha=1.0,
@@ -327,85 +380,12 @@ def plot_results(all_tradeoffs, all_trajectories, output_dir):
         ncol=1, fontsize=7, markerscale=0.6,
         handlelength=2.4, handletextpad=0.6,
         borderpad=0.35, labelspacing=0.25,
-        loc="lower left",
+        loc="upper left",
     )
     legend.get_frame().set_linewidth(0.6)
     fig.tight_layout()
     fig.savefig(output_dir / "retain_forget_tradeoff.png", dpi=300, bbox_inches="tight")
     plt.close(fig)
-
-    # Scatter view with the global Pareto frontier. Retain drop is minimized;
-    # forget gain is maximized.
-    fig, axis = plt.subplots(figsize=(6.6, 4.4))
-    for method in plot_order:
-        style = METHOD_STYLES.get(method, {})
-        method_runs = frame[frame["method"].eq(method)]
-        axis.scatter(
-            method_runs["actual_retain_drop_pp"],
-            method_runs["forget_accuracy_gain_pp"],
-            color=style.get("color"), marker=style.get("marker", "o"),
-            s=18, alpha=0.16, linewidths=0,
-        )
-
-        part = summary[summary["method"].eq(method)]
-        axis.scatter(
-            part["actual_retain_drop_mean"], part["forget_gain_mean"],
-            color=style.get("color"), marker=style.get("marker", "o"),
-            s=52, alpha=0.95, edgecolors="white", linewidths=0.55,
-            label=DISPLAY_NAMES.get(method, method), zorder=3,
-        )
-
-    candidates = (
-        summary[["actual_retain_drop_mean", "forget_gain_mean"]]
-        .dropna()
-        .groupby("actual_retain_drop_mean", as_index=False)["forget_gain_mean"]
-        .max()
-        .sort_values(["actual_retain_drop_mean", "forget_gain_mean"],
-                     ascending=[True, False])
-    )
-    frontier_rows = []
-    best_gain = float("-inf")
-    for row in candidates.itertuples(index=False):
-        if row.forget_gain_mean > best_gain + 1e-12:
-            frontier_rows.append(
-                (float(row.actual_retain_drop_mean), float(row.forget_gain_mean))
-            )
-            best_gain = float(row.forget_gain_mean)
-
-    if frontier_rows:
-        frontier_x = np.asarray([row[0] for row in frontier_rows])
-        frontier_y = np.asarray([row[1] for row in frontier_rows])
-        axis.fill_between(
-            frontier_x, 0.0, frontier_y, step="post",
-            color="#f2b45f", alpha=0.13, linewidth=0,
-            label="Dominated region",
-        )
-        axis.step(
-            frontier_x, frontier_y, where="post", color="#c97900",
-            linewidth=2.0, label="Global Pareto frontier", zorder=4,
-        )
-
-    axis.axhline(0.0, color="0.55", linewidth=0.8, linestyle="--", zorder=0)
-    axis.axvline(0.0, color="0.55", linewidth=0.8, linestyle="--", zorder=0)
-    axis.set_xlabel(
-        r"Retain-accuracy drop, $\Delta\mathcal{A}_r$ (percentage points)"
-    )
-    axis.set_ylabel(
-        r"Forget-accuracy gain, $\Delta\mathcal{A}_f$ (percentage points)"
-    )
-    axis.grid(alpha=0.22)
-    axis.legend(frameon=False, ncol=1, fontsize=9)
-    axis.annotate(
-        "Preferred",
-        xy=(0.015, 0.96), xytext=(0.16, 0.83),
-        xycoords="axes fraction", textcoords="axes fraction",
-        arrowprops={"arrowstyle": "->", "color": "0.3", "linewidth": 1.0},
-        color="0.3", fontsize=9,
-    )
-    fig.tight_layout()
-    fig.savefig(output_dir / "retain_forget_pareto.png", dpi=300, bbox_inches="tight")
-    plt.close(fig)
-
 
 def load_tradeoff_with_gains(path):
     """Load a trade-off CSV and derive gain columns for legacy saved runs."""
@@ -527,7 +507,7 @@ def main():
     ]
     if not trajectories:
         raise FileNotFoundError(f"No trajectory CSVs found below {output_dir}")
-    plot_results(tradeoffs, trajectories, output_dir)
+    plot_results(tradeoffs, trajectories, output_dir, expected_seeds=args.seeds)
     print(f"[saved] {output_dir.resolve()}")
 
 

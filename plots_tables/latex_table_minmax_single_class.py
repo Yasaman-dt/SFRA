@@ -1425,7 +1425,7 @@ def render_table_for(ds: str, mdl: str, df_src: pd.DataFrame):
     if SHOW_TRAIN_METRICS:
         cap = (
             f"{ds_latex} / {mdl_latex} — Comparison of PRA and "
-            f"the proposed Source-Free Relearning Audit (SFRA). PRA uses five real "
+            f"the proposed SFRA. PRA uses five real "
             f"forget-class samples and retain-constrained $\\alpha$ selection. "
             f"Retain accuracy is mean$\\pm$std and relearning "
             f"forget accuracy is reported as $({{\\min}},{{\\max}})$."
@@ -1433,7 +1433,7 @@ def render_table_for(ds: str, mdl: str, df_src: pd.DataFrame):
     else:
         cap = (
             f"{ds_latex} / {mdl_latex} — Comparison of PRA and "
-            f"the proposed Source-Free Relearning Audit (SFRA). PRA uses five real "
+            f"the proposed SFRA. PRA uses five real "
             f"forget-class samples and retain-constrained $\\alpha$ selection. "
             f"Retain accuracy is mean$\\pm$std and relearning "
             f"forget accuracy is reported as $({{\\min}},{{\\max}})$."
@@ -2000,8 +2000,8 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
     )
 
     caption = (
-        f"Comparison of unlearning methods using the proposed Source-Free "
-        f"Relearning Audit (SFRA) and {compared_baselines} on {mdl_latex} models "
+        f"Comparison of unlearning methods using SFRA and {compared_baselines} "
+        f"on {mdl_latex} models "
         f"under single-class unlearning across three datasets. For all model "
         f"variants, retain accuracy $\\mathcal{{A}}^t_r$ is reported as the "
         f"mean $\\pm$ standard deviation across forget classes, while "
@@ -2011,7 +2011,7 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
         f"Within each dataset block, "
         r"\textbf{bold} and \underline{underlined} values denote the highest "
         r"and second-highest displayed values, respectively, for both RS and "
-        r"$\Delta$RS across PRA, the proposed audit, and all enabled baselines."
+        r"$\Delta$RS across PRA, SFRA, and all enabled baselines."
     )
 
 

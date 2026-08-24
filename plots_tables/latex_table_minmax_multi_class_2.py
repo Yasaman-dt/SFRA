@@ -1551,13 +1551,13 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
         if SHOW_LINEAR_PROBE
         else "the source-dependent PRA baseline"
     )
-    caption = ( f"Comparison of unlearning methods under the proposed Source-Free "
-                f"Relearning Audit (SFRA) and {compared_baselines} for 2-class unlearning "
+    caption = ( f"Comparison of unlearning methods under the proposed SFRA and "
+                f"{compared_baselines} for 2-class unlearning "
                 f"on CIFAR-10 and CIFAR-100 with ResNet-18. "
                rf"$\Delta$RS denotes the difference from the retrained control under the same audit variant. "
                rf"\textbf{{Bold}} and \underline{{underlined}} values denote the highest "
                rf"and second-highest displayed values, respectively, for both RS and "
-               rf"$\Delta$RS across PRA, the proposed audit, and all enabled baselines.")
+               rf"$\Delta$RS across PRA, the proposed SFRA, and all enabled baselines.")
     
 
 
