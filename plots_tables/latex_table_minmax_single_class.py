@@ -57,24 +57,55 @@ FORGET_CLASS_FILTERS = {
     "tiny_imagenet": {0, 20, 40, 60, 80, 100, 120, 140, 160, 180}
 }
 
+# Architecture-specific paper subsets override the dataset-wide filters.
+MODEL_DATASET_FORGET_CLASS_FILTERS = {
+    ("cifar100", "swin-t"): {0, 20, 40, 60, 80},
+    ("tiny_imagenet", "swin-t"): {0, 40, 80, 120, 160},
+}
+
 # Do not summarize a partial set as though it represented the complete
-# requested ablation. This is currently enforced for the expanded
-# TinyImageNet/ViT-B/16 experiment while its remaining runs are being added.
+# requested ablation. Incomplete method/phase blocks remain in the generated
+# standardized CSV, but are excluded from the rendered aggregate tables.
 REQUIRED_COMPLETE_CLASS_SETS = {
+    ("cifar10", "resnet18"): set(range(10)),
+    ("cifar100", "resnet18"): {
+        0, 10, 20, 30, 40, 50, 60, 70, 80, 90
+    },
+    ("tiny_imagenet", "resnet18"): {
+        0, 20, 40, 60, 80, 100, 120, 140, 160, 180
+    },
     ("cifar100", "vit-b-16"): {
         0, 10, 20, 30, 40, 50, 60, 70, 80, 90
     },
     ("tiny_imagenet", "vit-b-16"): {
         0, 20, 40, 60, 80, 100, 120, 140, 160, 180
     },
+    ("cifar10", "swin-t"): set(range(10)),
+    ("cifar100", "swin-t"): {
+        0, 20, 40, 60, 80
+    },
+    ("tiny_imagenet", "swin-t"): {
+        0, 40, 80, 120, 160
+    },
 }
+
+# Avoid printing the same incomplete-PRA warning repeatedly while rendering
+# multiple rows and architecture tables.
+_WARNED_INCOMPLETE_PRA: set[tuple] = set()
 
 def _apply_forget_filter(df: pd.DataFrame, dataset: str) -> pd.DataFrame:
     """
     If a filter is defined for this dataset, keep only rows whose forget_class
     is in the allowed set. Works whether forget_class is str or numeric.
     """
-    allowed = FORGET_CLASS_FILTERS.get(dataset)
+    model = None
+    if "model" in df.columns:
+        model_values = df["model"].dropna().astype(str).unique()
+        if len(model_values) == 1:
+            model = model_values[0]
+    allowed = MODEL_DATASET_FORGET_CLASS_FILTERS.get(
+        (dataset, model), FORGET_CLASS_FILTERS.get(dataset)
+    )
     if not allowed or "forget_class" not in df.columns:
         return df
 
@@ -591,6 +622,8 @@ def summarize_pra_results(
 
     model_values = d["model"].dropna().astype(str).unique()
     model = model_values[0] if len(model_values) else ""
+    method_values = d["method"].dropna().astype(str).unique()
+    method = method_values[0] if len(method_values) else "unknown"
     if not _complete_requested_classes(d, dataset, model):
         required = REQUIRED_COMPLETE_CLASS_SETS.get((dataset, model), set())
         present = set(
@@ -599,10 +632,15 @@ def summarize_pra_results(
             .astype(int)
             .tolist()
         )
-        print(
-            f"[WARN] Ignoring incomplete PRA results for {dataset}/{model}; "
-            f"missing forget classes {sorted(required - present)}"
-        )
+        missing = tuple(sorted(required - present))
+        warning_key = (dataset, model, method, missing)
+        if warning_key not in _WARNED_INCOMPLETE_PRA:
+            print(
+                f"[WARN] Ignoring incomplete PRA results for "
+                f"{dataset}/{model}/{method}; "
+                f"missing forget classes {list(missing)}"
+            )
+            _WARNED_INCOMPLETE_PRA.add(warning_key)
         return pd.DataFrame()
 
     for col in [
