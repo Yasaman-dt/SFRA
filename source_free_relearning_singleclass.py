@@ -78,6 +78,18 @@ parser.add_argument('--retain_per_class', type=int, default=500,
                     help='Top-K retain synthetic embeddings per non-forget class (after sorting by confidence).')
 parser.add_argument('--forget_per_class', type=int, default=10,
                     help='Bottom-K (low-conf) synthetic embeddings per non-forget class used as forget samples.')
+parser.add_argument(
+    '--randomize_forget_row', action='store_true',
+    help=(
+        'Replace the designated forget class weight and bias in the released '
+        'classifier head with a fresh random initialization before synthetic '
+        'probe generation and relearning.'
+    ),
+)
+parser.add_argument(
+    '--random_head_seed', type=int, default=42,
+    help='Base seed for --randomize_forget_row (the forget-class index is added to it).',
+)
 
 
 
@@ -125,9 +137,14 @@ os.makedirs(save_dir1, exist_ok=True)
 os.makedirs(save_dir2, exist_ok=True)
 
 AGG_CSV_DIR = OUTPUT_DIR / method
+ablation_tag = (
+    f"_random_forget_row_seed{args.random_head_seed}"
+    if args.randomize_forget_row else ""
+)
 AGG_CSV_PATH = os.path.join(
     AGG_CSV_DIR,
-    f"{dataset_name}_{model_name}_unlearned_{method}_revival_by_forget_class_lr{lr}.csv"
+    f"{dataset_name}_{model_name}_unlearned_{method}"
+    f"_revival_by_forget_class_lr{lr}{ablation_tag}.csv"
 )
 os.makedirs(AGG_CSV_DIR, exist_ok=True)
 
@@ -271,6 +288,37 @@ def _get_final_linear(model, num_classes):
         if isinstance(module, nn.Linear) and module.out_features == num_classes:
             return module
     raise RuntimeError("Could not find final Linear layer with out_features == num_classes.")
+
+
+@torch.no_grad()
+def randomize_classifier_row(model, num_classes, class_index, seed):
+    """Reinitialize one classifier row without modifying any other parameters."""
+    fc = _get_final_linear(model, num_classes)
+    if not 0 <= class_index < fc.out_features:
+        raise ValueError(
+            f"class_index={class_index} is outside [0, {fc.out_features - 1}]"
+        )
+
+    # Match torch.nn.Linear.reset_parameters(): U(-1/sqrt(fan_in), 1/sqrt(fan_in)).
+    bound = 1.0 / math.sqrt(fc.in_features)
+    generator = torch.Generator(device='cpu')
+    generator.manual_seed(int(seed))
+    new_weight = torch.empty(fc.in_features, dtype=torch.float32).uniform_(
+        -bound, bound, generator=generator
+    )
+    fc.weight[class_index].copy_(
+        new_weight.to(device=fc.weight.device, dtype=fc.weight.dtype)
+    )
+
+    if fc.bias is not None:
+        new_bias = torch.empty(1, dtype=torch.float32).uniform_(
+            -bound, bound, generator=generator
+        )
+        fc.bias[class_index].copy_(
+            new_bias[0].to(device=fc.bias.device, dtype=fc.bias.dtype)
+        )
+
+    return fc
 
 
 
@@ -498,7 +546,7 @@ for forget_class in forget_classes:
         / method
         / (
             f"plots_{dataset_name}_{model_name}_lr{lr}_"
-            f"rpc{retain_top_k}_fpc{per_retain_for_forget}"
+            f"rpc{retain_top_k}_fpc{per_retain_for_forget}{ablation_tag}"
         )
         / f"forget_class_{forget_class}"
     )
@@ -514,6 +562,16 @@ for forget_class in forget_classes:
 
     ckpt = checkpoint_for(method, dataset_name, model_name, forget_class, lr, DIR)
     model = load_model(ckpt, model_name, dataset_name, num_classes).to(device).eval()
+    if args.randomize_forget_row:
+        row_seed = args.random_head_seed + forget_class
+        randomize_classifier_row(
+            model, num_classes, class_index=forget_class, seed=row_seed
+        )
+        print(
+            f"[Ablation] Reinitialized classifier row {forget_class} "
+            f"with seed {row_seed}; all encoder parameters and other "
+            "classifier rows are unchanged."
+        )
 
     # --- transforms & datasets ---
     wo_dataaug = False
