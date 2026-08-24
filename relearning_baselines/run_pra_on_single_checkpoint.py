@@ -829,18 +829,31 @@ def main():
     print(f'PRA support samples are drawn from the {args.attack_split} split.')
 
     results = []
+    out_path = None
     if args.checkpoint is not None:
         if not os.path.isfile(args.checkpoint):
             raise FileNotFoundError(f'Checkpoint not found: {args.checkpoint}')
         if len(forget_classes) != 1:
             print('A single explicit checkpoint was provided, so only the first forget class will be evaluated.')
-        results.append(evaluate_one_checkpoint(args.checkpoint, args, forget_classes[0], num_classes, device, attackset, testset, transform_train, transform_test))
+        result = evaluate_one_checkpoint(
+            args.checkpoint, args, forget_classes[0], num_classes, device,
+            attackset, testset, transform_train, transform_test,
+        )
+        results.append(result)
+        out_path = append_results_to_csv([result], args)
+        print(f"Saved PRA result for forget class {result['forget_class']} to: {out_path}")
     else:
         for forget_class in forget_classes:
             checkpoint_path = checkpoint_for(args.method, args.dataset, args.model_name, forget_class, args.lr, args.base_dir)
             if not os.path.isfile(checkpoint_path):
                 raise FileNotFoundError(f'Checkpoint not found: {checkpoint_path}')
-            results.append(evaluate_one_checkpoint(checkpoint_path, args, forget_class, num_classes, device, attackset, testset, transform_train, transform_test))
+            result = evaluate_one_checkpoint(
+                checkpoint_path, args, forget_class, num_classes, device,
+                attackset, testset, transform_train, transform_test,
+            )
+            results.append(result)
+            out_path = append_results_to_csv([result], args)
+            print(f'Saved PRA result for forget class {forget_class} to: {out_path}')
 
     print('\nSummary')
     for item in results:
@@ -858,8 +871,7 @@ def main():
     mean_acc_r = float(np.nanmean([item['acc_r'] for item in results]))
     print(f'\nMean over runs: acc_f={mean_acc_f:.2f}% acc_r={mean_acc_r:.2f}%')
 
-    out_path = append_results_to_csv(results, args)
-    print(f'CSV saved to: {out_path}')
+    print(f'CSV updated incrementally at: {out_path}')
 
 
 if __name__ == '__main__':
