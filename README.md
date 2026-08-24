@@ -364,3 +364,59 @@ CUDA_VISIBLE_DEVICES=2 python -m ablation.synthesis_strategy_ablation \
   --lr 0.001 \
   --forget_classes 0 1 2 3 4 5 6 7 8 9
 ```
+
+### Uncertainty-score ablation
+
+This experiment compares Softmax confidence, predictive entropy, and energy
+for selecting probes from the same accepted Gaussian candidate pool. It runs
+all CIFAR-10 forget classes (`0`--`9`) for three independent audit seeds
+(`0`, `1`, and `2`) and trains the classifier head for up to 500 epochs. One
+launcher processes all enabled unlearning methods sequentially for a selected
+architecture.
+
+Run the three architectures on separate GPUs with:
+
+```bash
+mkdir -p logs
+
+# GPU 0: all ResNet-18 methods
+nohup bash ablation/run_uncertainty_all_methods_one_arch.sh \
+  0 resnet18 \
+  > logs/uncertainty_resnet18_all_methods.log 2>&1 &
+
+# GPU 1: all ViT-B/16 methods
+nohup bash ablation/run_uncertainty_all_methods_one_arch.sh \
+  1 vit-b-16 \
+  > logs/uncertainty_vit_b16_all_methods.log 2>&1 &
+
+# GPU 2: all Swin-T methods
+nohup bash ablation/run_uncertainty_all_methods_one_arch.sh \
+  2 swin-t \
+  > logs/uncertainty_swin_t_all_methods.log 2>&1 &
+```
+
+By default, all run-level and summary CSV files are saved under:
+
+```text
+results_uncertainty_ablation_cifar10_all_classes_500ep/
+```
+
+An optional third launcher argument overrides this output directory:
+
+```bash
+bash ablation/run_uncertainty_all_methods_one_arch.sh \
+  0 resnet18 custom_uncertainty_results
+```
+
+After the runs finish, generate one per-class RS table for each architecture:
+
+```bash
+python plots_tables/uncertainty_per_class_rs_table.py --model resnet18
+python plots_tables/uncertainty_per_class_rs_table.py --model vit-b-16
+python plots_tables/uncertainty_per_class_rs_table.py --model swin-t
+```
+
+The table cells report RS mean $\pm$ standard deviation across the three audit
+seeds, and the final `Avg.` column reports the mean RS across forget classes
+and seeds. The generated `.tex` and `.csv` tables are saved in the same
+uncertainty-ablation results directory.
