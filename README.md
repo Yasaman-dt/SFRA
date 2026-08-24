@@ -156,7 +156,7 @@ CUDA_VISIBLE_DEVICES=2 python -m relearning_baselines.run_pra_on_single_checkpoi
   --model resnet18 \
   --method boundary_shrink \
   --lr 1e-08 \
-  --forget 0,20,40,60,80 \
+  --forget 0,10,20,30,40,50,60,70,80,90 \
   --n-percent 100.0 \
   --num-samples-per-class 5 \
   --pra-metric cosine \
@@ -185,7 +185,7 @@ CUDA_VISIBLE_DEVICES=2 python -m relearning_baselines.run_linear_probe_single_ch
   --dataset tiny_imagenet \
   --model vit-b-16 \
   --method delete \
-  --forget 0,40,80,120,160 \
+  --forget 0,20,40,60,80,100,120,140,160,180 \
   --lr 0.001
 ```
 
