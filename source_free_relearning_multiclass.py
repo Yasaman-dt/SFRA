@@ -77,7 +77,10 @@ parser.add_argument(
 parser.add_argument(
     '--output_dir',
     default=None,
-    help='Directory for aggregate CSV and experiment outputs. Defaults to results/<method>.',
+    help=(
+        'Directory for aggregate CSV and experiment outputs. '
+        'Defaults to results_multi/<method>.'
+    ),
 )
 
 
@@ -119,7 +122,7 @@ save_dir2 = os.path.join(DIR, "tsne/tsne_prob")
 os.makedirs(save_dir1, exist_ok=True)
 os.makedirs(save_dir2, exist_ok=True)
 
-AGG_CSV_DIR = args.output_dir or os.path.join("results", method)
+AGG_CSV_DIR = args.output_dir or os.path.join("results_multi", method)
 AGG_CSV_PATH_SINGLE = os.path.join(
     AGG_CSV_DIR, f"{dataset_name}_{model_name}_unlearned_{method}_revival_by_forget_class_lr{lr}.csv"
 )
