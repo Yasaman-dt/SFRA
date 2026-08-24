@@ -72,7 +72,7 @@ CUDA_VISIBLE_DEVICES=0 python test_original_model.py --datasets cifar10 	--model
 
 ---
 
-## 4. Apply unleanring methods:
+## 4. Apply unlearning methods:
 
 **single-class setting:**
 
@@ -88,7 +88,7 @@ CUDA_VISIBLE_DEVICES=1 python main.py  --dataset_name cifar10 		--forget_class 2
 ---
 
 
-Evaluate the unlearn model:
+Evaluate the unlearned model:
 
 **single-class setting:**
 ```bash
