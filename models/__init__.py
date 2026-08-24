@@ -96,7 +96,7 @@ def get_model(model_name, dataset_name, num_classes, use_pretrained):
         )
     
     elif model_name == "vit-b-16":
-        model = ViT_16_mod(n_classes=num_classes).to('cuda')
+        model = ViT_16_mod(n_classes=num_classes)
             
     elif model_name == "swin-t":
         model = swin_tiny_patch4_window7_224(pretrained=use_pretrained, num_classes=num_classes)
@@ -107,12 +107,13 @@ def get_model(model_name, dataset_name, num_classes, use_pretrained):
     return model
 
 def load_model(model_path, model_name, dataset_name, num_classes):
-    model_ckpt = torch.load( model_path , map_location="cuda")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model_ckpt = torch.load(model_path, map_location=device)
     if isinstance(model_ckpt, dict):  
         model = get_model(model_name, dataset_name, num_classes, use_pretrained=False)
         model_ckpt = {k.replace('module.', ''): v for k, v in model_ckpt.items()}
         model.load_state_dict(model_ckpt)
     else:
         model = model_ckpt
-    model = model.to("cuda")
+    model = model.to(device)
     return model

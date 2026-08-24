@@ -79,6 +79,10 @@ parser.add_argument('--retain_per_class', type=int, default=500,
 parser.add_argument('--forget_per_class', type=int, default=10,
                     help='Bottom-K (low-conf) synthetic embeddings per non-forget class used as forget samples.')
 parser.add_argument(
+    '--seed', type=int, default=0,
+    help='Seed for Gaussian sampling, data-loader shuffling, and training.',
+)
+parser.add_argument(
     '--randomize_forget_row', action='store_true',
     help=(
         'Replace the designated forget class weight and bias in the released '
@@ -466,7 +470,7 @@ def eval_accuracy_on_loader(model, fc, loader, device):
 
 
 # --- determinism ---
-seed = 0
+seed = int(args.seed)
 random.seed(seed); np.random.seed(seed); torch.manual_seed(seed)
 if torch.cuda.is_available():
     torch.cuda.manual_seed_all(seed)

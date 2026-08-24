@@ -45,12 +45,34 @@ from plots_tables.tsne_real_gaussian_probes import (  # noqa: E402
 from utils import get_dataset, get_transforms  # noqa: E402
 
 
+METHOD_ORDER = [
+    "bad_teacher", "delete", "gradient_ascent", "random_label", "salun",
+    "retrained", "finetune", "neggrad_plus", "l2ul_adv",
+]
+
 DEFAULT_METHOD_LRS = {
-    "salun": 0.001,
-    "gradient_ascent": 5e-5,
-    "delete": 0.001,
-    "bad_teacher": 0.001,
-    "random_label": 1e-7,
+    ("cifar10", "resnet18"): {
+        "bad_teacher": 0.001,
+        "delete": 0.001,
+        "gradient_ascent": 5e-5,
+        "random_label": 1e-7,
+        "salun": 0.001,
+        "retrained": 0,
+        "finetune": 0.02,
+        "neggrad_plus": 0.5,
+        "l2ul_adv": 1e-5,
+    },
+    ("cifar100", "resnet18"): {
+        "bad_teacher": 0.001,
+        "delete": 0.001,
+        "gradient_ascent": 0.01,
+        "random_label": 1e-7,
+        "salun": 0.1,
+        "retrained": 0,
+        "finetune": 0.02,
+        "neggrad_plus": 0.5,
+        "l2ul_adv": 0.002,
+    },
 }
 
 DISPLAY_NAMES = {
@@ -59,19 +81,57 @@ DISPLAY_NAMES = {
     "delete": "DELETE",
     "bad_teacher": "Bad Teacher",
     "random_label": "Random Label",
+    "retrained": "Retrained",
+    "finetune": "Finetune",
+    "neggrad_plus": "Negative Gradient+",
+    "l2ul_adv": "Learn to Unlearn",
 }
+
+METHOD_STYLES = {
+    "bad_teacher": {
+        "color": "#1f77b4", "marker": "o", "linestyle": ":",
+    },
+    "delete": {
+        "color": "#ff7f0e", "marker": "s", "linestyle": "--",
+    },
+    "gradient_ascent": {
+        "color": "#2ca02c", "marker": "^", "linestyle": "-.",
+    },
+    "random_label": {
+        "color": "#d62728", "marker": "D", "linestyle": "--",
+    },
+    "salun": {
+        "color": "#9467bd", "marker": "X", "linestyle": ":",
+    },
+    "retrained": {
+        "color": "#8c564b", "marker": "P", "linestyle": "-.",
+    },
+    "finetune": {
+        "color": "#e377c2", "marker": "v", "linestyle": "--",
+    },
+    "neggrad_plus": {
+        "color": "#7f7f7f", "marker": "*", "linestyle": ":",
+    },
+    "l2ul_adv": {
+        "color": "#17becf", "marker": "h", "linestyle": "-.",
+    },
+}
+
+SATURATION_EPSILON_PP = 1.0
 
 
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Measure maximum SFRA forget accuracy at retain-drop constraints."
     )
-    parser.add_argument("--dataset", default="cifar10", choices=["cifar10"])
+    parser.add_argument(
+        "--dataset", default="cifar10", choices=["cifar10", "cifar100"]
+    )
     parser.add_argument("--model", "--model_name", dest="model_name", default="resnet18")
     parser.add_argument("--forget_class", type=int, default=9)
     parser.add_argument(
-        "--methods", nargs="+", default=list(DEFAULT_METHOD_LRS),
-        choices=list(DEFAULT_METHOD_LRS),
+        "--methods", nargs="+", default=METHOD_ORDER,
+        choices=METHOD_ORDER,
     )
     parser.add_argument(
         "--method_lr", action="append", default=[], metavar="METHOD=LR",
@@ -107,12 +167,19 @@ def parse_args():
 
 
 def method_lrs(args):
-    values = dict(DEFAULT_METHOD_LRS)
+    protocol = (args.dataset, args.model_name)
+    if protocol not in DEFAULT_METHOD_LRS:
+        raise ValueError(
+            f"No default checkpoint learning rates for "
+            f"dataset={args.dataset}, model={args.model_name}. "
+            "Provide a supported protocol or extend DEFAULT_METHOD_LRS."
+        )
+    values = dict(DEFAULT_METHOD_LRS[protocol])
     for item in args.method_lr:
         if "=" not in item:
             raise ValueError(f"Expected METHOD=LR, got {item!r}")
         method, value = item.split("=", 1)
-        if method not in DEFAULT_METHOD_LRS:
+        if method not in METHOD_ORDER:
             raise ValueError(f"Unknown method in --method_lr: {method}")
         values[method] = float(value)
     return values
@@ -160,6 +227,7 @@ def train_trajectory(classifier, synthetic, real, args, device, seed):
 
 def envelope(trajectory, allowed_drops):
     baseline_retain = float(trajectory.loc[trajectory["epoch"].eq(0), "retain_accuracy"].iloc[0])
+    baseline_forget = float(trajectory.loc[trajectory["epoch"].eq(0), "forget_accuracy"].iloc[0])
     rows = []
     for allowed_drop in sorted(set(allowed_drops)):
         floor = baseline_retain - allowed_drop
@@ -172,40 +240,204 @@ def envelope(trajectory, allowed_drops):
             "retain_accuracy_at_selected_epoch": best["retain_accuracy"],
             "selected_epoch": int(best["epoch"]),
             "actual_retain_drop_pp": max(0.0, baseline_retain - best["retain_accuracy"]),
+            "baseline_forget_accuracy": baseline_forget,
+            "forget_accuracy_gain_pp": float(best["forget_accuracy"] - baseline_forget),
         })
     return pd.DataFrame(rows)
 
 
-def plot_results(all_tradeoffs, output_dir):
-    frame = pd.concat(all_tradeoffs, ignore_index=True)
-    frame.to_csv(output_dir / "retain_forget_tradeoff_all_methods.csv", index=False)
-    summary = (
-        frame.groupby(["method", "allowed_retain_drop_pp"], sort=False)
-        ["max_forget_accuracy"].agg(["mean", "std", "count"]).reset_index()
+def accuracy_pareto_frontier(points):
+    """Return points not dominated when both retain and forget accuracy are maximized."""
+    ordered = points.sort_values(
+        ["retain_accuracy", "forget_accuracy"], ascending=[False, False]
     )
+    keep = []
+    best_forget = float("-inf")
+    for index, row in ordered.iterrows():
+        if float(row["forget_accuracy"]) > best_forget + 1e-12:
+            keep.append(index)
+            best_forget = float(row["forget_accuracy"])
+    return points.loc[keep].sort_values("retain_accuracy")
+
+
+def trim_after_forget_saturation(frontier, epsilon_pp=SATURATION_EPSILON_PP):
+    """Drop lower-retain points after forget accuracy is effectively saturated."""
+    if frontier.empty:
+        return frontier
+    saturation_level = float(frontier["forget_accuracy"].max()) - float(epsilon_pp)
+    saturated = frontier[frontier["forget_accuracy"] >= saturation_level]
+    if saturated.empty:
+        return frontier
+    highest_retain_at_saturation = float(saturated["retain_accuracy"].max())
+    return frontier[frontier["retain_accuracy"] >= highest_retain_at_saturation].copy()
+
+
+def plot_results(all_tradeoffs, all_trajectories, output_dir):
+    frame = pd.concat(all_tradeoffs, ignore_index=True)
+    trajectories = pd.concat(all_trajectories, ignore_index=True)
+    frame.to_csv(output_dir / "retain_forget_tradeoff_all_methods.csv", index=False)
+    summary = frame.groupby(
+        ["method", "allowed_retain_drop_pp"], sort=False
+    ).agg(
+        actual_retain_drop_mean=("actual_retain_drop_pp", "mean"),
+        actual_retain_drop_std=("actual_retain_drop_pp", "std"),
+        forget_gain_mean=("forget_accuracy_gain_pp", "mean"),
+        forget_gain_std=("forget_accuracy_gain_pp", "std"),
+        retain_accuracy_mean=("retain_accuracy_at_selected_epoch", "mean"),
+        retain_accuracy_std=("retain_accuracy_at_selected_epoch", "std"),
+        forget_accuracy_mean=("max_forget_accuracy", "mean"),
+        forget_accuracy_std=("max_forget_accuracy", "std"),
+        count=("forget_accuracy_gain_pp", "count"),
+    ).reset_index()
     summary.to_csv(output_dir / "retain_forget_tradeoff_summary.csv", index=False)
 
     plt.rcParams.update({"font.family": "serif", "font.size": 11})
     fig, axis = plt.subplots(figsize=(6.6, 4.4))
-    for method in frame["method"].drop_duplicates():
-        part = summary[summary["method"].eq(method)].sort_values("allowed_retain_drop_pp")
-        yerr = part["std"].fillna(0.0)
-        axis.errorbar(
-            part["allowed_retain_drop_pp"], part["mean"], yerr=yerr,
-            marker="o", linewidth=1.8, capsize=2.5, label=DISPLAY_NAMES.get(method, method),
+    methods_present = list(trajectories["method"].drop_duplicates())
+    plot_order = [method for method in METHOD_STYLES if method in methods_present]
+    plot_order.extend(method for method in methods_present if method not in plot_order)
+    for method in plot_order:
+        style = METHOD_STYLES.get(method, {})
+        method_runs = trajectories[trajectories["method"].eq(method)]
+        epoch_summary = method_runs.groupby("epoch", as_index=False).agg(
+            retain_accuracy=("retain_accuracy", "mean"),
+            forget_accuracy=("forget_accuracy", "mean"),
+            forget_std=("forget_accuracy", "std"),
         )
-    axis.set_xlabel("Maximum allowed retain-accuracy drop (percentage points)")
-    axis.set_ylabel("Maximum forget accuracy (%)")
+        frontier = accuracy_pareto_frontier(epoch_summary)
+        frontier = trim_after_forget_saturation(frontier)
+        x = frontier["retain_accuracy"].to_numpy(dtype=float)
+        mean = frontier["forget_accuracy"].to_numpy(dtype=float)
+        std = frontier["forget_std"].fillna(0.0).to_numpy(dtype=float)
+        axis.fill_between(
+            x, mean - std, mean + std,
+            color=style.get("color"), alpha=0.16, linewidth=0,
+        )
+        axis.plot(
+            x, mean, linewidth=1.8, markersize=5,
+            markevery=max(1, len(x) // 7),
+            label=DISPLAY_NAMES.get(method, method), **style,
+        )
+    axis.set_xlabel(r"Retain accuracy, $\mathcal{A}_r$ (\%)")
+    axis.set_ylabel(r"Forget accuracy, $\mathcal{A}_f$ (\%)")
     axis.grid(alpha=0.25)
-    axis.legend(frameon=False, ncol=2)
+    legend = axis.legend(
+        frameon=True, fancybox=False, framealpha=1.0,
+        facecolor="white", edgecolor="0.65",
+        ncol=1, fontsize=7, markerscale=0.6,
+        handlelength=2.4, handletextpad=0.6,
+        borderpad=0.35, labelspacing=0.25,
+        loc="lower left",
+    )
+    legend.get_frame().set_linewidth(0.6)
     fig.tight_layout()
     fig.savefig(output_dir / "retain_forget_tradeoff.png", dpi=300, bbox_inches="tight")
-    fig.savefig(output_dir / "retain_forget_tradeoff.pdf", bbox_inches="tight")
     plt.close(fig)
+
+    # Scatter view with the global Pareto frontier. Retain drop is minimized;
+    # forget gain is maximized.
+    fig, axis = plt.subplots(figsize=(6.6, 4.4))
+    for method in plot_order:
+        style = METHOD_STYLES.get(method, {})
+        method_runs = frame[frame["method"].eq(method)]
+        axis.scatter(
+            method_runs["actual_retain_drop_pp"],
+            method_runs["forget_accuracy_gain_pp"],
+            color=style.get("color"), marker=style.get("marker", "o"),
+            s=18, alpha=0.16, linewidths=0,
+        )
+
+        part = summary[summary["method"].eq(method)]
+        axis.scatter(
+            part["actual_retain_drop_mean"], part["forget_gain_mean"],
+            color=style.get("color"), marker=style.get("marker", "o"),
+            s=52, alpha=0.95, edgecolors="white", linewidths=0.55,
+            label=DISPLAY_NAMES.get(method, method), zorder=3,
+        )
+
+    candidates = (
+        summary[["actual_retain_drop_mean", "forget_gain_mean"]]
+        .dropna()
+        .groupby("actual_retain_drop_mean", as_index=False)["forget_gain_mean"]
+        .max()
+        .sort_values(["actual_retain_drop_mean", "forget_gain_mean"],
+                     ascending=[True, False])
+    )
+    frontier_rows = []
+    best_gain = float("-inf")
+    for row in candidates.itertuples(index=False):
+        if row.forget_gain_mean > best_gain + 1e-12:
+            frontier_rows.append(
+                (float(row.actual_retain_drop_mean), float(row.forget_gain_mean))
+            )
+            best_gain = float(row.forget_gain_mean)
+
+    if frontier_rows:
+        frontier_x = np.asarray([row[0] for row in frontier_rows])
+        frontier_y = np.asarray([row[1] for row in frontier_rows])
+        axis.fill_between(
+            frontier_x, 0.0, frontier_y, step="post",
+            color="#f2b45f", alpha=0.13, linewidth=0,
+            label="Dominated region",
+        )
+        axis.step(
+            frontier_x, frontier_y, where="post", color="#c97900",
+            linewidth=2.0, label="Global Pareto frontier", zorder=4,
+        )
+
+    axis.axhline(0.0, color="0.55", linewidth=0.8, linestyle="--", zorder=0)
+    axis.axvline(0.0, color="0.55", linewidth=0.8, linestyle="--", zorder=0)
+    axis.set_xlabel(
+        r"Retain-accuracy drop, $\Delta\mathcal{A}_r$ (percentage points)"
+    )
+    axis.set_ylabel(
+        r"Forget-accuracy gain, $\Delta\mathcal{A}_f$ (percentage points)"
+    )
+    axis.grid(alpha=0.22)
+    axis.legend(frameon=False, ncol=1, fontsize=9)
+    axis.annotate(
+        "Preferred",
+        xy=(0.015, 0.96), xytext=(0.16, 0.83),
+        xycoords="axes fraction", textcoords="axes fraction",
+        arrowprops={"arrowstyle": "->", "color": "0.3", "linewidth": 1.0},
+        color="0.3", fontsize=9,
+    )
+    fig.tight_layout()
+    fig.savefig(output_dir / "retain_forget_pareto.png", dpi=300, bbox_inches="tight")
+    plt.close(fig)
+
+
+def load_tradeoff_with_gains(path):
+    """Load a trade-off CSV and derive gain columns for legacy saved runs."""
+    tradeoff = pd.read_csv(path)
+    if "forget_accuracy_gain_pp" in tradeoff.columns:
+        return tradeoff
+
+    seed_text = path.stem.removeprefix("tradeoff_seed")
+    trajectory_path = path.with_name(f"trajectory_seed{seed_text}.csv")
+    if not trajectory_path.exists():
+        raise FileNotFoundError(
+            f"Cannot derive forget-accuracy gain without {trajectory_path}"
+        )
+    trajectory = pd.read_csv(trajectory_path)
+    baseline_rows = trajectory[trajectory["epoch"].eq(0)]
+    if baseline_rows.empty:
+        raise ValueError(f"No epoch-0 baseline in {trajectory_path}")
+    baseline_forget = float(baseline_rows["forget_accuracy"].iloc[0])
+    tradeoff["baseline_forget_accuracy"] = baseline_forget
+    tradeoff["forget_accuracy_gain_pp"] = (
+        tradeoff["max_forget_accuracy"] - baseline_forget
+    )
+    return tradeoff
 
 
 def main():
     args = parse_args()
+    num_classes = {"cifar10": 10, "cifar100": 100}[args.dataset]
+    if not 0 <= args.forget_class < num_classes:
+        raise ValueError(
+            f"forget_class must be in [0, {num_classes - 1}] for {args.dataset}."
+        )
     if args.generated_per_class < args.retain_per_class + args.forget_per_class:
         raise ValueError("generated_per_class must cover both disjoint selected subsets.")
     if any(value < 0 for value in args.allowed_retain_drops):
@@ -235,10 +467,10 @@ def main():
             if not Path(checkpoint).exists():
                 raise FileNotFoundError(f"Checkpoint not found: {checkpoint}")
             model = load_checkpoint_model(
-                checkpoint, args.model_name, args.dataset, 10, device
+                checkpoint, args.model_name, args.dataset, num_classes, device
             )
-            feature_model = make_feature_extractor(model, 10, device)
-            _, classifier = get_final_linear(model, 10)
+            feature_model = make_feature_extractor(model, num_classes, device)
+            _, classifier = get_final_linear(model, num_classes)
             real_x, real_y = extract_features(feature_model, test_loader, device)
             mask = real_y.eq(args.forget_class)
             real = (
@@ -259,7 +491,7 @@ def main():
                 torch.manual_seed(seed)
                 torch.cuda.manual_seed_all(seed)
                 synthetic, _ = build_synthetic_sets_for_strategies(
-                    classifier=classifier, num_classes=10,
+                    classifier=classifier, num_classes=num_classes,
                     forget_class=args.forget_class, strategies=[strategy],
                     generated_per_class=args.generated_per_class,
                     retain_per_class=args.retain_per_class,
@@ -284,10 +516,18 @@ def main():
 
         (output_dir / "metadata.json").write_text(json.dumps(vars(args), indent=2) + "\n")
 
-    tradeoffs = [pd.read_csv(path) for path in output_dir.glob("*/tradeoff_seed*.csv")]
+    tradeoffs = [
+        load_tradeoff_with_gains(path)
+        for path in output_dir.glob("*/tradeoff_seed*.csv")
+    ]
     if not tradeoffs:
         raise FileNotFoundError(f"No trade-off CSVs found below {output_dir}")
-    plot_results(tradeoffs, output_dir)
+    trajectories = [
+        pd.read_csv(path) for path in output_dir.glob("*/trajectory_seed*.csv")
+    ]
+    if not trajectories:
+        raise FileNotFoundError(f"No trajectory CSVs found below {output_dir}")
+    plot_results(tradeoffs, trajectories, output_dir)
     print(f"[saved] {output_dir.resolve()}")
 
 
