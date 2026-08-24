@@ -44,6 +44,7 @@ DATASET_PRETTY = {"cifar10": "CIFAR-10", "cifar100": "CIFAR-100", "tiny_imagenet
 
 MODELS = ["resnet18", "vit-b-16", "swin-t", "vgg16"]
 MODEL_PRETTY = {"resnet18": "ResNet-18", "vit-b-16": "ViT-B/16", "swin-t": "Swin-T", "vgg16": "VGG-16"}
+EXCLUDED_MODELS = {"vit-s-16"}
 
 PANEL_TAGS = {
     "resnet18": "(a) ResNet-18",
@@ -145,6 +146,7 @@ def style_violin(ax, parts, facecolors, alpha=0.28, edge_lw=0.9, edge_alpha=0.95
 # Load
 # --------------------------
 df_all = pd.read_csv(merged_path)
+df_all = df_all[~df_all["model"].isin(EXCLUDED_MODELS)].copy()
 if "RS2" not in df_all.columns:
     raise KeyError("RS2 column not found in merged CSV.")
 df_all["RS2"] = pd.to_numeric(df_all["RS2"], errors="coerce")

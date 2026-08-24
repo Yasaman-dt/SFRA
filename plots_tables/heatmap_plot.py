@@ -34,6 +34,7 @@ DATASET_PRETTY = {"cifar10":"CIFAR-10", "cifar100":"CIFAR-100", "tiny_imagenet":
 
 MODELS = ["resnet18", "vit-b-16", "swin-t", "vgg16"]
 MODEL_PRETTY = {"resnet18":"ResNet-18", "vit-b-16":"ViT-B/16", "swin-t":"Swin-T", "vgg16":"VGG-16"}
+EXCLUDED_MODELS = {"vit-s-16"}
 
 METHOD_ORDER = [
     "retrained", "finetune",
@@ -71,6 +72,7 @@ def ordered_methods(present):
 # Load merged
 # --------------------------
 df = pd.read_csv(merged_path)
+df = df[~df["model"].isin(EXCLUDED_MODELS)].copy()
 df["RS2"] = pd.to_numeric(df.get("RS2"), errors="coerce")
 df = df.dropna(subset=["dataset","model","method","phase","forget_class","RS2"])
 df = df[df["phase"] == "revival"].copy()
