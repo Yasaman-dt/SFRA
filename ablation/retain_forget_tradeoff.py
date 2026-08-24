@@ -74,6 +74,17 @@ DEFAULT_METHOD_LRS = {
         "neggrad_plus": 0.5,
         "l2ul_adv": 0.002,
     },
+    ("tiny_imagenet", "resnet18"): {
+        "bad_teacher": 0.002,
+        "delete": 0.001,
+        "gradient_ascent": 5e-5,
+        "random_label": 1e-4,
+        "salun": 0.001,
+        "retrained": 0,
+        "finetune": 0.02,
+        "neggrad_plus": 0.5,
+        "l2ul_adv": 1e-5,
+    },
 }
 
 DISPLAY_NAMES = {
@@ -126,7 +137,8 @@ def parse_args():
         description="Measure maximum SFRA forget accuracy at retain-drop constraints."
     )
     parser.add_argument(
-        "--dataset", default="cifar10", choices=["cifar10", "cifar100"]
+        "--dataset", default="cifar10",
+        choices=["cifar10", "cifar100", "tiny_imagenet"],
     )
     parser.add_argument("--model", "--model_name", dest="model_name", default="resnet18")
     parser.add_argument("--forget_class", type=int, default=9)
@@ -329,7 +341,21 @@ def plot_results(all_tradeoffs, all_trajectories, output_dir, expected_seeds=Non
     ).reset_index()
     summary.to_csv(output_dir / "retain_forget_tradeoff_summary.csv", index=False)
 
-    plt.rcParams.update({"font.family": "serif", "font.size": 11})
+    plt.rcParams.update({
+        "font.family": "serif",
+        "axes.labelsize": 24,
+        "font.size": 15,
+        "legend.fontsize": 18,
+        "legend.title_fontsize": 18,
+        "xtick.labelsize": 20,
+        "ytick.labelsize": 20,
+        "text.color": "black",
+        "legend.labelcolor": "black",
+        "axes.labelcolor": "black",
+        "xtick.color": "black",
+        "ytick.color": "black",
+        "axes.edgecolor": "black",
+    })
     fig, axis = plt.subplots(figsize=(6.6, 4.4))
     methods_present = list(trajectories["method"].drop_duplicates())
     plot_order = [method for method in METHOD_STYLES if method in methods_present]
@@ -371,13 +397,13 @@ def plot_results(all_tradeoffs, all_trajectories, output_dir, expected_seeds=Non
                 linewidths=0.65,
                 zorder=5,
             )
-    axis.set_xlabel(r"$\mathcal{A}^{t}_r$")
-    axis.set_ylabel(r"$\mathcal{A}^{t}_f$")
+    axis.set_xlabel(r"$\mathcal{A}_r^t(\%)$")
+    axis.set_ylabel(r"$\mathcal{A}_f^t(\%)$")
     axis.grid(alpha=0.25)
     legend = axis.legend(
         frameon=True, fancybox=False, framealpha=1.0,
         facecolor="white", edgecolor="0.65",
-        ncol=1, fontsize=7, markerscale=0.6,
+        ncol=1, fontsize=18, markerscale=0.6,
         handlelength=2.4, handletextpad=0.6,
         borderpad=0.35, labelspacing=0.25,
         loc="upper left",
@@ -413,7 +439,11 @@ def load_tradeoff_with_gains(path):
 
 def main():
     args = parse_args()
-    num_classes = {"cifar10": 10, "cifar100": 100}[args.dataset]
+    num_classes = {
+        "cifar10": 10,
+        "cifar100": 100,
+        "tiny_imagenet": 200,
+    }[args.dataset]
     if not 0 <= args.forget_class < num_classes:
         raise ValueError(
             f"forget_class must be in [0, {num_classes - 1}] for {args.dataset}."
