@@ -1146,7 +1146,6 @@ def render_joint_table_same_dataset(mdl: str, df_src: pd.DataFrame, dataset: str
     caption = ( f"Comparison of unlearning methods under the proposed SFRA and "
                 f"{compared_baselines} for 5-class and 10-class "
                 f"unlearning on CIFAR-100 with ResNet-18. "
-               rf"$\Delta$RS denotes the difference from the retrained control under the same audit variant. "
                rf"\textbf{{bold}} and \underline{{underlined}} values denote the highest "
                rf"and second-highest displayed values, respectively, for both RS and "
                rf"$\Delta$RS across PRA, the proposed SFRA, and all enabled baselines.")

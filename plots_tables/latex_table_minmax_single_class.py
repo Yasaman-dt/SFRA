@@ -2000,7 +2000,7 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
     )
 
     caption = (
-        f"Comparison of unlearning methods using SFRA and {compared_baselines} "
+        f"Comparison of unlearning methods using our proposed SFRA and {compared_baselines} "
         f"on {mdl_latex} models "
         f"under single-class unlearning across three datasets. For all model "
         f"variants, retain accuracy $\\mathcal{{A}}^t_r$ is reported as the "
@@ -2011,7 +2011,7 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
         f"Within each dataset block, "
         r"\textbf{bold} and \underline{underlined} values denote the highest "
         r"and second-highest displayed values, respectively, for both RS and "
-        r"$\Delta$RS across PRA, SFRA, and all enabled baselines."
+        r"$\Delta$RS across PRA, our proposed SFRA, and all enabled baselines."
     )
 
 

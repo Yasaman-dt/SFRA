@@ -85,6 +85,50 @@ DEFAULT_METHOD_LRS = {
         "neggrad_plus": 0.5,
         "l2ul_adv": 1e-5,
     },
+    ("cifar10", "vit-b-16"): {
+        "bad_teacher": 0.001,
+        "delete": 0.001,
+        "gradient_ascent": 1e-5,
+        "random_label": 0.001,
+        "salun": 0.001,
+        "retrained": 0,
+        "finetune": 0.02,
+        "neggrad_plus": 0.5,
+        "l2ul_adv": 1e-5,
+    },
+    ("cifar100", "vit-b-16"): {
+        "bad_teacher": 0.01,
+        "delete": 0.001,
+        "gradient_ascent": 1e-4,
+        "random_label": 0.01,
+        "salun": 0.001,
+        "retrained": 0,
+        "finetune": 0.02,
+        "neggrad_plus": 0.5,
+        "l2ul_adv": 1e-5,
+    },
+    ("cifar10", "swin-t"): {
+        "bad_teacher": 0.01,
+        "delete": 0.001,
+        "gradient_ascent": 1e-6,
+        "random_label": 1e-6,
+        "salun": 1e-4,
+        "retrained": 0,
+        "finetune": 0.02,
+        "neggrad_plus": 0.1,
+        "l2ul_adv": 1e-6,
+    },
+    ("cifar100", "swin-t"): {
+        "bad_teacher": 0.001,
+        "delete": 0.001,
+        "gradient_ascent": 0.001,
+        "random_label": 0.001,
+        "salun": 0.01,
+        "retrained": 0,
+        "finetune": 0.02,
+        "neggrad_plus": 0.1,
+        "l2ul_adv": 1e-5,
+    },
 }
 
 DISPLAY_NAMES = {
@@ -161,6 +205,15 @@ def parse_args():
     parser.add_argument("--sample_batch_size", type=int, default=4096)
     parser.add_argument("--train_batch_size", type=int, default=256)
     parser.add_argument("--eval_batch_size", type=int, default=4096)
+    parser.add_argument(
+        "--feature_batch_size",
+        type=int,
+        default=None,
+        help=(
+            "Batch size for image-encoder feature extraction. Defaults to "
+            "--eval_batch_size; use a smaller value for memory-heavy backbones."
+        ),
+    )
     parser.add_argument("--num_workers", type=int, default=4)
     parser.add_argument("--epochs", type=int, default=500)
     parser.add_argument("--head_lr", type=float, default=0.01)
@@ -176,6 +229,11 @@ def parse_args():
     )
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--plot_only", action="store_true")
+    parser.add_argument(
+        "--save_individual_plot",
+        action="store_true",
+        help="Also save retain_forget_tradeoff.png inside the experiment directory.",
+    )
     return parser.parse_args()
 
 
@@ -285,7 +343,13 @@ def trim_after_forget_saturation(frontier, epsilon_pp=SATURATION_EPSILON_PP):
     return frontier[frontier["retain_accuracy"] >= highest_retain_at_saturation].copy()
 
 
-def plot_results(all_tradeoffs, all_trajectories, output_dir, expected_seeds=None):
+def plot_results(
+    all_tradeoffs,
+    all_trajectories,
+    output_dir,
+    expected_seeds=None,
+    save_individual_plot=False,
+):
     frame = pd.concat(all_tradeoffs, ignore_index=True)
     trajectories = pd.concat(all_trajectories, ignore_index=True)
 
@@ -410,7 +474,12 @@ def plot_results(all_tradeoffs, all_trajectories, output_dir, expected_seeds=Non
     )
     legend.get_frame().set_linewidth(0.6)
     fig.tight_layout()
-    fig.savefig(output_dir / "retain_forget_tradeoff.png", dpi=300, bbox_inches="tight")
+    if save_individual_plot:
+        fig.savefig(
+            output_dir / "retain_forget_tradeoff.png",
+            dpi=300,
+            bbox_inches="tight",
+        )
     plt.close(fig)
 
 def load_tradeoff_with_gains(path):
@@ -463,8 +532,9 @@ def main():
             args.dataset, test_transform, test_transform,
             path=Path(args.data_dir).expanduser(),
         )
+        feature_batch_size = args.feature_batch_size or args.eval_batch_size
         test_loader = DataLoader(
-            test_dataset, batch_size=args.eval_batch_size, shuffle=False,
+            test_dataset, batch_size=feature_batch_size, shuffle=False,
             num_workers=args.num_workers, pin_memory=device.type == "cuda",
         )
         strategy = Strategy("gaussian", "low_confidence", "high_confidence", "softmax")
@@ -537,7 +607,13 @@ def main():
     ]
     if not trajectories:
         raise FileNotFoundError(f"No trajectory CSVs found below {output_dir}")
-    plot_results(tradeoffs, trajectories, output_dir, expected_seeds=args.seeds)
+    plot_results(
+        tradeoffs,
+        trajectories,
+        output_dir,
+        expected_seeds=args.seeds,
+        save_individual_plot=args.save_individual_plot,
+    )
     print(f"[saved] {output_dir.resolve()}")
 
 
