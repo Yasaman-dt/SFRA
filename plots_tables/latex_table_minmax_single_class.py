@@ -26,7 +26,7 @@ methods = [
 
 
 
-MODELS   = ["resnet18", "vit-b-16", "swin-t", "vgg16"]
+MODELS   = ["resnet18", "vit-b-16", "swin-t", "vgg16", "vit-s-16"]
 
 KNOWN_METHODS = set(methods)
 
@@ -2006,12 +2006,11 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
         f"variants, retain accuracy $\\mathcal{{A}}^t_r$ is reported as the "
         f"mean $\\pm$ standard deviation across forget classes, while "
         f"forget accuracy $\\mathcal{{A}}^t_f$ is reported as "
-        f"$(\\min,\\mathrm{{avg}},\\max)$. RS and $\\Delta$RS are "
+        f"$(\\min,\\mathrm{{mean}},\\max)$. RS and $\\Delta$RS are "
         f"independently reported as maxima across forget classes. "
-        f"Within each dataset block, "
-        r"\textbf{bold} and \underline{underlined} values denote the highest "
-        r"and second-highest displayed values, respectively, for both RS and "
-        r"$\Delta$RS across PRA, our proposed SFRA, and all enabled baselines."
+        r"Within each dataset, the highest and second-highest RS and "
+        r"$\Delta$RS values are shown in \textbf{bold} and "
+        r"\underline{underlined}, respectively."
     )
 
 

@@ -1143,12 +1143,12 @@ def render_joint_table_same_dataset(mdl: str, df_src: pd.DataFrame, dataset: str
         if SHOW_LINEAR_PROBE
         else "the source-dependent PRA baseline"
     )
-    caption = ( f"Comparison of unlearning methods under the proposed SFRA and "
+    caption = ( f"Comparison of unlearning methods under our proposed SFRA and "
                 f"{compared_baselines} for 5-class and 10-class "
                 f"unlearning on CIFAR-100 with ResNet-18. "
-               rf"\textbf{{bold}} and \underline{{underlined}} values denote the highest "
-               rf"and second-highest displayed values, respectively, for both RS and "
-               rf"$\Delta$RS across PRA, the proposed SFRA, and all enabled baselines.")
+               rf"Within each forget-set-size setting, the highest and second-highest "
+               rf"RS and $\Delta$RS values are shown in \textbf{{bold}} and "
+               rf"\underline{{underlined}}, respectively.")
     
  
     label = f"tab:{slugify(ds_latex)}_{slugify(mdl_latex)}_5v10"
