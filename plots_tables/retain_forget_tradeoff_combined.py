@@ -11,10 +11,11 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from ablation.retain_forget_tradeoff import (
+from retain_delta_rs_combined import (
     DISPLAY_NAMES,
     METHOD_STYLES,
     accuracy_pareto_frontier,
+    load_complete_trajectories,
     trim_after_forget_saturation,
 )
 
@@ -57,26 +58,6 @@ def parse_args():
         ),
     )
     return parser.parse_args()
-
-
-def load_complete_trajectories(root: Path, expected_seeds):
-    frames = [pd.read_csv(path) for path in root.glob("*/trajectory_seed*.csv")]
-    if not frames:
-        raise FileNotFoundError(f"No trajectory CSVs found below {root}")
-
-    trajectories = pd.concat(frames, ignore_index=True)
-    expected_seeds = set(expected_seeds)
-    seed_sets = trajectories.groupby("method")["seed"].agg(
-        lambda values: set(values.astype(int))
-    )
-    complete = {
-        method for method, seeds in seed_sets.items()
-        if expected_seeds.issubset(seeds)
-    }
-    for method in sorted(set(trajectories["method"]) - complete):
-        missing = sorted(expected_seeds - seed_sets[method])
-        print(f"[warn] Excluding incomplete method {method}; missing seeds {missing}.")
-    return trajectories[trajectories["method"].isin(complete)].copy()
 
 
 def plot_panel(axis, trajectories, title, show_legend=False):
@@ -123,8 +104,13 @@ def plot_panel(axis, trajectories, title, show_legend=False):
             )
 
     axis.set_title(title, fontsize=18, fontweight="bold")
-    axis.set_xlabel(r"$\mathcal{A}_r^t(\%)$")
-    axis.set_ylabel(r"$\mathcal{A}_f^t(\%)$")
+    axis.set_xlabel(r"$\mathcal{A}_r^t\,(\%)$")
+    axis.set_ylabel(r"$\mathcal{A}_f^t\,(\%)$")
+    # Use a common range across all architecture figures.  The small margin
+    # below zero prevents epoch-zero markers from being clipped, while ticks
+    # begin at zero so no negative accuracy label is shown.
+    axis.set_ylim(-4, 105)
+    axis.set_yticks([0, 20, 40, 60, 80, 100])
     axis.grid(alpha=0.25)
     if show_legend:
         legend = axis.legend(

@@ -496,7 +496,7 @@ def write_latex_one(
             r"For every unlearning method, we report the unlearned model, the "
             r"source-dependent PRA baseline, our proposed SFRA, and a "
             r"linear-probe diagnostic of representation "
-            r"separability. Each forget-class column reports results for the "
+            r"separability. Each forget class column reports results for the "
             r"corresponding single-class unlearning checkpoint."
             rf"{caption_extra}}}"
         ),
