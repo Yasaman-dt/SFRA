@@ -125,7 +125,12 @@ def parse_args() -> argparse.Namespace:
         default=Path("results_single_class/tables"),
     )
     parser.add_argument("--methods", nargs="+", default=None)
-    parser.add_argument("--precision", type=int, default=2)
+    parser.add_argument(
+        "--precision",
+        type=int,
+        default=2,
+        help="Number of decimal places for retain, forget, and linear-probe accuracies.",
+    )
     parser.add_argument("--rs_precision", type=int, default=3)
     parser.add_argument(
         "--num_parts",
