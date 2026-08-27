@@ -410,13 +410,8 @@ def make_latex_table(
 ) -> str:
     if caption is None:
         caption = (
-            f"Synthesis-distribution ablation on {latex_dataset_name(dataset)} "
-            f"using a {latex_model_name(model_name)} backbone. Each entry reports "
-            "the relearning score (RS). Gaussian denotes the original source-free "
-            "relearning results, while Uniform and Laplace use the same "
-            "low-confidence forget-probe and high-confidence retain-probe "
-            "selection with their respective embedding distributions. A dash "
-            "indicates that the corresponding run is not yet available."
+            "RS for Gaussian, Uniform, and Laplace synthesis distributions on "
+            f"{latex_dataset_name(dataset)} using {latex_model_name(model_name)}."
         )
     if label is None:
         label = f"tab:{slugify(dataset)}_{slugify(model_name)}_sampling_distribution_rs"
@@ -425,14 +420,14 @@ def make_latex_table(
     colspec = "l|l|" + "c" * len(classes)
     total_cols = 2 + len(classes)
 
-    lines.append(r"\begin{table*}[t]")
+    lines.append(r"\begin{table}[t]")
     lines.append(r"\centering")
     lines.append(rf"\caption{{{caption}}}")
     lines.append(rf"\label{{{label}}}")
-    lines.append(r"\setlength{\tabcolsep}{3pt}")
-    lines.append(r"\renewcommand{\arraystretch}{1.00}")
+    lines.append(r"\setlength{\tabcolsep}{2pt}")
+    lines.append(r"\renewcommand{\arraystretch}{0.88}")
     lines.append(r"\scriptsize")
-    lines.append(r"\resizebox{0.78\textwidth}{!}{%")
+    lines.append(r"\resizebox{\columnwidth}{!}{%")
     lines.append(rf"\begin{{tabular}}{{{colspec}}}")
     lines.append(r"\toprule")
     lines.append(
@@ -468,7 +463,7 @@ def make_latex_table(
         lines.append(r"\bottomrule")
     lines.append(r"\end{tabular}%")
     lines.append(r"}")
-    lines.append(r"\end{table*}")
+    lines.append(r"\end{table}")
     return "\n".join(lines) + "\n"
 
 

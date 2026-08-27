@@ -106,6 +106,9 @@ MODEL_DATASET_CLASS_OVERRIDES = {
     ("vit-b-16", "tiny_imagenet"): [
         0, 20, 40, 60, 80, 100, 120, 140, 160, 180
     ],
+    ("swin-t", "tiny_imagenet"): [
+        0, 20, 40, 60, 80, 100, 120, 140, 160, 180
+    ],
 }
 
 
@@ -138,7 +141,6 @@ def parse_args() -> argparse.Namespace:
         default=2,
         help="Also write this many method-split LaTeX tables. Use 1 to disable split tables.",
     )
-    parser.add_argument("--no_red", action="store_true")
     return parser.parse_args()
 
 
@@ -507,8 +509,6 @@ def write_latex_one(
         ),
         rf"\label{{tab:{slugify(args.dataset)}_{slugify(args.model_name)}_variant_by_forget{label_suffix}}}",
     ]
-    if not args.no_red:
-        lines.append(r"\color{red}")
     # Five-class parts occupy one WACV column each; ten-class tables span both.
     font_size = r"\fontsize{5.5}{5.8}\selectfont" if is_five_class_table else r"\scriptsize"
     tabcolsep = "1.5pt" if is_five_class_table else "2pt"

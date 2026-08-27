@@ -82,7 +82,7 @@ def parse_args() -> argparse.Namespace:
         default=3,
         help="Show a cell only when at least this many distinct seeds exist.",
     )
-    parser.add_argument("--precision", type=int, default=3)
+    parser.add_argument("--precision", type=int, default=2)
     parser.add_argument("--out", type=Path, default=None)
     parser.add_argument("--caption", default=None)
     parser.add_argument("--label", default=None)
@@ -218,13 +218,12 @@ def make_latex(
     label = args.label or f"tab:uncertainty_per_class_{args.model_name.replace('-', '_')}"
     columns = "l|l|" + "c" * len(args.classes) + "|c"
     lines = [
-        r"\begin{table*}[h]",
-        r"\color{red}",
+        r"\begin{table*}[p]",
         r"\centering",
         rf"\caption{{{caption}}}",
         rf"\label{{{label}}}",
-        r"\setlength{\tabcolsep}{3.2pt}",
-        r"\renewcommand{\arraystretch}{1.02}",
+        r"\setlength{\tabcolsep}{2pt}",
+        r"\renewcommand{\arraystretch}{0.88}",
         r"\scriptsize",
         r"\resizebox{\textwidth}{!}{%",
         rf"\begin{{tabular}}{{{columns}}}",

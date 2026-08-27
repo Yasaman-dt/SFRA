@@ -60,7 +60,9 @@ FORGET_CLASS_FILTERS = {
 # Architecture-specific paper subsets override the dataset-wide filters.
 MODEL_DATASET_FORGET_CLASS_FILTERS = {
     ("cifar100", "swin-t"): {0, 20, 40, 60, 80},
-    ("tiny_imagenet", "swin-t"): {0, 40, 80, 120, 160},
+    ("tiny_imagenet", "swin-t"): {
+        0, 20, 40, 60, 80, 100, 120, 140, 160, 180
+    },
 }
 
 # Do not summarize a partial set as though it represented the complete
@@ -85,7 +87,7 @@ REQUIRED_COMPLETE_CLASS_SETS = {
         0, 20, 40, 60, 80
     },
     ("tiny_imagenet", "swin-t"): {
-        0, 40, 80, 120, 160
+        0, 20, 40, 60, 80, 100, 120, 140, 160, 180
     },
 }
 
@@ -708,13 +710,25 @@ def load_linear_probe_results(path: Path, dataset: str) -> pd.DataFrame:
     return d
 
 
+RANK_DISPLAY_PRECISION = 3
+
+
+def _rank_value(value):
+    """Value used for ranking, matched to the precision shown in the table."""
+    return round(float(value), RANK_DISPLAY_PRECISION)
+
+
+def _is_rank_tie(value, threshold):
+    return threshold is not None and _rank_value(value) == threshold
+
+
 def _rank_styles(values):
     """
     Given a list of numeric RS values (may contain NaN), return two thresholds:
     max_val and second_max (next distinct less-than-max). If there's no second
     distinct value, second_max is None.
     """
-    vals = sorted({float(v) for v in values if pd.notna(v)}, reverse=True)
+    vals = sorted({_rank_value(v) for v in values if pd.notna(v)}, reverse=True)
     if not vals:
         return (None, None)
     if len(vals) == 1:
@@ -725,9 +739,9 @@ def _style_rs(v, max_v, second_v):
     if pd.isna(v):
         return "-"
     val = f"{float(v):.3f}"
-    if (max_v is not None) and (abs(v - max_v) < 1e-12):
+    if _is_rank_tie(v, max_v):
         return rf"\textbf{{\boldmath ${val}$}}"
-    if (second_v is not None) and (abs(v - second_v) < 1e-12):
+    if _is_rank_tie(v, second_v):
         return rf"\underline{{$ {val} $}}"
     return rf"${val}$"
 
@@ -1029,9 +1043,9 @@ def _style_delta_text(delta, delta_max_v=None, delta_second_v=None):
     if pd.isna(delta):
         return r"\,(-)"
     text = f"({float(delta):+.3f})"
-    if (delta_max_v is not None) and (abs(delta - delta_max_v) < 1e-12):
+    if _is_rank_tie(delta, delta_max_v):
         return rf"\,\mathbf{{({float(delta):+.3f})}}"
-    if (delta_second_v is not None) and (abs(delta - delta_second_v) < 1e-12):
+    if _is_rank_tie(delta, delta_second_v):
         return rf"\,\underline{{({float(delta):+.3f})}}"
     return rf"\,{text}"
 
@@ -1041,9 +1055,9 @@ def _style_rs_delta(v, delta, max_v, second_v, delta_max_v=None, delta_second_v=
         return "-"
     val = f"{float(v):.3f}"
     delta_text = _style_delta_text(delta, delta_max_v, delta_second_v)
-    if (max_v is not None) and (abs(v - max_v) < 1e-12):
+    if _is_rank_tie(v, max_v):
         return rf"\textbf{{\boldmath ${val}{delta_text}$}}"
-    if (second_v is not None) and (abs(v - second_v) < 1e-12):
+    if _is_rank_tie(v, second_v):
         return rf"$\underline{{{val}}}{delta_text}$"
     return rf"${val}{delta_text}$"
 
@@ -1052,9 +1066,9 @@ def _style_rs_only(v, max_v, second_v):
     if pd.isna(v):
         return "-"
     val = f"{float(v):.3f}"
-    if (max_v is not None) and (abs(v - max_v) < 1e-12):
+    if _is_rank_tie(v, max_v):
         return rf"\textbf{{\boldmath ${val}$}}"
-    if (second_v is not None) and (abs(v - second_v) < 1e-12):
+    if _is_rank_tie(v, second_v):
         return rf"$\underline{{{val}}}$"
     return rf"${val}$"
 
@@ -1063,9 +1077,9 @@ def _style_delta_only(delta, delta_max_v, delta_second_v):
     if pd.isna(delta):
         return "-"
     val = f"{float(delta):+.3f}"
-    if (delta_max_v is not None) and (abs(delta - delta_max_v) < 1e-12):
+    if _is_rank_tie(delta, delta_max_v):
         return rf"$\mathbf{{{val}}}$"
-    if (delta_second_v is not None) and (abs(delta - delta_second_v) < 1e-12):
+    if _is_rank_tie(delta, delta_second_v):
         return rf"$\underline{{{val}}}$"
     return rf"${val}$"
 

@@ -70,11 +70,11 @@ def build_table(data, classes, precision):
     methods += sorted(present - set(methods))
     class_header = " & ".join(str(value) for value in classes)
     lines = [
-        r"\begin{table*}[t]", r"\centering", r"\color{red}",
-        r"\caption{Per-forget-class synthetic--real alignment and relearning scores on CIFAR-10 using ResNet-18. Values are averaged over available probe seeds; $A_{\mathrm{IP}}$ and $A_{\mathrm{cos}}$ denote inner-product and cosine alignment, respectively.}",
+        r"\begin{table}[t]", r"\centering",
+        r"\caption{Per-forget-class synthetic--real alignment and relearning scores on CIFAR-10 using ResNet-18. $A_{\mathrm{IP}}$ and $A_{\mathrm{cos}}$ denote inner-product and cosine alignment, respectively.}",
         r"\label{tab:synthetic_real_alignment_per_class}",
         r"\scriptsize", r"\setlength{\tabcolsep}{2pt}", r"\renewcommand{\arraystretch}{0.82}",
-        r"\resizebox{0.75\textwidth}{!}{%", r"\begin{tabular}{l|l|" + "c" * len(classes) + "}",
+        r"\resizebox{\columnwidth}{!}{%", r"\begin{tabular}{l|l|" + "c" * len(classes) + "}",
         r"\toprule",
         rf"\textbf{{Unlearning Method}} & \textbf{{Metric}} & \multicolumn{{{len(classes)}}}{{c}}{{\textbf{{Forget Class}}}} \\",
         rf" & & {class_header} \\", r"\midrule",
@@ -93,7 +93,7 @@ def build_table(data, classes, precision):
             lines.append(" & ".join([method_cell, metric_label, *cells]) + r" \\")
         if method_index < len(methods) - 1:
             lines.append(r"\midrule")
-    lines += [r"\bottomrule", r"\end{tabular}%", r"}", r"\end{table*}"]
+    lines += [r"\bottomrule", r"\end{tabular}%", r"}", r"\end{table}"]
     return "\n".join(lines) + "\n"
 
 

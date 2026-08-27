@@ -141,13 +141,12 @@ def make_latex(table: pd.DataFrame) -> str:
     lines = [
         r"\begin{table}[h]",
         r"\centering",
-        r"\color{red}",
         r"\caption{Robustness of SFRA to removal of the forget-class output row on CIFAR-10 with ResNet-18 and forget class~7. Provided uses the forget-class row released with the unlearned checkpoint, whereas Reinitialized replaces it with a randomly initialized row before probe generation and relearning. All other audit settings are fixed.}",
         r"\label{tab:forget_row_ablation_cifar10_resnet18_fg7}",
         r"\resizebox{\columnwidth}{!}{%",
         r"\begin{tabular}{l|cc|cc|cc}",
         r"\toprule",
-        r"Method & \multicolumn{2}{c|}{$\mathcal{A}_r^t(\%)$} & \multicolumn{2}{c|}{$\mathcal{A}_f^t(\%)$} & \multicolumn{2}{c}{RS} \\",
+        r"Unlearning Method & \multicolumn{2}{c|}{$\mathcal{A}_r^t(\%)$} & \multicolumn{2}{c|}{$\mathcal{A}_f^t(\%)$} & \multicolumn{2}{c}{RS} \\",
         r" & Provided & Reinitialized & Provided & Reinitialized & Provided & Reinitialized \\",
         r"\midrule",
     ]

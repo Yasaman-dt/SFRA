@@ -140,7 +140,6 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Output prefix. Default: tables/probe_generation_timing_architectures_fg{forget_class}.",
     )
-    parser.add_argument("--no_red", action="store_true", help="Do not color table text red.")
     return parser.parse_args()
 
 
@@ -308,7 +307,6 @@ def write_latex(
             rf"feature-space probes.{settings_phrase}}}"
         ),
         r"\label{tab:probe_generation_timing_architectures}",
-        *( [] if args.no_red else [r"\color{red}"] ),
         r"\scriptsize",
         r"\setlength{\tabcolsep}{3pt}",
         r"\renewcommand{\arraystretch}{0.95}",
@@ -387,6 +385,20 @@ def main() -> None:
     out_prefix.parent.mkdir(parents=True, exist_ok=True)
     out_tex = out_prefix.with_suffix(".tex")
     out_csv = out_prefix.with_suffix(".csv")
+
+    # The all-results artifact must never be silently replaced by a partial
+    # dataset discovery. Require at least one raw timing row for every requested
+    # dataset before overwriting that combined table.
+    if "all_results" in out_prefix.name:
+        present_datasets = {row.get("dataset", "") for row in rows}
+        missing_datasets = [
+            dataset for dataset in args.datasets if dataset not in present_datasets
+        ]
+        if missing_datasets:
+            raise RuntimeError(
+                "Refusing to overwrite the all-results timing table with partial "
+                f"inputs; missing datasets: {missing_datasets}"
+            )
 
     write_latex(rows, args, out_tex)
     write_compact_csv(rows, args, out_csv)
