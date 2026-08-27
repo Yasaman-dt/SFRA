@@ -710,7 +710,7 @@ def load_linear_probe_results(path: Path, dataset: str) -> pd.DataFrame:
     return d
 
 
-RANK_DISPLAY_PRECISION = 3
+RANK_DISPLAY_PRECISION = 2
 
 
 def _rank_value(value):
@@ -738,7 +738,7 @@ def _rank_styles(values):
 def _style_rs(v, max_v, second_v):
     if pd.isna(v):
         return "-"
-    val = f"{float(v):.3f}"
+    val = f"{float(v):.2f}"
     if _is_rank_tie(v, max_v):
         return rf"\textbf{{\boldmath ${val}$}}"
     if _is_rank_tie(v, second_v):
@@ -1030,10 +1030,10 @@ def fmt_rs(mu, sigma):
     if pd.isna(mu):
         return "-"
     sigma = 0.0 if pd.isna(sigma) else float(sigma)
-    return rf"${float(mu):.3f}{{\scriptstyle\,\pm\,{sigma:.3f}}}$"
+    return rf"${float(mu):.2f}{{\scriptstyle\,\pm\,{sigma:.2f}}}$"
 
 def fmt_rs_max(v):
-    return "-" if pd.isna(v) else rf"${float(v):.3f}$"
+    return "-" if pd.isna(v) else rf"${float(v):.2f}$"
 
 
 DELTA_RS_LABEL = r"$\Delta$RS"
@@ -1042,18 +1042,18 @@ DELTA_RS_LABEL = r"$\Delta$RS"
 def _style_delta_text(delta, delta_max_v=None, delta_second_v=None):
     if pd.isna(delta):
         return r"\,(-)"
-    text = f"({float(delta):+.3f})"
+    text = f"({float(delta):+.2f})"
     if _is_rank_tie(delta, delta_max_v):
-        return rf"\,\mathbf{{({float(delta):+.3f})}}"
+        return rf"\,\mathbf{{({float(delta):+.2f})}}"
     if _is_rank_tie(delta, delta_second_v):
-        return rf"\,\underline{{({float(delta):+.3f})}}"
+        return rf"\,\underline{{({float(delta):+.2f})}}"
     return rf"\,{text}"
 
 
 def _style_rs_delta(v, delta, max_v, second_v, delta_max_v=None, delta_second_v=None):
     if pd.isna(v):
         return "-"
-    val = f"{float(v):.3f}"
+    val = f"{float(v):.2f}"
     delta_text = _style_delta_text(delta, delta_max_v, delta_second_v)
     if _is_rank_tie(v, max_v):
         return rf"\textbf{{\boldmath ${val}{delta_text}$}}"
@@ -1065,7 +1065,7 @@ def _style_rs_delta(v, delta, max_v, second_v, delta_max_v=None, delta_second_v=
 def _style_rs_only(v, max_v, second_v):
     if pd.isna(v):
         return "-"
-    val = f"{float(v):.3f}"
+    val = f"{float(v):.2f}"
     if _is_rank_tie(v, max_v):
         return rf"\textbf{{\boldmath ${val}$}}"
     if _is_rank_tie(v, second_v):
@@ -1076,7 +1076,7 @@ def _style_rs_only(v, max_v, second_v):
 def _style_delta_only(delta, delta_max_v, delta_second_v):
     if pd.isna(delta):
         return "-"
-    val = f"{float(delta):+.3f}"
+    val = f"{float(delta):+.2f}"
     if _is_rank_tie(delta, delta_max_v):
         return rf"$\mathbf{{{val}}}$"
     if _is_rank_tie(delta, delta_second_v):
