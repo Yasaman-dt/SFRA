@@ -24,7 +24,7 @@ METHOD_LABELS = {
     "delete": r"DELETE \cite{zhou2025decoupled}",
 }
 METRICS = [
-    ("RS", "RS", False),
+    ("RS", r"$\mathrm{RS}$", False),
     ("alignment_inner_product", r"$A_{\mathrm{IP}}$", True),
     ("alignment_cosine", r"$A_{\mathrm{cos}}$", True),
 ]
@@ -71,12 +71,12 @@ def build_table(data, classes, precision):
     class_header = " & ".join(str(value) for value in classes)
     lines = [
         r"\begin{table}[t]", r"\centering",
-        r"\caption{Per-forget-class synthetic--real alignment and relearning scores on CIFAR-10 using ResNet-18. $A_{\mathrm{IP}}$ and $A_{\mathrm{cos}}$ denote inner-product and cosine alignment, respectively.}",
+        r"\caption{Per-forget-class synthetic--real alignment and $\mathrm{RS}$ values on CIFAR-10 using ResNet-18. Each forget class column corresponds to a separate unlearned checkpoint in which that class is designated for forgetting. $A_{\mathrm{IP}}$ and $A_{\mathrm{cos}}$ denote inner-product and cosine alignment, respectively.}",
         r"\label{tab:synthetic_real_alignment_per_class}",
         r"\scriptsize", r"\setlength{\tabcolsep}{2pt}", r"\renewcommand{\arraystretch}{0.82}",
         r"\resizebox{\columnwidth}{!}{%", r"\begin{tabular}{l|l|" + "c" * len(classes) + "}",
         r"\toprule",
-        rf"\textbf{{Unlearning Method}} & \textbf{{Metric}} & \multicolumn{{{len(classes)}}}{{c}}{{\textbf{{Forget Class}}}} \\",
+        rf"\multirow{{2}}{{*}}{{Unlearning Method}} & \multirow{{2}}{{*}}{{Metric}} & \multicolumn{{{len(classes)}}}{{c}}{{Forget Class}} \\",
         rf" & & {class_header} \\", r"\midrule",
     ]
     for method_index, method in enumerate(methods):

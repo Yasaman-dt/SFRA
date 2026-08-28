@@ -44,8 +44,8 @@ COL_LABELS = {
     "test_forget_acc":  r"$\mathcal{A}^{t}_{f}(\%)$",
 }
 
-RS_LABEL = "RS"
-DELTA_RS_LABEL = r"$\Delta$RS"
+RS_LABEL = r"$\mathrm{RS}$"
+DELTA_RS_LABEL = r"$\Delta\mathrm{RS}$"
 
 # Keep only these forget classes for TinyImageNet
 FORGET_CLASS_FILTERS = {
@@ -476,7 +476,7 @@ def _rank_styles(values):
 def _style_rs(v, max_v, second_v):
     if pd.isna(v):
         return "-"
-    val = f"{float(v):.3f}"
+    val = f"{float(v):.2f}"
     if (max_v is not None) and (abs(v - max_v) < 1e-12):
         return rf"\textbf{{\boldmath ${val}$}}"
     if (second_v is not None) and (abs(v - second_v) < 1e-12):
@@ -488,16 +488,16 @@ def _style_delta_text(delta, delta_max_v=None, delta_second_v=None):
     if pd.isna(delta):
         return r"\,(-)"
     if (delta_max_v is not None) and (abs(delta - delta_max_v) < 1e-12):
-        return rf"\,\mathbf{{({float(delta):+.3f})}}"
+        return rf"\,\mathbf{{({float(delta):+.2f})}}"
     if (delta_second_v is not None) and (abs(delta - delta_second_v) < 1e-12):
-        return rf"\,\underline{{({float(delta):+.3f})}}"
-    return rf"\,({float(delta):+.3f})"
+        return rf"\,\underline{{({float(delta):+.2f})}}"
+    return rf"\,({float(delta):+.2f})"
 
 
 def _style_rs_delta(v, delta, max_v, second_v, delta_max_v=None, delta_second_v=None):
     if pd.isna(v):
         return "-"
-    val = f"{float(v):.3f}"
+    val = f"{float(v):.2f}"
     delta_text = _style_delta_text(delta, delta_max_v, delta_second_v)
     if (max_v is not None) and (abs(v - max_v) < 1e-12):
         return rf"\textbf{{\boldmath ${val}{delta_text}$}}"
@@ -509,7 +509,7 @@ def _style_rs_delta(v, delta, max_v, second_v, delta_max_v=None, delta_second_v=
 def _style_rs_only(v, max_v, second_v):
     if pd.isna(v):
         return "-"
-    val = f"{float(v):.3f}"
+    val = f"{float(v):.2f}"
     if (max_v is not None) and (abs(v - max_v) < 1e-12):
         return rf"\textbf{{\boldmath ${val}$}}"
     if (second_v is not None) and (abs(v - second_v) < 1e-12):
@@ -520,7 +520,7 @@ def _style_rs_only(v, max_v, second_v):
 def _style_delta_only(delta, delta_max_v, delta_second_v):
     if pd.isna(delta):
         return "-"
-    val = f"{float(delta):+.3f}"
+    val = f"{float(delta):+.2f}"
     if (delta_max_v is not None) and (abs(delta - delta_max_v) < 1e-12):
         return rf"$\mathbf{{{val}}}$"
     if (delta_second_v is not None) and (abs(delta - delta_second_v) < 1e-12):
@@ -793,7 +793,7 @@ def fmt_rs(mu, sigma):
     if pd.isna(mu):
         return "-"
     sigma = 0.0 if pd.isna(sigma) else float(sigma)
-    return rf"${float(mu):.3f}\,\text{{\scriptsize\,±\,{sigma:.3f}}}$"
+    return rf"${float(mu):.2f}\,\text{{\scriptsize\,±\,{sigma:.2f}}}$"
 
 
 def inject_rs2_multicolumn(latex_src: str, n_metric_cols: int) -> str:
@@ -903,7 +903,7 @@ def fmt_mu(mu):
 def fmt_rs(mu):
     if pd.isna(mu):
         return "-"
-    return rf"${float(mu):.3f}$"
+    return rf"${float(mu):.2f}$"
 
 def render_table_for(ds: str, mdl: str, df_src: pd.DataFrame):
     df = df_src[(df_src["dataset"] == ds) & (df_src["model"] == mdl)].copy()
@@ -1554,8 +1554,8 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
     caption = ( f"Comparison of unlearning methods under our proposed SFRA and "
                 f"{compared_baselines} for 2-class unlearning "
                 f"on CIFAR-10 and CIFAR-100 with ResNet-18. "
-               rf"Within each dataset, the highest and second-highest RS and "
-               rf"$\Delta$RS values are shown in \textbf{{bold}} and "
+               rf"Within each dataset, the highest and second-highest $\mathrm{{RS}}$ and "
+               rf"$\Delta\mathrm{{RS}}$ values are shown in \textbf{{bold}} and "
                rf"\underline{{underlined}}, respectively.")
     
 

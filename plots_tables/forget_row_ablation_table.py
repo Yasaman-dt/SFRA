@@ -126,13 +126,13 @@ def make_rows(summary):
             return fmt(record[f"{metric}_mean"], record[f"{metric}_std"], precision)
 
         rows.append({
-            "Method": METHOD_NAMES.get(method, method),
-            "Provided retain": value(unlearned, "retain", 2),
-            "Reinitialized retain": value(randomized, "retain", 2),
-            "Provided forget": value(unlearned, "forget", 2),
-            "Reinitialized forget": value(randomized, "forget", 2),
-            "Provided RS": value(unlearned, "rs", 3),
-            "Reinitialized RS": value(randomized, "rs", 3),
+            "Unlearning Method": METHOD_NAMES.get(method, method),
+            "Checkpoint retain": value(unlearned, "retain", 2),
+            "Random-init retain": value(randomized, "retain", 2),
+            "Checkpoint forget": value(unlearned, "forget", 2),
+            "Random-init forget": value(randomized, "forget", 2),
+            "Checkpoint RS": value(unlearned, "rs", 2),
+            "Random-init RS": value(randomized, "rs", 2),
         })
     return pd.DataFrame(rows)
 
@@ -141,13 +141,13 @@ def make_latex(table: pd.DataFrame) -> str:
     lines = [
         r"\begin{table}[h]",
         r"\centering",
-        r"\caption{Robustness of SFRA to removal of the forget-class output row on CIFAR-10 with ResNet-18 and forget class~7. Provided uses the forget-class row released with the unlearned checkpoint, whereas Reinitialized replaces it with a randomly initialized row before probe generation and relearning. All other audit settings are fixed.}",
+        r"\caption{Robustness of SFRA to removal of the forget class output row on CIFAR-10 with ResNet-18 and forget class~7. Here, $w_f$ denotes the forget class output-row parameters: Unlearned $w_f$ uses the row from the released unlearned checkpoint, whereas Random $w_f$ restores a missing row using random initialization before probe generation and relearning. All other audit settings are fixed.}",
         r"\label{tab:forget_row_ablation_cifar10_resnet18_fg7}",
         r"\resizebox{\columnwidth}{!}{%",
         r"\begin{tabular}{l|cc|cc|cc}",
         r"\toprule",
-        r"Unlearning Method & \multicolumn{2}{c|}{$\mathcal{A}_r^t(\%)$} & \multicolumn{2}{c|}{$\mathcal{A}_f^t(\%)$} & \multicolumn{2}{c}{RS} \\",
-        r" & Provided & Reinitialized & Provided & Reinitialized & Provided & Reinitialized \\",
+        r"\multirow{2}{*}{Unlearning Method} & \multicolumn{2}{c|}{$\mathcal{A}_r^t(\%)$} & \multicolumn{2}{c|}{$\mathcal{A}_f^t(\%)$} & \multicolumn{2}{c}{$\mathrm{RS}$} \\",
+        r" & Unlearned $w_f$ & Random $w_f$ & Unlearned $w_f$ & Random $w_f$ & Unlearned $w_f$ & Random $w_f$ \\",
         r"\midrule",
     ]
     for row in table.to_dict("records"):

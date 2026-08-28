@@ -59,7 +59,9 @@ FORGET_CLASS_FILTERS = {
 
 # Architecture-specific paper subsets override the dataset-wide filters.
 MODEL_DATASET_FORGET_CLASS_FILTERS = {
-    ("cifar100", "swin-t"): {0, 20, 40, 60, 80},
+    ("cifar100", "swin-t"): {
+        0, 10, 20, 30, 40, 50, 60, 70, 80, 90
+    },
     ("tiny_imagenet", "swin-t"): {
         0, 20, 40, 60, 80, 100, 120, 140, 160, 180
     },
@@ -84,7 +86,7 @@ REQUIRED_COMPLETE_CLASS_SETS = {
     },
     ("cifar10", "swin-t"): set(range(10)),
     ("cifar100", "swin-t"): {
-        0, 20, 40, 60, 80
+        0, 10, 20, 30, 40, 50, 60, 70, 80, 90
     },
     ("tiny_imagenet", "swin-t"): {
         0, 20, 40, 60, 80, 100, 120, 140, 160, 180
@@ -1036,7 +1038,8 @@ def fmt_rs_max(v):
     return "-" if pd.isna(v) else rf"${float(v):.2f}$"
 
 
-DELTA_RS_LABEL = r"$\Delta$RS"
+RS_LABEL = r"$\mathrm{RS}$"
+DELTA_RS_LABEL = r"$\Delta\mathrm{RS}$"
 
 
 def _style_delta_text(delta, delta_max_v=None, delta_second_v=None):
@@ -1731,7 +1734,7 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
             row = {"Method": pretty, "Phase": "Original"}
             for ds in datasets:
                 dsl = _latex_dataset_name(ds)
-                row[(dsl, "RS")] = "-"
+                row[(dsl, RS_LABEL)] = "-"
                 row[(dsl, DELTA_RS_LABEL)] = "-"
                 if (ds, m, "original") in g.index:
                     for col in OUT_METRIC_COLS:
@@ -1775,11 +1778,11 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
             # Initialize all PRA cells for this dataset.
             for col in OUT_METRIC_COLS:
                 pra_row[(dsl, COL_LABELS[col])] = "-"
-            pra_row[(dsl, "RS")] = "-"
+            pra_row[(dsl, RS_LABEL)] = "-"
             pra_row[(dsl, DELTA_RS_LABEL)] = "-"
             for col in OUT_METRIC_COLS:
                 lp_row[(dsl, COL_LABELS[col])] = "-"
-            lp_row[(dsl, "RS")] = "-"
+            lp_row[(dsl, RS_LABEL)] = "-"
             lp_row[(dsl, DELTA_RS_LABEL)] = "-"
 
             if SHOW_LINEAR_PROBE and lp_path.is_file():
@@ -1799,7 +1802,7 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
                         lp_delta = lp_delta_per_ds[dsl].get(m, np.nan)
                         max_v, second_v = rs_rank_thresholds[dsl]
                         delta_max_v, delta_second_v = delta_rank_thresholds[dsl]
-                        lp_row[(dsl, "RS")] = _style_rs_only(
+                        lp_row[(dsl, RS_LABEL)] = _style_rs_only(
                             lp_raw_rs, max_v, second_v
                         )
                         lp_row[(dsl, DELTA_RS_LABEL)] = _style_delta_only(
@@ -1856,7 +1859,7 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
                         pra_delta = pra_delta_per_ds[dsl].get(m, np.nan)
                         max_v, second_v = rs_rank_thresholds[dsl]
                         delta_max_v, delta_second_v = delta_rank_thresholds[dsl]
-                        pra_row[(dsl, "RS")] = _style_rs_only(
+                        pra_row[(dsl, RS_LABEL)] = _style_rs_only(
                             pra_raw_rs, max_v, second_v
                         )
                         pra_row[(dsl, DELTA_RS_LABEL)] = _style_delta_only(
@@ -1885,7 +1888,7 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
             dsl = _latex_dataset_name(ds)
 
             # RS is shown on the Revival (ours) row only.
-            row_un[(dsl, "RS")] = ""
+            row_un[(dsl, RS_LABEL)] = ""
             row_un[(dsl, DELTA_RS_LABEL)] = ""
 
             if (ds, m, "unlearned") in g.index:
@@ -1928,14 +1931,14 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
             delta_max_v, delta_second_v = delta_rank_thresholds[dsl]
 
             if pd.notna(raw_rs):
-                row_rev[(dsl, "RS")] = _style_rs_only(
+                row_rev[(dsl, RS_LABEL)] = _style_rs_only(
                     raw_rs, max_v, second_v
                 )
                 row_rev[(dsl, DELTA_RS_LABEL)] = _style_delta_only(
                     delta_rs, delta_max_v, delta_second_v
                 )
             else:
-                row_rev[(dsl, "RS")] = "-"
+                row_rev[(dsl, RS_LABEL)] = "-"
                 row_rev[(dsl, DELTA_RS_LABEL)] = "-"
 
             if (ds, m, "revival") in g.index:
@@ -1962,7 +1965,7 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
     for dsl in dataset_labels:
         for c in OUT_METRIC_COLS:
             ordered_cols.append((dsl, COL_LABELS[c]))
-        ordered_cols.append((dsl, "RS"))
+        ordered_cols.append((dsl, RS_LABEL))
         ordered_cols.append((dsl, DELTA_RS_LABEL))
 
     table_df = pd.DataFrame(rows)
@@ -2020,10 +2023,11 @@ def render_joint_table_for_model(mdl: str, df_src: pd.DataFrame, datasets: List[
         f"variants, retain accuracy $\\mathcal{{A}}^t_r$ is reported as the "
         f"mean $\\pm$ standard deviation across forget classes, while "
         f"forget accuracy $\\mathcal{{A}}^t_f$ is reported as "
-        f"$(\\min,\\mathrm{{mean}},\\max)$. RS and $\\Delta$RS are "
+        f"$(\\min,\\mathrm{{mean}},\\max)$. $\\mathrm{{RS}}$ and "
+        f"$\\Delta\\mathrm{{RS}}$ are "
         f"independently reported as maxima across forget classes. "
-        r"Within each dataset, the highest and second-highest RS and "
-        r"$\Delta$RS values are shown in \textbf{bold} and "
+        r"Within each dataset, the highest and second-highest $\mathrm{RS}$ and "
+        r"$\Delta\mathrm{RS}$ values are shown in \textbf{bold} and "
         r"\underline{underlined}, respectively."
     )
 

@@ -277,7 +277,7 @@ def write_latex(
 
     column_spec = "l|l|" + "c" * len(args.datasets)
     dataset_header = " & ".join(
-        rf"\multicolumn{{1}}{{c}}{{\textbf{{{DATASET_LABELS.get(dataset, dataset)}}}}}"
+        rf"\multicolumn{{1}}{{c}}{{{DATASET_LABELS.get(dataset, dataset)}}}"
         for dataset in args.datasets
     )
     probe_settings = [
@@ -285,9 +285,17 @@ def write_latex(
         for dataset in args.datasets
         if (setting := dataset_probe_setting(rows, dataset)) is not None
     ]
+    if len(probe_settings) > 1:
+        formatted_probe_settings = (
+            ", ".join(probe_settings[:-1]) + ", and " + probe_settings[-1]
+        )
+    elif probe_settings:
+        formatted_probe_settings = probe_settings[0]
+    else:
+        formatted_probe_settings = ""
     settings_phrase = (
-        " The probe settings are " + "; ".join(probe_settings) + "."
-        if probe_settings
+        " The probe settings are " + formatted_probe_settings + "."
+        if formatted_probe_settings
         else ""
     )
     if args.metric == "both":
@@ -301,7 +309,7 @@ def write_latex(
         r"\begin{table}[H]",
         r"\centering",
         (
-            r"\caption{Probe-generation runtime for the source-free audit using "
+            r"\caption{Probe-generation runtime for our proposed SFRA using "
             rf"single-class unlearning checkpoints with forget class {args.forget_class}. "
             rf"Each entry reports the {timing_phrase} for constructing Gaussian "
             rf"feature-space probes.{settings_phrase}}}"
@@ -313,7 +321,7 @@ def write_latex(
         r"\resizebox{\columnwidth}{!}{%",
         rf"\begin{{tabular}}{{{column_spec}}}",
         r"\toprule",
-        rf"\textbf{{Backbone}} & \textbf{{Unlearning Method}} & {dataset_header} \\",
+        rf"Backbone & Unlearning Method & {dataset_header} \\",
         r"\midrule",
     ]
 

@@ -106,6 +106,9 @@ MODEL_DATASET_CLASS_OVERRIDES = {
     ("vit-b-16", "tiny_imagenet"): [
         0, 20, 40, 60, 80, 100, 120, 140, 160, 180
     ],
+    ("swin-t", "cifar100"): [
+        0, 10, 20, 30, 40, 50, 60, 70, 80, 90
+    ],
     ("swin-t", "tiny_imagenet"): [
         0, 20, 40, 60, 80, 100, 120, 140, 160, 180
     ],
@@ -134,7 +137,12 @@ def parse_args() -> argparse.Namespace:
         default=2,
         help="Number of decimal places for retain, forget, and linear-probe accuracies.",
     )
-    parser.add_argument("--rs_precision", type=int, default=3)
+    parser.add_argument(
+        "--rs_precision",
+        type=int,
+        default=2,
+        help="Number of decimal places for RS and Delta RS values.",
+    )
     parser.add_argument(
         "--num_parts",
         type=int,
@@ -459,9 +467,9 @@ def metric_groups_for_method(method: str) -> list[tuple[str, str, list[str]]]:
     if method != "original":
         groups.append(("lp_forget", r"$\mathcal{A}^{LP}_{f}(\%)$", ["Linear Probe"]))
     if rs_variants:
-        groups.append(("rs", "RS", rs_variants))
+        groups.append(("rs", r"$\mathrm{RS}$", rs_variants))
     if delta_variants:
-        groups.append(("delta", r"$\Delta$RS", delta_variants))
+        groups.append(("delta", r"$\Delta\mathrm{RS}$", delta_variants))
     return groups
 
 
@@ -481,62 +489,48 @@ def write_latex_one(
     label_suffix: str = "",
     caption_suffix: str = "",
     append: bool = False,
+    embedded: bool = False,
 ) -> Path:
     dataset_label = DATASET_LABELS.get(args.dataset, args.dataset)
     model_label = MODEL_LABELS.get(args.model_name, args.model_name)
     col_format = "l|l|l|" + ("c" * len(classes))
     class_header = " & ".join(str(c) for c in classes)
     caption_extra = f" {caption_suffix}" if caption_suffix else ""
-    is_five_class_table = len(classes) <= 5
-    compact_cifar100_vit = (
-        args.dataset == "cifar100"
-        and args.model_name == "vit-b-16"
-        and len(classes) == 10
-    )
-    table_environment = "table" if is_five_class_table else "table*"
-    lines = [
-        rf"\begin{{{table_environment}}}[t]",
-        r"\centering",
-        (
-            r"\caption{Single-class unlearning and relearning results for each "
-            rf"forget class on {dataset_label} using a {model_label} backbone. "
-            r"For every unlearning method, we report the unlearned model, the "
-            r"source-dependent PRA baseline, our proposed SFRA, and a "
-            r"linear-probe diagnostic of representation "
-            r"separability. Each forget class column reports results for the "
-            r"corresponding single-class unlearning checkpoint."
-            rf"{caption_extra}}}"
-        ),
-        rf"\label{{tab:{slugify(args.dataset)}_{slugify(args.model_name)}_variant_by_forget{label_suffix}}}",
-    ]
-    # Five-class parts occupy one WACV column each; ten-class tables span both.
-    font_size = r"\fontsize{5.5}{5.8}\selectfont" if is_five_class_table else r"\scriptsize"
-    tabcolsep = "1.5pt" if is_five_class_table else "2pt"
-    arraystretch = (
-        "0.72"
-        if is_five_class_table
-        else "0.70" if compact_cifar100_vit else "0.80"
-    )
+    if embedded:
+        lines = [r"\begin{minipage}[t]{0.49\textwidth}", r"\centering"]
+    else:
+        lines = [
+            r"\begin{table}[t]",
+            r"\centering",
+            (
+                r"\caption{Single-class unlearning and relearning results for each "
+                rf"forget class on {dataset_label} using a {model_label} backbone. "
+                r"For every unlearning method, we report the unlearned model, the "
+                r"source-dependent PRA baseline, our proposed SFRA, and a "
+                r"linear-probe diagnostic of representation "
+                r"separability. Each forget class column corresponds to a "
+                r"separate unlearned checkpoint in which that class is "
+                r"designated for forgetting."
+                rf"{caption_extra}}}"
+            ),
+            rf"\label{{tab:{slugify(args.dataset)}_{slugify(args.model_name)}_variant_by_forget{label_suffix}}}",
+        ]
+    font_size = r"\scriptsize"
+    tabcolsep = "2pt"
+    arraystretch = "0.80"
     compact_numbers = False
     number_scale = 1.0
-    resize_width = (
-        r"0.85\textwidth"
-        if args.model_name == "resnet18" or compact_cifar100_vit
-        else r"\textwidth"
-    )
+    resize_width = r"\columnwidth"
     lines.extend([
         font_size,
         rf"\setlength{{\tabcolsep}}{{{tabcolsep}}}",
         rf"\renewcommand{{\arraystretch}}{{{arraystretch}}}",
     ])
-    if is_five_class_table:
-        lines.append(r"\resizebox{\columnwidth}{!}{%")
-    else:
-        lines.append(rf"\resizebox{{{resize_width}}}{{!}}{{%")
+    lines.append(rf"\resizebox{{{resize_width}}}{{!}}{{%")
     lines.extend([
         rf"\begin{{tabular}}{{{col_format}}}",
         r"\toprule",
-        rf"\textbf{{Unlearning Method}} & \textbf{{Metric}} & \textbf{{Variant}} & \multicolumn{{{len(classes)}}}{{c}}{{\textbf{{Forget Class}}}} \\",
+        rf"\multirow{{2}}{{*}}{{Unlearning Method}} & \multirow{{2}}{{*}}{{Metric}} & \multirow{{2}}{{*}}{{Variant}} & \multicolumn{{{len(classes)}}}{{c}}{{Forget Class}} \\",
         rf" & & & {class_header} \\",
         r"\midrule",
     ])
@@ -574,10 +568,10 @@ def write_latex_one(
 
     lines.extend([r"\bottomrule", r"\end{tabular}"])
     lines.append(r"}")
-    lines.append(rf"\end{{{table_environment}}}")
+    lines.append(r"\end{minipage}%" if embedded else r"\end{table}")
     mode = "a" if append else "w"
     with out_path.open(mode, encoding="utf-8") as handle:
-        if append:
+        if append and not embedded:
             handle.write("\n")
         handle.write("\n".join(lines) + "\n")
     return out_path
@@ -587,7 +581,31 @@ def write_latex(classes: list[int], methods: list[str], data: dict, args: argpar
     base = f"{slugify(args.dataset)}_{slugify(args.model_name)}_single_class_variant_by_forget_table"
     parts = split_method_list(methods, args.num_parts)
     out_path = args.out_dir / f"{base}.tex"
+    side_by_side = len(parts) == 2
+    if side_by_side:
+        dataset_label = DATASET_LABELS.get(args.dataset, args.dataset)
+        model_label = MODEL_LABELS.get(args.model_name, args.model_name)
+        out_path.write_text(
+            "\n".join([
+                r"\begin{table*}[t]",
+                r"\centering",
+                (
+                    r"\caption{Per-forget-class single-class unlearning and "
+                    rf"relearning results on {dataset_label} using {model_label}. We report "
+                    r"the unlearned checkpoint, the source-dependent PRA "
+                    r"baseline, our proposed SFRA, and frozen-encoder linear "
+                    r"probing. Each forget class column corresponds to a "
+                    r"separate unlearned checkpoint in which that class is "
+                    r"designated for forgetting.}"
+                ),
+                rf"\label{{tab:{slugify(args.dataset)}_{slugify(args.model_name)}_variant_by_forget}}",
+            ]) + "\n",
+            encoding="utf-8",
+        )
     for part_index, part_methods in enumerate(parts, start=1):
+        if side_by_side and part_index == 2:
+            with out_path.open("a", encoding="utf-8") as handle:
+                handle.write("\\hfill\n")
         write_latex_one(
             classes,
             part_methods,
@@ -596,8 +614,12 @@ def write_latex(classes: list[int], methods: list[str], data: dict, args: argpar
             out_path,
             label_suffix=f"_part{part_index}",
             caption_suffix=f"Part {part_index} of {len(parts)}.",
-            append=part_index > 1,
+            append=side_by_side or part_index > 1,
+            embedded=side_by_side,
         )
+    if side_by_side:
+        with out_path.open("a", encoding="utf-8") as handle:
+            handle.write("\n\\end{table*}\n")
     return [out_path]
 
 

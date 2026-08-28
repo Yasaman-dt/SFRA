@@ -432,6 +432,6 @@ else:
         ax.grid(True, axis="y", linestyle="--", linewidth=0.6, alpha=0.25)
 
         out_png = OUT_DIR / f"fig_RS_violin_{mdl}_{ds}_single.png"
-        fig.savefig(out_png, dpi=600, bbox_inches="tight")
+        fig.savefig(out_png, dpi=300, bbox_inches="tight")
         plt.close(fig)
         print("[OK] saved", out_png)

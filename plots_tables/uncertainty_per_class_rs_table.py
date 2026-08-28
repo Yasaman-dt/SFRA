@@ -211,9 +211,11 @@ def make_latex(
     model_label = MODEL_LABELS.get(args.model_name, args.model_name)
     caption = args.caption or (
         "Uncertainty-score ablation on CIFAR-10 using a "
-        f"{model_label} backbone. Per-class entries report RS mean "
-        r"$\pm$ standard deviation across three independent audit seeds. "
-        r"Avg. reports the mean RS across forget classes and seeds."
+        f"{model_label} backbone. Each class column corresponds to a separate "
+        r"unlearned checkpoint with the indicated forget class and reports "
+        r"$\mathrm{RS}$ as the mean $\pm$ standard deviation across three "
+        r"independent audit seeds, while Avg. gives the mean $\mathrm{RS}$ "
+        r"across all forget classes and seeds."
     )
     label = args.label or f"tab:uncertainty_per_class_{args.model_name.replace('-', '_')}"
     columns = "l|l|" + "c" * len(args.classes) + "|c"
@@ -222,6 +224,7 @@ def make_latex(
         r"\centering",
         rf"\caption{{{caption}}}",
         rf"\label{{{label}}}",
+        r"\vspace{-0.15cm}",
         r"\setlength{\tabcolsep}{2pt}",
         r"\renewcommand{\arraystretch}{0.88}",
         r"\scriptsize",

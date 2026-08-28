@@ -410,8 +410,10 @@ def make_latex_table(
 ) -> str:
     if caption is None:
         caption = (
-            "RS for Gaussian, Uniform, and Laplace synthesis distributions on "
-            f"{latex_dataset_name(dataset)} using {latex_model_name(model_name)}."
+        r"$\mathrm{RS}$ for Gaussian, Uniform, and Laplace synthesis distributions on "
+        f"{latex_dataset_name(dataset)} using {latex_model_name(model_name)}. "
+        "Each forget class column corresponds to a separate unlearned checkpoint "
+        "in which that class is designated for forgetting."
         )
     if label is None:
         label = f"tab:{slugify(dataset)}_{slugify(model_name)}_sampling_distribution_rs"

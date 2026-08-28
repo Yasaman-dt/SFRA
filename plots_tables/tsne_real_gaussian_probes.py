@@ -567,7 +567,7 @@ def plot_figure(
     for tag, panel_fig in panel_specs:
         panel_fig.tight_layout()
         separate_path = output_path.with_name(f"{output_path.stem}_{tag}{suffix}")
-        panel_fig.savefig(separate_path, dpi=600, bbox_inches="tight")
+        panel_fig.savefig(separate_path, dpi=300, bbox_inches="tight")
         plt.close(panel_fig)
 
 

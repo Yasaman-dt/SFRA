@@ -246,7 +246,7 @@ else:
     cbar.set_label("RS")
 
     out = OUT_DIR / f"heatmap_RS_{mdl}_{ds}.png"
-    fig.savefig(out, dpi=600, bbox_inches="tight")
+    fig.savefig(out, dpi=300, bbox_inches="tight")
     plt.close(fig)
     print("[OK] saved", out)
 

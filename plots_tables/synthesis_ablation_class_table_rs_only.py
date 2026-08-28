@@ -48,10 +48,10 @@ STRATEGY_ORDER = list(STRATEGY_LABELS)
 METHOD_ORDER = [
     "original",
     "retrained",
-    "random_label",
     "finetune",
     "gradient_ascent",
     "neggrad_plus",
+    "random_label",
     "boundary_shrink",
     "boundary_expand",
     "l2ul_adv",
@@ -140,6 +140,15 @@ def parse_args():
         default=3,
     )
     parser.add_argument(
+        "--seed",
+        type=int,
+        default=0,
+        help=(
+            "Audit seed used for the selection-strategy comparison. The "
+            "default is 0 because all selection controls were run with seed 0."
+        ),
+    )
+    parser.add_argument(
         "--accuracy_as_fraction",
         action="store_true",
         help="Divide accuracy and gain/drop metrics by 100.",
@@ -180,7 +189,10 @@ def discover_summaries(args, method):
         raise FileNotFoundError(f"Method directory not found: {method_root}")
 
     records = []
-    for summary_path in sorted(method_root.glob("*/summary.csv")):
+    # Read the append-only run records rather than summary.csv. Later ablation
+    # invocations may overwrite summary.csv with only their active strategies,
+    # whereas runs.csv retains the complete selection-strategy experiment.
+    for summary_path in sorted(method_root.glob("*/runs.csv")):
         parsed = parse_folder_name(
             summary_path.parent.name, args.dataset, args.model_name
         )
@@ -224,10 +236,36 @@ def discover_summaries(args, method):
     return records
 
 
-def load_long_frame(records, method):
+def load_long_frame(records, method, seed=None):
     frames = []
     for record in records:
         frame = pd.read_csv(record["path"])
+        if seed is not None and "seed" in frame.columns:
+            frame = frame[
+                pd.to_numeric(frame["seed"], errors="coerce").eq(seed)
+            ]
+        if "RS_mean" not in frame.columns and "RS" in frame.columns:
+            dedupe_columns = [
+                column for column in ["strategy", "seed"]
+                if column in frame.columns
+            ]
+            if dedupe_columns:
+                frame = frame.drop_duplicates(
+                    subset=dedupe_columns, keep="last"
+                )
+            group_columns = [
+                column for column in [
+                    "strategy", "distribution", "forget_selection",
+                    "retain_selection", "uncertainty_score",
+                ]
+                if column in frame.columns
+            ]
+            frame = (
+                frame.groupby(group_columns, as_index=False, dropna=False)["RS"]
+                .agg(["mean", "std"])
+                .reset_index()
+                .rename(columns={"mean": "RS_mean", "std": "RS_std"})
+            )
         frame["forget_class"] = record["class_id"]
         frame["unlearn_lr"] = record["unlearn_lr"]
         frame["unlearning_method"] = method
@@ -389,7 +427,6 @@ def write_latex(
     lines = [
         r"\begin{table*}[t]",
         r"\centering",
-        r"\color{red}",
         rf"\caption{{{caption}}}",
         rf"\label{{{label}}}",
         r"\setlength{\tabcolsep}{4pt}",
@@ -546,7 +583,7 @@ def main():
     frames = []
     for method in methods:
         records = discover_summaries(args, method)
-        frames.append(load_long_frame(records, method))
+        frames.append(load_long_frame(records, method, args.seed))
     frame = pd.concat(frames, ignore_index=True)
     classes = (
         args.classes
@@ -618,7 +655,7 @@ def main():
         caption=(
             "Synthesis-strategy ablation on CIFAR-10 using a ResNet-18 "
             "backbone for all unlearning methods. "
-            "Each entry reports the relearning score (RS)."
+            r"Each entry reports $\mathrm{RS}$."
         ),
         label="tab:synthesis_ablation_all_methods",
         compact=True,
@@ -663,7 +700,7 @@ def main():
             caption=(
                 f"Synthesis-strategy ablation on CIFAR-10 using a ResNet-18 "
                 f"backbone for the {method_description}. "
-                "Each entry reports the relearning score (RS)."
+                r"Each entry reports $\mathrm{RS}$."
             ),
             label=f"tab:synthesis_ablation_{method_tag}",
         )
