@@ -402,7 +402,7 @@ CUDA_VISIBLE_DEVICES=2 python -m relearning_baselines.run_pra_on_single_checkpoi
   --pra-metric cosine \
   --max-retain-drop 1.0 \
   --attack-split train \
-  --support-seed 0 
+  --support-seed 0
 ```
 
 **multi-class setting:**
@@ -459,7 +459,7 @@ These scripts are post-processing utilities used to reproduce appendix figures a
 | G | SFRA Without the Released Forget Class Output Row | `ablation/run_forget_row_ablation_fg7_all_methods.sh`; `plots_tables/generate_forget_row_ablation_table.py` |
 | H | Main paper (Fig. 5) and Sensitivity to the Number of Synthetic Probes | `ablation/build_synthetic_probe_pool.py`; `ablation/run_single_class_relearning_ablation.py`; `plots_tables/plot_probe_count_ablation.py` |
 | I | Retain--Forget Accuracy Trade-off | `ablation/retain_forget_tradeoff.py`; `plots_tables/plot_rs_vs_accuracy_change.py`; `plots_tables/plot_retain_forget_tradeoff.py` |
-| J | Main paper (Tables 1--2) and Additional Single- and Multi-Class SFRA Results | `plots_tables/summary_tables/generate_single_class_summary_table.py`; `plots_tables/summary_tables/generate_multi_class_summary_tables.py` |
+| J | Main paper (Tables 1–2) and Additional Single- and Multi-Class SFRA Results | `plots_tables/summary_tables/generate_single_class_summary_table.py`; `plots_tables/summary_tables/generate_multi_class_summary_tables.py` |
 | K | Main paper (Fig. 4) and Geometric Interpretation of Synthetic Boundary Probes | `plots_tables/tsne_plots/plot_real_vs_gaussian_probe_tsne.py` |
 | L | Main paper (Fig. 2) and RS Distribution Across Forget Classes | `plots_tables/plot_rs_violin_distributions.py` |
 | M | Main paper (Fig. 3) and Per-Class RS Heatmaps | `plots_tables/plot_per_class_rs_heatmaps.py` |
@@ -485,7 +485,7 @@ python analysis/probe_coefficient_validation.py \
 
 This script validates the approximation used in the one-step margin analysis. It compares the exact weighted update term with the unweighted synthetic mean approximation and generates appendix figures/tables for the coefficient validation experiment.
 
-### Real and synthetic probe t-SNE visualization (Main paper and Appendix K)
+### Real and synthetic probe t-SNE visualization (Appendix K)
 
 ```bash
 CUDA_VISIBLE_DEVICES=0 python plots_tables/tsne_plots/plot_real_vs_gaussian_probe_tsne.py \
