@@ -34,6 +34,7 @@ from ablation.synthesis_strategy_ablation import (  # noqa: E402
     Strategy,
     accuracy,
     build_synthetic_sets_for_strategies,
+    relearning_score,
 )
 from plots_tables.tsne_real_gaussian_probes import (  # noqa: E402
     checkpoint_for,
@@ -230,6 +231,10 @@ def parse_args():
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--plot_only", action="store_true")
     parser.add_argument(
+        "--plot_max_epoch", type=int, default=None,
+        help="Limit epoch-based diagnostic plots to this epoch.",
+    )
+    parser.add_argument(
         "--save_individual_plot",
         action="store_true",
         help="Also save retain_forget_tradeoff.png inside the experiment directory.",
@@ -273,16 +278,63 @@ def train_trajectory(classifier, synthetic, real, args, device, seed):
     criterion = nn.CrossEntropyLoss()
     test_retain_x, test_retain_y, test_forget_x, test_forget_y = real
 
+    @torch.inference_mode()
+    def mean_label_confidence(features, labels):
+        head.eval()
+        total = 0.0
+        count = 0
+        loader = DataLoader(
+            TensorDataset(features, labels),
+            batch_size=args.eval_batch_size,
+            shuffle=False,
+        )
+        for batch_x, batch_y in loader:
+            batch_y = batch_y.to(device)
+            probabilities = head(batch_x.to(device)).softmax(dim=1)
+            total += probabilities.gather(1, batch_y[:, None]).sum().item()
+            count += len(batch_y)
+        return 100.0 * total / max(count, 1)
+
+    baseline = {}
+
     def evaluate(epoch):
-        return {
+        row = {
             "epoch": epoch,
-            "retain_accuracy": accuracy(
+            "real_retain_accuracy": accuracy(
                 head, test_retain_x, test_retain_y, device, args.eval_batch_size
             ),
-            "forget_accuracy": accuracy(
+            "real_forget_accuracy": accuracy(
                 head, test_forget_x, test_forget_y, device, args.eval_batch_size
             ),
+            "synthetic_retain_accuracy": accuracy(
+                head, retain_x, retain_y, device, args.eval_batch_size
+            ),
+            "synthetic_forget_accuracy": accuracy(
+                head, forget_x, forget_y, device, args.eval_batch_size
+            ),
+            "synthetic_forget_confidence": mean_label_confidence(forget_x, forget_y),
+            "real_forget_confidence": mean_label_confidence(
+                test_forget_x, test_forget_y
+            ),
         }
+        # Preserve the old names for the trade-off analysis.
+        row["retain_accuracy"] = row["real_retain_accuracy"]
+        row["forget_accuracy"] = row["real_forget_accuracy"]
+        if not baseline:
+            baseline.update(row)
+        row["synthetic_RS"] = relearning_score(
+            baseline["synthetic_retain_accuracy"],
+            baseline["synthetic_forget_accuracy"],
+            row["synthetic_retain_accuracy"],
+            row["synthetic_forget_accuracy"],
+        )
+        row["real_RS"] = relearning_score(
+            baseline["real_retain_accuracy"],
+            baseline["real_forget_accuracy"],
+            row["real_retain_accuracy"],
+            row["real_forget_accuracy"],
+        )
+        return row
 
     rows = [evaluate(0)]
     for epoch in range(1, args.epochs + 1):
@@ -349,6 +401,7 @@ def plot_results(
     output_dir,
     expected_seeds=None,
     save_individual_plot=False,
+    plot_max_epoch=None,
 ):
     frame = pd.concat(all_tradeoffs, ignore_index=True)
     trajectories = pd.concat(all_trajectories, ignore_index=True)
@@ -482,6 +535,79 @@ def plot_results(
         )
     plt.close(fig)
 
+    diagnostic_columns = {
+        "synthetic_retain_accuracy", "synthetic_forget_accuracy",
+        "real_retain_accuracy", "real_forget_accuracy",
+        "synthetic_RS", "real_RS",
+        "synthetic_forget_confidence", "real_forget_confidence",
+    }
+    if diagnostic_columns.issubset(trajectories.columns):
+        plot_epoch_diagnostics(trajectories, output_dir, plot_max_epoch)
+
+
+def plot_epoch_diagnostics(trajectories, output_dir, max_epoch=None):
+    """Plot synthetic and real relearning diagnostics throughout training."""
+    if max_epoch is not None:
+        trajectories = trajectories[trajectories["epoch"].le(max_epoch)].copy()
+    panels = [
+        (
+            "Synthetic accuracy", "Accuracy (\%)",
+            [("synthetic_retain_accuracy", "Retain"),
+             ("synthetic_forget_accuracy", "Forget")],
+        ),
+        (
+            "Real accuracy", "Accuracy (\%)",
+            [("real_retain_accuracy", "Retain"),
+             ("real_forget_accuracy", "Forget")],
+        ),
+        (
+            "Relearning score", "RS",
+            [("synthetic_RS", "Synthetic"), ("real_RS", "Real")],
+        ),
+        (
+            "Forget-class confidence", "Mean confidence (\%)",
+            [("synthetic_forget_confidence", "Synthetic"),
+             ("real_forget_confidence", "Real")],
+        ),
+    ]
+    fig, axes = plt.subplots(2, 2, figsize=(11, 7), sharex=True)
+    line_styles = ["-", "--"]
+    for axis, (title, ylabel, metrics) in zip(axes.flat, panels):
+        for method in trajectories["method"].drop_duplicates():
+            method_rows = trajectories[trajectories["method"].eq(method)]
+            color = METHOD_STYLES.get(method, {}).get("color")
+            marker = METHOD_STYLES.get(method, {}).get("marker", "o")
+            for metric_index, (metric, metric_label) in enumerate(metrics):
+                summary = method_rows.groupby("epoch")[metric].agg(
+                    ["mean", "std"]
+                ).reset_index()
+                x = summary["epoch"].to_numpy()
+                mean = summary["mean"].to_numpy()
+                std = summary["std"].fillna(0).to_numpy()
+                label = f"{DISPLAY_NAMES.get(method, method)}: {metric_label}"
+                axis.plot(
+                    x, mean, color=color, linestyle=line_styles[metric_index],
+                    marker=marker, markevery=max(1, len(x) // 10),
+                    markersize=3, linewidth=1.8, label=label,
+                )
+                axis.fill_between(
+                    x, mean - std, mean + std, color=color, alpha=0.08,
+                    linewidth=0,
+                )
+        axis.set_title(title)
+        axis.set_ylabel(ylabel)
+        axis.grid(alpha=0.25)
+        axis.legend(fontsize=9, ncol=2)
+    for axis in axes[-1]:
+        axis.set_xlabel("Epoch")
+    fig.tight_layout()
+    for extension in ("png", "pdf"):
+        fig.savefig(
+            output_dir / f"epoch_relearning_diagnostics.{extension}",
+            dpi=300, bbox_inches="tight",
+        )
+    plt.close(fig)
+
 def load_tradeoff_with_gains(path):
     """Load a trade-off CSV and derive gain columns for legacy saved runs."""
     tradeoff = pd.read_csv(path)
@@ -570,7 +696,7 @@ def main():
                 np.random.seed(seed)
                 torch.manual_seed(seed)
                 torch.cuda.manual_seed_all(seed)
-                synthetic, _ = build_synthetic_sets_for_strategies(
+                synthetic, _, _ = build_synthetic_sets_for_strategies(
                     classifier=classifier, num_classes=num_classes,
                     forget_class=args.forget_class, strategies=[strategy],
                     generated_per_class=args.generated_per_class,
@@ -613,6 +739,7 @@ def main():
         output_dir,
         expected_seeds=args.seeds,
         save_individual_plot=args.save_individual_plot,
+        plot_max_epoch=args.plot_max_epoch,
     )
     print(f"[saved] {output_dir.resolve()}")
 
