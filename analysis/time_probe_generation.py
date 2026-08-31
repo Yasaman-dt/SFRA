@@ -10,7 +10,7 @@ full number of classes. Running all 200 TinyImageNet classes with N=500K can be
 very slow; use --benchmark_classes 0 only when you want the exact wall-clock.
 
 Example:
-  CUDA_VISIBLE_DEVICES=0 python plots_tables/time_probe_generation.py \
+  CUDA_VISIBLE_DEVICES=0 python analysis/time_probe_generation.py \
     --model_name resnet18 \
     --datasets cifar10 cifar100 tiny_imagenet \
     --accepted_per_class 500000 \

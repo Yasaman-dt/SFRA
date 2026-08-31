@@ -295,8 +295,8 @@ if __name__ == "__main__":
     title = f"{DATASET.upper()} / {MODEL} — forget class {FORGET_C}"
     
     # build a FILE path, not a directory
-    save_dir = REPO_ROOT / "Radar_Plots"
+    save_dir = base_dir / "plots" / "Radar_Plots"
     save_dir.mkdir(parents=True, exist_ok=True)
-    save_path = save_dir / OUT_NAME   # e.g., .../Radar_Plots/radar_cifar10_resnet18_forget8.png
+    save_path = save_dir / OUT_NAME
     
     _radar_plot(labels, orig_val, un_vals, re_vals, title=title, save_path=save_path)

@@ -18,14 +18,14 @@ Here p_c(x) is the softmax probability assigned by the unlearned model to class
 c.  The script also reports counts for each average.
 
 Example:
-    CUDA_VISIBLE_DEVICES=0 python plots_tables/retain_forget_assigned_confidence.py \
+    CUDA_VISIBLE_DEVICES=0 python analysis/retain_forget_assigned_confidence.py \
         --method bad_teacher \
         --dataset cifar10 \
         --model_name resnet18 \
         --lr 0.001 \
         --forget_class 7
 
-    CUDA_VISIBLE_DEVICES=0 python plots_tables/retain_forget_assigned_confidence.py \
+    CUDA_VISIBLE_DEVICES=0 python analysis/retain_forget_assigned_confidence.py \
         --method bad_teacher \
         --dataset cifar10 \
         --model_name resnet18 \

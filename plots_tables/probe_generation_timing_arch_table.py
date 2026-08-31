@@ -1,7 +1,7 @@
 """Build an appendix table for probe-generation runtime.
 
 This script formats the CSV files produced by
-``plots_tables/time_probe_generation.py`` into one compact LaTeX table grouped
+``analysis/time_probe_generation.py`` into one compact LaTeX table grouped
 by backbone and dataset. It is meant to answer the reviewer concern about the
 cost of generating many Gaussian probes, especially for large-class datasets.
 

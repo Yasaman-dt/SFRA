@@ -116,3 +116,11 @@ for job in "${jobs[@]}"; do
   fi
   echo "[done] model=$model method=$method"
 done
+
+echo "[table] model=$model root=$output_dir"
+python plots_tables/uncertainty_per_class_rs_table.py \
+  --root "$output_dir" \
+  --dataset cifar10 \
+  --model "$model"
+
+echo "[done] uncertainty ablation and table for model=$model"

@@ -12,7 +12,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from plots_tables.synthetic_real_alignment import (  # noqa: E402
+from analysis.synthetic_real_alignment import (  # noqa: E402
     aggregate_results,
     correlation_results,
     latex_table,

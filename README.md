@@ -25,13 +25,17 @@ It supports:
 - $M$ is the number of synthetic probes selected per retained class. When the
   retain and forget counts differ, we use $M_r$ and $M_f$; these correspond to
   `--retain_per_class` and `--forget_per_class`, respectively.
-- RS is the relearning score. Let $A_r^u$ and $A_f^u$ be the retain and forget
-  accuracies of the unlearned checkpoint, and let $A_r^t$ and $A_f^t$ be the
-  corresponding accuracies after relearning. With accuracies normalized to
-  $[0,1]$, retain preservation and forget recovery are
+- RS is the relearning score. Let $\mathcal{A}_r^{t\text{-}un}$ and
+  $\mathcal{A}_f^{t\text{-}un}$ denote the retain and forget test accuracies
+  after unlearning, and let $\mathcal{A}_r^{t\text{-}re}$ and
+  $\mathcal{A}_f^{t\text{-}re}$ denote the corresponding test accuracies after
+  relearning. With all accuracies normalized to $[0,1]$, retain preservation
+  and forget recovery are
 
-  $$R_r = 1-\max(0,A_r^u-A_r^t), \qquad
-  R_f = \max(0,A_f^t-A_f^u).$$
+  $$R_r = 1-\max\!\left(0,
+  \mathcal{A}_r^{t\text{-}un}-\mathcal{A}_r^{t\text{-}re}\right), \qquad
+  R_f = \max\!\left(0,
+  \mathcal{A}_f^{t\text{-}re}-\mathcal{A}_f^{t\text{-}un}\right).$$
 
   Their harmonic mean defines
 
@@ -392,7 +396,7 @@ These scripts are post-processing utilities used to reproduce appendix figures a
 ### Coefficient approximation validation
 
 ```bash
-python plots_tables/probe_coefficient_validation.py \
+python analysis/probe_coefficient_validation.py \
   --method bad_teacher \
   --dataset cifar10 \
   --model_name resnet18 \
@@ -446,7 +450,7 @@ model and does not construct random or high-confidence controls.
 Run a small one-class sanity check first:
 
 ```bash
-CUDA_VISIBLE_DEVICES=0 python plots_tables/synthetic_real_alignment.py \
+CUDA_VISIBLE_DEVICES=0 python analysis/synthetic_real_alignment.py \
   --methods bad_teacher delete scrub retrained \
   --forget_classes 0 \
   --seeds 0 \
@@ -459,7 +463,7 @@ Then run the full CIFAR-10/ResNet-18 analysis with the settings used by the
 existing relearning results:
 
 ```bash
-CUDA_VISIBLE_DEVICES=0 python plots_tables/synthetic_real_alignment.py \
+CUDA_VISIBLE_DEVICES=0 python analysis/synthetic_real_alignment.py \
   --dataset cifar10 \
   --model resnet18 \
   --methods bad_teacher delete scrub retrained \
@@ -490,7 +494,7 @@ This script compares Gaussian and Uniform embedding distributions. It combines G
 First generate per-forget-class confidence statistics:
 
 ```bash
-CUDA_VISIBLE_DEVICES=0 python plots_tables/retain_forget_assigned_confidence.py \
+CUDA_VISIBLE_DEVICES=0 python analysis/retain_forget_assigned_confidence.py \
   --method bad_teacher \
   --dataset cifar10 \
   --model_name resnet18 \

@@ -3,7 +3,6 @@ import re
 import numpy as np
 from pathlib import Path
 from typing import Optional, List
-from itertools import product
 
 # ----------------- Config -----------------
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -1152,12 +1151,6 @@ def render_table_for(ds: str, mdl: str, df_src: pd.DataFrame):
     return out
 
 
-# ---- choose the models you want, and the dataset (here: cifar10) ----
-   
-for ds, mdl in product(["cifar10", "cifar100", "tiny_imagenet"], MODELS):
-    render_table_for(ds, mdl, df_all)
-    
-    
 def add_group_vertical_bars(latex_src: str, datasets: List[str]) -> str:
     """
     Ensure vertical rules continue through the dataset \\multicolumn headers.
