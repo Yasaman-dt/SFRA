@@ -320,7 +320,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--out",
         type=Path,
-        default=Path("tables/probe_generation_timing"),
+        default=(
+            REPO_ROOT
+            / "results_single_class"
+            / "tables"
+            / "probe_generation_full_timing"
+            / "probe_generation_timing"
+        ),
         help="Output prefix. Writes .csv and .tex.",
     )
     return parser.parse_args()

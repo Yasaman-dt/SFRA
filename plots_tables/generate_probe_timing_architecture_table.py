@@ -13,9 +13,10 @@ Typical workflow:
 
 By default, the script looks for:
 
-  tables/probe_generation_full_timing_resnet18_fg0.csv
-  tables/probe_generation_full_timing_swin-t_fg0.csv
-  tables/probe_generation_full_timing_vit-b-16_fg0.csv
+  results_single_class/tables/probe_generation_full_timing/
+    probe_generation_full_timing_resnet18_fg0.csv
+    probe_generation_full_timing_swin-t_fg0.csv
+    probe_generation_full_timing_vit-b-16_fg0.csv
 
 You can override this with ``--inputs``.
 """
@@ -26,6 +27,15 @@ import argparse
 import csv
 import math
 from pathlib import Path
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_TABLES_DIR = (
+    REPO_ROOT
+    / "results_single_class"
+    / "tables"
+    / "probe_generation_full_timing"
+)
 
 
 DATASETS = ["cifar10", "cifar100", "tiny_imagenet"]
@@ -92,13 +102,14 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help=(
             "Timing CSVs from benchmark_probe_generation.py. If omitted, the script "
-            "uses tables/probe_generation_full_timing_{model}_fg{forget_class}.csv."
+            "uses results_single_class/tables/probe_generation_full_timing/"
+            "probe_generation_full_timing_{model}_fg{forget_class}.csv."
         ),
     )
     parser.add_argument(
         "--tables_dir",
         type=Path,
-        default=Path("tables"),
+        default=DEFAULT_TABLES_DIR,
         help="Directory used for default input discovery and output.",
     )
     parser.add_argument(
@@ -138,7 +149,11 @@ def parse_args() -> argparse.Namespace:
         "--out",
         type=Path,
         default=None,
-        help="Output prefix. Default: tables/probe_generation_timing_architectures_fg{forget_class}.",
+        help=(
+            "Output prefix. Default: results_single_class/tables/"
+            "probe_generation_full_timing/"
+            "probe_generation_timing_architectures_fg{forget_class}."
+        ),
     )
     return parser.parse_args()
 
