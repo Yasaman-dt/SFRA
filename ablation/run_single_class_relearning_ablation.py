@@ -29,7 +29,7 @@ def _hist_to_accs_dict(hist: dict) -> dict:
 # ---------------- Argparse ----------------
 p = argparse.ArgumentParser("Class unlearning revival (from prebuilt pool)")
 p.add_argument('--pool_path', type=str, required=True,
-               help='Path to synthetic pool .pt created by build_synth_pool.py')
+               help='Path to synthetic pool .pt created by build_synthetic_probe_pool.py')
 p.add_argument('--pool_take_per_class', type=int, default=None,
                help='Randomly take up to K per class from the pool BEFORE top/bottom filtering (None → take all).')
 

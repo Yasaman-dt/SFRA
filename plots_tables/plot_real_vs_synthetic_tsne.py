@@ -108,7 +108,7 @@ def main():
     ap = argparse.ArgumentParser("t-SNE of real vs synthetic embeddings")
     ap.add_argument("--real_pt",   required=True, help="Path to real_fg{C}.pt")
     ap.add_argument("--synth_pt",  required=True, help="Path to synth_fg{C}.pt")
-    ap.add_argument("--out",       default="tsne_real_vs_synth.png")
+    ap.add_argument("--out",       default="real_vs_synthetic_tsne.png")
     ap.add_argument("--per_class_real",  type=int, default=300, help="Max real samples per class (0=all)")
     ap.add_argument("--per_class_synth", type=int, default=300, help="Max synthetic samples per class (0=all)")
     ap.add_argument("--seed", type=int, default=0)

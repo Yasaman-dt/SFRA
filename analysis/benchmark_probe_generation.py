@@ -288,7 +288,7 @@ def parse_args() -> argparse.Namespace:
             "Time the original two-pass probe construction for each retain "
             "class: one accepted pool sorted high-confidence for retain probes "
             "and another accepted pool sorted low-confidence for forget probes. "
-            "This is slower but matches source_free_relearning_singleclass.py "
+            "This is slower but matches source_free_relearning_single_class.py "
             "more closely than timing acceptance only."
         ),
     )
@@ -533,7 +533,7 @@ def sample_pool_like_original(
     accepted_per_class: int,
     batch_size: int,
 ) -> tuple[torch.Tensor, torch.Tensor, int]:
-    """Match _sample_predicted_as_class from source_free_relearning_singleclass.py."""
+    """Match _sample_predicted_as_class from source_free_relearning_single_class.py."""
     device = weight.device
     feature_dim = weight.shape[1]
     feat_chunks = []

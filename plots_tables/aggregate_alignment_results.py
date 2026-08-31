@@ -19,7 +19,7 @@ from analysis.synthetic_real_alignment import (  # noqa: E402
     safe_correlations,
     scatter_plot,
 )
-from plots_tables.alignment_per_class_table import build_table as build_per_class_table  # noqa: E402
+from plots_tables.generate_alignment_per_class_table import build_table as build_per_class_table  # noqa: E402
 
 
 METHOD_ORDER = [

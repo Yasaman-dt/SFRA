@@ -217,7 +217,7 @@ CUDA_VISIBLE_DEVICES=0 python test_unlearned_model.py \
 
 **single-class setting:**
 ```bash
-CUDA_VISIBLE_DEVICES=0 python source_free_relearning_singleclass.py \
+CUDA_VISIBLE_DEVICES=0 python source_free_relearning_single_class.py \
   --method bad_teacher \
   --model_name resnet18 \
   --dataset cifar10 \
@@ -232,7 +232,7 @@ CUDA_VISIBLE_DEVICES=0 python source_free_relearning_singleclass.py \
 
 **multi-class setting:**
 ```bash
-CUDA_VISIBLE_DEVICES=0 python source_free_relearning_multiclass.py \
+CUDA_VISIBLE_DEVICES=0 python source_free_relearning_multi_class.py \
   --dataset cifar10 \
   --model resnet18 \
   --method bad_teacher \
@@ -248,7 +248,7 @@ CUDA_VISIBLE_DEVICES=0 python source_free_relearning_multiclass.py \
 
 ## 7. Ablation on Different M and N
 ```bash
-CUDA_VISIBLE_DEVICES=0 python -m ablation.build_synth_pool \
+CUDA_VISIBLE_DEVICES=0 python -m ablation.build_synthetic_probe_pool \
   --dataset cifar10 \
   --model_name resnet18 \
   --method bad_teacher \
@@ -256,7 +256,7 @@ CUDA_VISIBLE_DEVICES=0 python -m ablation.build_synth_pool \
   --forget_class 9 \
   --lr 1e-3
 
-CUDA_VISIBLE_DEVICES=0 python -m ablation.relearning_singleclass_ablation \
+CUDA_VISIBLE_DEVICES=0 python -m ablation.run_single_class_relearning_ablation \
   --pool_path synth_pools/cifar10_resnet18_bad_teacher_fg9_lr0.001_pool_500000perclass_10cls_emb512_seed0.pt \
   --pool_take_per_class 500000 \
   --dataset cifar10 \
@@ -298,7 +298,7 @@ CUDA_VISIBLE_DEVICES=0 python plots_tables/plot_unlearned_logit_tsne.py \
 
 tsne of the unlearned model and relearned model:
 ```bash
-CUDA_VISIBLE_DEVICES=0 python -m ablation.build_synth_pool \
+CUDA_VISIBLE_DEVICES=0 python -m ablation.build_synthetic_probe_pool \
   --dataset cifar10 \
   --model_name resnet18 \
   --method scrub \
@@ -306,7 +306,7 @@ CUDA_VISIBLE_DEVICES=0 python -m ablation.build_synth_pool \
   --forget_class 7 \
   --lr 1e-3
 
-CUDA_VISIBLE_DEVICES=0 python -m ablation.relearning_singleclass_ablation \
+CUDA_VISIBLE_DEVICES=0 python -m ablation.run_single_class_relearning_ablation \
   --pool_path synth_pools/cifar10_resnet18_scrub_fg7_lr0.001_pool_500000perclass_10cls_emb512_seed0.pt \
   --pool_take_per_class 500000 \
   --dataset cifar10 \
@@ -430,7 +430,7 @@ This script loads an unlearned checkpoint and visualizes real test samples toget
 ### Synthesis-ablation RS table
 
 ```bash
-python plots_tables/synthesis_ablation_class_table_rs_only.py \
+python plots_tables/generate_synthesis_ablation_rs_table.py \
   --root results_synthesis_ablation \
   --methods retrained bad_teacher neggrad_plus delete scrub boundary_shrink finetune gradient_ascent random_label l2ul_adv salun \
   --dataset cifar10 \
@@ -481,7 +481,7 @@ retain-pool pass before constructing the actual low-confidence forget probes.
 ### Gaussian vs. Uniform embedding-distribution table
 
 ```bash
-python plots_tables/sampling_distribution_rs_table.py \
+python plots_tables/generate_sampling_distribution_rs_table.py \
   --dataset cifar10 \
   --model_name resnet18 \
   --classes 0 1 2 3 4 5 6 7 8 9 \
@@ -508,7 +508,7 @@ This script evaluates the unlearned model on real test samples and measures how 
 ### Aggregated confidence table across forget classes
 
 ```bash
-python plots_tables/aggregate_confidence_by_forget_class.py \
+python plots_tables/generate_forget_class_confidence_table.py \
   --root results_single_class/analysis/confidence_tables/bad_teacher \
   --method bad_teacher \
   --dataset cifar10 \
@@ -602,9 +602,9 @@ following commands are only needed to regenerate the tables from existing
 results without rerunning the experiments:
 
 ```bash
-python plots_tables/uncertainty_per_class_rs_table.py --model resnet18
-python plots_tables/uncertainty_per_class_rs_table.py --model vit-b-16
-python plots_tables/uncertainty_per_class_rs_table.py --model swin-t
+python plots_tables/generate_uncertainty_per_class_rs_table.py --model resnet18
+python plots_tables/generate_uncertainty_per_class_rs_table.py --model vit-b-16
+python plots_tables/generate_uncertainty_per_class_rs_table.py --model swin-t
 ```
 
 The table cells report RS mean $\pm$ standard deviation across the three audit

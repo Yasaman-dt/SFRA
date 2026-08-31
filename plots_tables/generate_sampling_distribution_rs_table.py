@@ -9,7 +9,7 @@ The intended use is the appendix ablation where the only displayed strategy
 factor is the embedding sampling distribution.
 
 Example:
-    python plots_tables/sampling_distribution_rs_table.py \
+    python plots_tables/generate_sampling_distribution_rs_table.py \
         --dataset cifar10 \
         --model_name resnet18 \
         --classes 0 1 2 3 4 5 6 7 8 9 \

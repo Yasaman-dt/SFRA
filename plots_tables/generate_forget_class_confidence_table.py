@@ -19,7 +19,7 @@ The weighting is by the corresponding sample count, so classes with more
 assigned samples contribute proportionally more to the average.
 
 Example:
-    python plots_tables/aggregate_confidence_by_forget_class.py \
+    python plots_tables/generate_forget_class_confidence_table.py \
       --root results_single_class/analysis/confidence_tables/bad_teacher \
       --method bad_teacher \
       --dataset cifar10 \

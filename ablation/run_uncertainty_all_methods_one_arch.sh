@@ -118,7 +118,7 @@ for job in "${jobs[@]}"; do
 done
 
 echo "[table] model=$model root=$output_dir"
-python plots_tables/uncertainty_per_class_rs_table.py \
+python plots_tables/generate_uncertainty_per_class_rs_table.py \
   --root "$output_dir" \
   --dataset cifar10 \
   --model "$model"

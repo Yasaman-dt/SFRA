@@ -47,7 +47,7 @@ for run_seed in "${seeds[@]}"; do
     lr="${job#*:}"
 
     echo "[start] seed=$run_seed method=$method condition=released_head lr=$lr"
-    CUDA_VISIBLE_DEVICES="$gpu" python source_free_relearning_singleclass.py \
+    CUDA_VISIBLE_DEVICES="$gpu" python source_free_relearning_single_class.py \
       --method "$method" \
       --lr "$lr" \
       --seed "$run_seed" \
@@ -56,7 +56,7 @@ for run_seed in "${seeds[@]}"; do
     echo "[done] seed=$run_seed method=$method condition=released_head"
 
     echo "[start] seed=$run_seed method=$method condition=random_forget_row lr=$lr"
-    CUDA_VISIBLE_DEVICES="$gpu" python source_free_relearning_singleclass.py \
+    CUDA_VISIBLE_DEVICES="$gpu" python source_free_relearning_single_class.py \
       --method "$method" \
       --lr "$lr" \
       --seed "$run_seed" \
