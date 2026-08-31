@@ -39,6 +39,9 @@ import numpy as np
 import pandas as pd
 
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
 METHOD_LABELS = {
     "bad_teacher": r"Bad Teacher",
     "neggrad_plus": r"Negative Gradient+",
@@ -301,18 +304,21 @@ def make_latex(
     else:
         colspec = "c|ccc"
         header1 = (
-            r"Forget Class & \shortstack{Correct Retain\\Conf.} & "
-            r"\shortstack{Forget Assigned\\Conf.} & Gap \\"
+            r"\begin{tabular}[c]{@{}c@{}}Forget\\Class\end{tabular} & "
+            r"\begin{tabular}[c]{@{}c@{}}Correct\\Retain\\Conf.\end{tabular} & "
+            r"\begin{tabular}[c]{@{}c@{}}Forget\\Assigned\\Conf.\end{tabular} & "
+            r"\begin{tabular}[c]{@{}c@{}}Gap\end{tabular} \\"
         )
         header2 = None
 
     lines = [
-        r"\begin{table}[t]",
+        r"\begin{table}[H]",
         r"\centering",
         rf"\caption{{{caption}}}",
         rf"\label{{{label}}}",
-        r"\setlength{\tabcolsep}{5pt}",
-        r"\renewcommand{\arraystretch}{1.05}",
+        r"\footnotesize",
+        r"\setlength{\tabcolsep}{4pt}",
+        r"\renewcommand{\arraystretch}{1.0}",
         rf"\begin{{tabular}}{{{colspec}}}",
         r"\toprule",
         header1,
@@ -346,19 +352,19 @@ def make_latex(
     else:
         for _, row in summary.iterrows():
             cells = [
-                str(int(row["forget_class"])),
-                fmt_float(row["retain_correct_weighted_confidence"], precision),
-                fmt_float(row["forget_assigned_weighted_confidence"], precision),
-                fmt_float(row["confidence_gap"], precision),
+                f'${int(row["forget_class"])}$',
+                f'${fmt_float(row["retain_correct_weighted_confidence"], precision)}$',
+                f'${fmt_float(row["forget_assigned_weighted_confidence"], precision)}$',
+                f'${fmt_float(row["confidence_gap"], precision)}$',
             ]
             lines.append(" & ".join(cells) + r" \\")
         avg = table_average(summary, include_counts=False)
         lines.append(r"\midrule")
         cells = [
             r"\textbf{Average}",
-            fmt_float(avg["retain_correct_weighted_confidence"], precision),
-            fmt_float(avg["forget_assigned_weighted_confidence"], precision),
-            fmt_float(avg["confidence_gap"], precision),
+            f'${fmt_float(avg["retain_correct_weighted_confidence"], precision)}$',
+            f'${fmt_float(avg["forget_assigned_weighted_confidence"], precision)}$',
+            f'${fmt_float(avg["confidence_gap"], precision)}$',
         ]
         lines.append(" & ".join(cells) + r" \\")
 
@@ -387,9 +393,11 @@ def main() -> None:
     summary = pd.DataFrame(rows).sort_values("forget_class")
     out_base = args.out
     if out_base is None:
-        out_base = args.root / (
-            f"{args.dataset}_{args.model_name}_{args.method}_lr{fmt_lr(args.lr)}"
-            "_weighted_confidence_by_forget_class"
+        out_base = (
+            REPO_ROOT
+            / "results"
+            / args.method
+            / f"{args.method}_{args.dataset}_{args.model_name}_weighted_confidence"
         )
     if out_base.suffix in {".csv", ".tex"}:
         csv_out = out_base.with_suffix(".csv")
@@ -398,6 +406,7 @@ def main() -> None:
         csv_out = Path(str(out_base) + ".csv")
         tex_out = Path(str(out_base) + ".tex")
 
+    csv_out.parent.mkdir(parents=True, exist_ok=True)
     summary.to_csv(csv_out, index=False)
     latex = make_latex(
         summary,

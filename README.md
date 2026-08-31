@@ -545,6 +545,9 @@ python plots_tables/generate_forget_class_confidence_table.py \
 ```
 
 This script aggregates the per-forget-class confidence CSVs into one compact table. For each forget class, it reports the weighted average confidence of correctly classified retain samples, the weighted average confidence of forget-class samples assigned to retain classes, and their confidence gap.
+By default, the aggregated CSV and LaTeX table are written to
+`results/<method>/`; for this example, the table is saved as
+`results/bad_teacher/bad_teacher_cifar10_resnet18_weighted_confidence.tex`.
 
 
 ### Synthesis-strategy ablation runner
