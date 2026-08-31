@@ -38,7 +38,6 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import torch
@@ -1000,71 +999,6 @@ def write_three_way_gaussian_support_comparison(run_csv, output_dir):
     )
 
 
-def write_latex_table(summary, path):
-    def fmt(row, metric):
-        mean = row[f"{metric}_mean"]
-        std = row[f"{metric}_std"]
-        if pd.isna(std):
-            return f"{mean:.3f}"
-        return f"${mean:.3f}\\pm{std:.3f}$"
-
-    columns = "llllrrrr"
-    lines = [
-        rf"\begin{{tabular}}{{{columns}}}",
-        r"\toprule",
-        "Distribution & Forget selection & Retain selection & Score & "
-        + r"$A_f^{\mathrm{re}}$ & $A_r^{\mathrm{re}}$ & Gain$_f$ & RS \\",
-        r"\midrule",
-    ]
-    for _, row in summary.iterrows():
-        values = [
-            str(row["distribution"]).replace("_", r"\_"),
-            str(row["forget_selection"]).replace("_", r"\_"),
-            str(row["retain_selection"]).replace("_", r"\_"),
-            str(row.get("uncertainty_score", "softmax")).replace("_", r"\_"),
-            fmt(row, "relearned_forget_acc"),
-            fmt(row, "relearned_retain_acc"),
-            fmt(row, "forget_gain"),
-            fmt(row, "RS"),
-        ]
-        lines.append(" & ".join(values) + r" \\")
-    lines.extend([r"\bottomrule", r"\end{tabular}"])
-    path.write_text("\n".join(lines) + "\n")
-
-
-def plot_summary(summary, output_path):
-    plt.rcParams.update(
-        {
-            "font.family": "serif",
-            "font.serif": ["Times New Roman", "Times", "Liberation Serif", "DejaVu Serif"],
-            "mathtext.fontset": "stix",
-            "font.size": 11,
-        }
-    )
-    labels = [
-        (
-            f"{row.distribution}\n{row.forget_selection}\n"
-            f"{row.retain_selection}\n{getattr(row, 'uncertainty_score', 'softmax')}"
-        )
-        for row in summary.itertuples()
-    ]
-    x = np.arange(len(summary))
-    fig, axes = plt.subplots(1, 3, figsize=(15, 4.3))
-    axes[0].bar(x, summary["relearned_forget_acc_mean"], color="#D62728")
-    axes[0].set_ylabel("Relearned forget accuracy (%)")
-    axes[1].bar(x, summary["relearned_retain_acc_mean"], color="#1F77B4")
-    axes[1].set_ylabel("Relearned retain accuracy (%)")
-    axes[2].bar(x, summary["RS_mean"], color="#2CA02C")
-    axes[2].set_ylabel("RS")
-    for axis in axes:
-        axis.set_xticks(x, labels, rotation=45, ha="right", fontsize=8)
-        axis.grid(axis="y", alpha=0.2)
-    fig.tight_layout()
-    fig.savefig(output_path, dpi=300, bbox_inches="tight")
-    fig.savefig(output_path.with_suffix(".pdf"), bbox_inches="tight")
-    plt.close(fig)
-
-
 def run_for_forget_class(args, forget_class, test_dataset, strategies, device):
     num_classes = NUM_CLASSES[args.dataset]
     checkpoint = args.checkpoint or checkpoint_for(
@@ -1226,8 +1160,6 @@ def run_for_forget_class(args, forget_class, test_dataset, strategies, device):
     summary.to_csv(run_root / "summary.csv", index=False)
     write_signed_relu_comparison(run_csv, run_root)
     write_three_way_gaussian_support_comparison(run_csv, run_root)
-    write_latex_table(summary, run_root / "summary_table.tex")
-    plot_summary(summary, run_root / "summary_plot.png")
     print(f"\n[saved] {run_root.resolve()}")
     del model, feature_model, classifier
     if torch.cuda.is_available():

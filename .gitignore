@@ -17,7 +17,6 @@ __pycache__/
 *.pth
 *.ckpt
 
-
 results
 synth_pools
 logs
@@ -29,13 +28,11 @@ pra_single
 pra_multi
 linear_probe_single
 linear_probe_multi
-results_synthesis_ablation
-Radar_Plots
-tables
 results_uncertainty_ablation_cifar10_all_classes_500ep
 hyperparameters
 results_forget_row_ablation_cifar10_fg7
 results_retain_forget_tradeoff
-results_synthesis_ablation_vit_two_methods
 results_epoch_diagnostics
 results_gaussian_support_ablation
+results_synthesis_ablation_vit-b-16
+results_synthesis_ablation_resnet18

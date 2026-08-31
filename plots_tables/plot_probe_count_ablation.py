@@ -152,8 +152,8 @@ def tab10(n):
     extra = sns.color_palette("tab20", 20)
     return (base + extra)[:n]
 
-def plot_with_black_box(plot_obj, filename):
-    fig = plot_obj  # just rename for clarity
+def save_png_with_black_box(plot_obj, output_path):
+    fig = plot_obj
 
     # Make each axes have a thick black box using its spines
     if hasattr(fig, "axes") and isinstance(fig, plt.Figure):
@@ -162,14 +162,9 @@ def plot_with_black_box(plot_obj, filename):
                 spine.set_linewidth(1.5)
                 spine.set_edgecolor("black")
 
-    os.makedirs(os.path.dirname(filename), exist_ok=True)
-
-    # You can safely use tight bbox for all formats now
-    fig.savefig(f"{filename}.png", dpi=600, bbox_inches="tight")
-    fig.savefig(f"{filename}.svg", bbox_inches="tight", transparent=True)
-    fig.savefig(f"{filename}.pdf", bbox_inches="tight", transparent=True)
-
-    plt.show()
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=600, bbox_inches="tight")
     plt.close(fig)
 
 
@@ -479,11 +474,11 @@ def set_arch_ylim(ax, arch, y_max: int = 101, fallback_min: int = 39):
     ax.set_ylim(arch_ymin_from_name(arch, fallback=fallback_min), y_max)
 
 
-OUT_DIR = os.path.join(out_root, "ablation_plots")
-os.makedirs(OUT_DIR, exist_ok=True)
+OUT_DIR = REPO_ROOT / "results_single_class" / "plots" / "probe_count_ablation"
+OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-def out_png(name: str) -> str:
-    return os.path.join(OUT_DIR, name)
+def output_png(name: str) -> Path:
+    return OUT_DIR / f"{name}.png"
 
 # ===================== PER-ARCH FIGURES (COMBINED) =====================
 for arch in sorted(arches):
@@ -540,7 +535,9 @@ for arch in sorted(arches):
                line_alpha=1.0, marker_size=8, collections_alpha=0.1)
     plt.tight_layout()
 
-    plot_with_black_box(fig_acc_a, out_png(f"accuracies_M_N_{_safe_name(arch)}"))
+    save_png_with_black_box(
+        fig_acc_a, output_png(f"accuracies_M_N_{_safe_name(arch)}")
+    )
 
 
 # ===================== PER-ARCH FIGURES: SPLIT BY SERIES (M and N) =====================
@@ -597,7 +594,9 @@ for arch in sorted(arches):
 
         tweak_axes([ax_m_forget, ax_m_retain], line_alpha=1.0, marker_size=8, collections_alpha=0.1)
         plt.tight_layout()
-        plot_with_black_box(fig_m,     out_png(f"accuracies_M_{_safe_name(arch)}"))
+        save_png_with_black_box(
+            fig_m, output_png(f"accuracies_M_{_safe_name(arch)}")
+        )
 
     # ---------------- N figure: two panels (Forget, Retain) ----------------
     if not n_long_a.empty:
@@ -647,7 +646,9 @@ for arch in sorted(arches):
         ax_n_retain.grid(True)
         tweak_axes([ax_n_forget, ax_n_retain], line_alpha=1.0, marker_size=8, collections_alpha=0.1)
         plt.tight_layout()
-        plot_with_black_box(fig_n,     out_png(f"accuracies_N_{_safe_name(arch)}"))
+        save_png_with_black_box(
+            fig_n, output_png(f"accuracies_N_{_safe_name(arch)}")
+        )
 
 
 # ===================== ONE 2×2 FIGURE PER ARCH (M top, N bottom) =====================
@@ -755,5 +756,5 @@ for arch in sorted(arches):
                line_alpha=1.0, marker_size=8, collections_alpha=0.1)
 
     plt.tight_layout()
-    plot_with_black_box(fig,       out_png(f"Acc_M_N_{_safe_name(arch)}"))
+    save_png_with_black_box(fig, output_png(f"Acc_M_N_{_safe_name(arch)}"))
 

@@ -474,6 +474,8 @@ These scripts are post-processing utilities used to reproduce appendix figures a
 
 The Appendix R per-forget-class `.tex` tables are written to
 `results_single_class/tables/single_class_variant_by_forget/` by default.
+The probe-count sensitivity figures for Main Figure 5 and Appendix H are saved
+as PNG files under `results_single_class/plots/probe_count_ablation/`.
 
 ### Coefficient approximation validation (Appendix E)
 
