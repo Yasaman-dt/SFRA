@@ -8,7 +8,7 @@ selection procedure, and creates a two-panel appendix figure:
   (b) joint t-SNE of the corresponding classifier-head outputs (logits).
 
 Example:
-    python plots_tables/tsne_real_gaussian_probes.py \
+    python plots_tables/plot_real_vs_gaussian_probe_tsne.py \
         --method bad_teacher --dataset cifar10 --model_name resnet18 \
         --lr 1e-3 --forget_class 7
 """

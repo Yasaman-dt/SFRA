@@ -274,7 +274,7 @@ CUDA_VISIBLE_DEVICES=0 python -m ablation.relearning_singleclass_ablation \
 
 tsne of the unlearned model:
 ```bash
-CUDA_VISIBLE_DEVICES=0 python plots_tables/tsne_plot1.py \
+CUDA_VISIBLE_DEVICES=0 python plots_tables/plot_unlearned_feature_tsne.py \
   --dataset cifar10 \
   --model_name resnet18 \
   --method bad_teacher \
@@ -283,7 +283,7 @@ CUDA_VISIBLE_DEVICES=0 python plots_tables/tsne_plot1.py \
   --split test \
   --autoname
 
-CUDA_VISIBLE_DEVICES=0 python plots_tables/tsne_plot2.py \
+CUDA_VISIBLE_DEVICES=0 python plots_tables/plot_unlearned_logit_tsne.py \
   --dataset cifar10 \
   --model_name resnet18 \
   --method bad_teacher \
@@ -320,7 +320,7 @@ CUDA_VISIBLE_DEVICES=0 python -m ablation.relearning_singleclass_ablation \
   --save_real_dir results/scrub/real_pt \
   --save_ckpt_dir results/scrub/
 
-CUDA_VISIBLE_DEVICES=0 python plots_tables/tsne_framework.py \
+CUDA_VISIBLE_DEVICES=0 python plots_tables/plot_unlearned_vs_relearned_tsne.py \
   --dataset cifar10 \
   --model_name resnet18 \
   --method scrub \
@@ -413,7 +413,7 @@ This script validates the approximation used in the one-step margin analysis. It
 ### Real and synthetic probe t-SNE visualization
 
 ```bash
-CUDA_VISIBLE_DEVICES=0 python plots_tables/tsne_real_gaussian_probes.py \
+CUDA_VISIBLE_DEVICES=0 python plots_tables/plot_real_vs_gaussian_probe_tsne.py \
   --method bad_teacher \
   --dataset cifar10 \
   --model_name resnet18 \
@@ -649,12 +649,12 @@ After generating matching CIFAR-10 and CIFAR-100 trajectories, create the
 combined RS-versus-retain-change plot with:
 
 ```bash
-python plots_tables/retain_delta_rs_combined.py \
+python plots_tables/plot_rs_vs_accuracy_change.py \
   --cifar10-dir results_retain_forget_tradeoff/cifar10_resnet18_fg7 \
   --cifar100-dir results_retain_forget_tradeoff/cifar100_resnet18_fg0 \
   --x-metric retain \
   --legend first-upper-left \
-  --output results_single_class/plots/retain_delta_rs_combined.png
+  --output results_single_class/plots/rs_vs_retain_accuracy_change.png
 ```
 
 ### RS recoverability maps

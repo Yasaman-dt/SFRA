@@ -1,13 +1,13 @@
 """Build an appendix table for probe-generation runtime.
 
 This script formats the CSV files produced by
-``analysis/time_probe_generation.py`` into one compact LaTeX table grouped
+``analysis/benchmark_probe_generation.py`` into one compact LaTeX table grouped
 by backbone and dataset. It is meant to answer the reviewer concern about the
 cost of generating many Gaussian probes, especially for large-class datasets.
 
 Typical workflow:
 
-  1. Run ``time_probe_generation.py`` once per architecture, e.g. with
+  1. Run ``benchmark_probe_generation.py`` once per architecture, e.g. with
      ``--forget_class 0`` and ``--full_probe_construction``.
   2. Run this script to combine the timing CSVs into a paper table.
 
@@ -91,7 +91,7 @@ def parse_args() -> argparse.Namespace:
         nargs="*",
         default=None,
         help=(
-            "Timing CSVs from time_probe_generation.py. If omitted, the script "
+            "Timing CSVs from benchmark_probe_generation.py. If omitted, the script "
             "uses tables/probe_generation_full_timing_{model}_fg{forget_class}.csv."
         ),
     )
@@ -200,7 +200,7 @@ def load_rows(paths: list[Path]) -> list[dict[str, str]]:
                 rows.append(row)
     if not rows:
         raise FileNotFoundError(
-            "No timing rows were loaded. Run time_probe_generation.py first or pass --inputs."
+            "No timing rows were loaded. Run benchmark_probe_generation.py first or pass --inputs."
         )
     return rows
 

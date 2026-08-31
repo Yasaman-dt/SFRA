@@ -18,7 +18,7 @@ class and the same audit variant. For unlearning methods, we also report a
 linear-probe forget-accuracy gap relative to the matched retrained control.
 
 Example:
-    python plots_tables/fixed_single_class_variant_by_forget_table.py \
+    python plots_tables/generate_single_class_variant_table.py \
         --dataset cifar10 \
         --model_name resnet18
 """

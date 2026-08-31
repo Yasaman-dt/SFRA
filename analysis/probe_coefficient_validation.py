@@ -36,7 +36,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from plots_tables.tsne_real_gaussian_probes import (  # noqa: E402
+from plots_tables.plot_real_vs_gaussian_probe_tsne import (  # noqa: E402
     NUM_CLASSES,
     checkpoint_for,
     extract_features,

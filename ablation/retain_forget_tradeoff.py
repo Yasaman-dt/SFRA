@@ -36,7 +36,7 @@ from ablation.synthesis_strategy_ablation import (  # noqa: E402
     build_synthetic_sets_for_strategies,
     relearning_score,
 )
-from plots_tables.tsne_real_gaussian_probes import (  # noqa: E402
+from plots_tables.plot_real_vs_gaussian_probe_tsne import (  # noqa: E402
     checkpoint_for,
     extract_features,
     get_final_linear,
