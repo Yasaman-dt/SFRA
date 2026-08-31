@@ -4,6 +4,7 @@ import torch
 
 from utils import get_transforms, get_dataset, get_dataloader, get_unlearn_loader, gather_and_write_metrics_csv
 from trainer import load_model
+from project_paths import EXPS_DIR
 
 import torch.nn.functional as F
 
@@ -110,7 +111,7 @@ def main():
             
     
     p.add_argument('--unlearn_rate', type=float, default=None, help="Required for non-original/non-retrained unless --ckpt_path is provided.")
-    p.add_argument('--exps_dir',     type=str, default="~/classification/exps")
+    p.add_argument('--exps_dir',     type=str, default=str(EXPS_DIR))
     p.add_argument('--batch_size',   type=int, default=256)
     p.add_argument('--num_workers',  type=int, default=8)
     p.add_argument('--ckpt_path',    type=str, default=None, help="(optional) direct path to .pth")
