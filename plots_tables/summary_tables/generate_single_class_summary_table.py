@@ -9,7 +9,7 @@ from typing import Optional, List
 # ----------------- Config -----------------
 # Resolve the results directory relative to this repo so the script works on
 # Linux/macOS/Windows without editing the path by hand.
-base_dir = Path(__file__).resolve().parents[1] / "results_single_class"
+base_dir = Path(__file__).resolve().parents[2] / "results_single_class"
 table_dir = base_dir / "tables"
 csv_dir = base_dir / "csvs"
 

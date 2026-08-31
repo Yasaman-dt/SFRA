@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Optional, List
 
 # ----------------- Config -----------------
-REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 base_dir = REPO_ROOT / "results_multi_class_2"
 
 DATASETS = ["cifar10", "cifar100", "tiny_imagenet"]
