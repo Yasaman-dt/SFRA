@@ -278,6 +278,9 @@ Generate the single-class summary tables:
 python plots_tables/summary_tables/generate_single_class_summary_table.py
 ```
 
+The generated architecture-level tables are saved under
+`results_single_class/tables/single_class_summary/`.
+
 The multi-class generator supports the 2-class and 5-vs-10-class table
 formats. Each format reads from its existing results directory and writes the
 generated table back to that directory:
@@ -468,6 +471,9 @@ These scripts are post-processing utilities used to reproduce appendix figures a
 | P | Uncertainty-Score Ablation | `ablation/run_uncertainty_all_methods_one_arch.sh`; `plots_tables/generate_uncertainty_per_class_rs_table.py` |
 | Q | Effect of Gaussian Support on SFRA | `ablation/synthesis_strategy_ablation.py` |
 | R | Detailed Per-Class Results and Linear Separability | `relearning_baselines/run_linear_probe_single_checkpoint.py`; `plots_tables/generate_single_class_variant_table.py` |
+
+The Appendix R per-forget-class `.tex` tables are written to
+`results_single_class/tables/single_class_variant_by_forget/` by default.
 
 ### Coefficient approximation validation (Appendix E)
 

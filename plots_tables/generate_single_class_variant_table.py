@@ -128,7 +128,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--out_dir",
         type=Path,
-        default=Path("results_single_class/tables"),
+        default=Path(
+            "results_single_class/tables/single_class_variant_by_forget"
+        ),
     )
     parser.add_argument("--methods", nargs="+", default=None)
     parser.add_argument(

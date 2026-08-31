@@ -196,7 +196,7 @@ def parse_args() -> argparse.Namespace:
 def table_paths(architecture: str) -> dict[str, Path]:
     return {
         dataset: REPO_ROOT
-        / "results_single_class/tables"
+        / "results_single_class/tables/single_class_variant_by_forget"
         / f"{dataset_key}_{architecture}_single_class_variant_by_forget_table.tex"
         for dataset, dataset_key in DATASETS.items()
     }
