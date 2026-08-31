@@ -270,6 +270,32 @@ CUDA_VISIBLE_DEVICES=0 python source_free_relearning_multi_class.py \
   --forget_per_class 500
 ```
 
+### Generate the summary tables
+
+Generate the single-class summary tables:
+
+```bash
+python plots_tables/summary_tables/generate_single_class_summary_table.py
+```
+
+The multi-class generator supports the 2-class and 5-vs-10-class table
+formats. Each format reads from its existing results directory and writes the
+generated table back to that directory:
+
+```bash
+# Generate both multi-class summary-table formats
+python plots_tables/summary_tables/generate_multi_class_summary_tables.py \
+  --setting all
+
+# Generate only the 2-class summary table
+python plots_tables/summary_tables/generate_multi_class_summary_tables.py \
+  --setting 2
+
+# Generate only the 5-vs-10-class comparison table
+python plots_tables/summary_tables/generate_multi_class_summary_tables.py \
+  --setting 5-10
+```
+
 ---
 
 ## 7. Ablation on Different M and N
