@@ -26,47 +26,50 @@ The repository supports:
 - $M$ is the number of synthetic probes selected per retained class. When the
   retain and forget counts differ, we use $M_r$ and $M_f$; these correspond to
   `--retain_per_class` and `--forget_per_class`, respectively.
-- RS is the relearning score. Let $\mathcal{A}^{t\text{-}un}_r$ and
-  $\mathcal{A}^{t\text{-}un}_f$ denote the retain and forget test accuracies
-  after unlearning, and let $\mathcal{A}^{t\text{-}re}_r$ and
-  $\mathcal{A}^{t\text{-}re}_f$ denote the corresponding test accuracies after
-  relearning. With all accuracies normalized to $[0,1]$, the retain-preservation
-  and forget-recovery terms are
 
-  $$
-  \begin{aligned}
-  R_r &= 1-\max\!\left(
-  0,\mathcal{A}^{t\text{-}un}_r-\mathcal{A}^{t\text{-}re}_r
-  \right), \\
-  R_f &= \max\!\left(
-  0,\mathcal{A}^{t\text{-}re}_f-\mathcal{A}^{t\text{-}un}_f
-  \right).
-  \end{aligned}
-  $$
+### Relearning Score
 
-  Their harmonic mean defines
+RS is the relearning score. Let $\mathcal{A}^{t\text{-}un}_r$ and
+$\mathcal{A}^{t\text{-}un}_f$ denote the retain and forget test accuracies
+after unlearning, and let $\mathcal{A}^{t\text{-}re}_r$ and
+$\mathcal{A}^{t\text{-}re}_f$ denote the corresponding test accuracies after
+relearning. With all accuracies normalized to $[0,1]$, the retain-preservation
+and forget-recovery terms are
 
-  $$
-  \mathrm{RS}=
-  \begin{cases}
-  \displaystyle\frac{2R_rR_f}{R_r+R_f}, & R_r+R_f>0, \\
-  0, & \text{otherwise}.
-  \end{cases}
-  $$
+```math
+\begin{aligned}
+R_r &= 1-\max\!\left(
+0,\mathcal{A}^{t\text{-}un}_r-\mathcal{A}^{t\text{-}re}_r
+\right), \\
+R_f &= \max\!\left(
+0,\mathcal{A}^{t\text{-}re}_f-\mathcal{A}^{t\text{-}un}_f
+\right).
+\end{aligned}
+```
 
-  Thus, $\mathrm{RS}\in[0,1]$; a high value indicates strong forget-class
-  recovery with limited retain-accuracy degradation. For method $m$, audit
-  variant $v$, and forget class $c$, the matched-control score is
+Their harmonic mean defines
 
-  $$
-  \Delta\mathrm{RS}^{(v)}_{m,c}
-  =\mathrm{RS}^{(v)}_{m,c}
-  -\mathrm{RS}^{(v)}_{\mathrm{retrained},c}.
-  $$
+```math
+\mathrm{RS}=
+\begin{cases}
+\displaystyle\frac{2R_rR_f}{R_r+R_f}, & R_r+R_f>0, \\
+0, & \text{otherwise}.
+\end{cases}
+```
 
-  RS measures absolute source-free recoverability, whereas
-  $\Delta\mathrm{RS}$ measures recoverability relative to the retrained model
-  matched to the same forget class.
+Thus, $\mathrm{RS}\in[0,1]$; a high value indicates strong forget-class
+recovery with limited retain-accuracy degradation. For method $m$, audit
+variant $v$, and forget class $c$, the matched-control score is
+
+```math
+\Delta\mathrm{RS}^{(v)}_{m,c}
+=\mathrm{RS}^{(v)}_{m,c}
+-\mathrm{RS}^{(v)}_{\mathrm{retrained},c}.
+```
+
+RS measures absolute source-free recoverability, whereas
+$\Delta\mathrm{RS}$ measures recoverability relative to the retrained model
+matched to the same forget class.
 
 ---
 
