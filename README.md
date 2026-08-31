@@ -14,7 +14,7 @@ The repository supports:
 - Training original models
 - Retrain-from-scratch baselines
 - Single-class and multi-class unlearning
-- Our source-free class relearning method
+- Our Source-Free Relearning Audit (SFRA) method
 - Ablations and t-SNE visualizations
 
 ## Notation
