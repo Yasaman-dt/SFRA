@@ -211,7 +211,11 @@ def parse_args():
     )
     parser.add_argument(
         "--output_dir",
-        default="results_synthesis_ablation",
+        default=None,
+        help=(
+            "Output root. By default, results are written under "
+            "results_synthesis_ablation/results_synthesis_ablation_<model>."
+        ),
     )
     parser.add_argument(
         "--force",
@@ -1168,6 +1172,11 @@ def run_for_forget_class(args, forget_class, test_dataset, strategies, device):
 
 def main():
     args = parse_args()
+    if args.output_dir is None:
+        args.output_dir = str(
+            Path("results_synthesis_ablation")
+            / f"results_synthesis_ablation_{args.model_name}"
+        )
     if args.generated_per_class < args.retain_per_class + args.forget_per_class:
         raise ValueError(
             "generated_per_class must be >= retain_per_class + forget_per_class."

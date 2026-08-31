@@ -34,5 +34,4 @@ results_forget_row_ablation_cifar10_fg7
 results_retain_forget_tradeoff
 results_epoch_diagnostics
 results_gaussian_support_ablation
-results_synthesis_ablation_vit-b-16
-results_synthesis_ablation_resnet18
+results_synthesis_ablation

@@ -514,7 +514,7 @@ This script loads an unlearned checkpoint and visualizes real test samples toget
 
 ```bash
 python plots_tables/generate_synthesis_ablation_rs_table.py \
-  --root results_synthesis_ablation \
+  --root results_synthesis_ablation/results_synthesis_ablation_resnet18 \
   --methods retrained bad_teacher neggrad_plus delete scrub boundary_shrink finetune gradient_ascent random_label l2ul_adv salun \
   --dataset cifar10 \
   --model_name resnet18 \
@@ -573,9 +573,10 @@ python plots_tables/generate_sampling_distribution_rs_table.py \
 
 This script compares Gaussian, Uniform, and Laplace embedding distributions.
 It combines the Gaussian results from `results_single_class` with the Uniform
-and Laplace results from `results_synthesis_ablation`. By default, it writes
-`cifar10_resnet18_sampling_distribution_rs_table.tex` and the corresponding
-CSV file under `results_synthesis_ablation/`.
+and Laplace results from the matching architecture-specific synthesis folder.
+By default, it writes `cifar10_resnet18_sampling_distribution_rs_table.tex`
+and the corresponding CSV file under
+`results_synthesis_ablation/results_synthesis_ablation_resnet18/`.
 
 ### Confidence of forget-class assignments (Appendix F)
 
@@ -641,6 +642,15 @@ CUDA_VISIBLE_DEVICES=2 python -m ablation.synthesis_strategy_ablation \
   --method scrub \
   --lr 0.001 \
   --forget_classes 0 1 2 3 4 5 6 7 8 9
+```
+
+Unless `--output_dir` is supplied, synthesis-ablation runs are grouped by
+architecture under:
+
+```text
+results_synthesis_ablation/
+  results_synthesis_ablation_resnet18/
+  results_synthesis_ablation_vit-b-16/
 ```
 
 ### Uncertainty-score ablation (Appendix P)

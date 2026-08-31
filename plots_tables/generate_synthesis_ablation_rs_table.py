@@ -6,7 +6,7 @@ one or more unlearning methods into a table whose columns are forgotten classes.
 
 Example:
     python plots_tables/synthesis_ablation_class_table.py \
-      --root results_synthesis_ablation \
+      --root results_synthesis_ablation/results_synthesis_ablation_resnet18 \
       --method bad_teacher --dataset cifar10 --model_name resnet18 \
       --unlearn_lr 0.001 --classes 0 1 2 3 4 5 6 7 8 9
 """
@@ -89,7 +89,14 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description="Pivot synthesis-ablation results across forget classes."
     )
-    parser.add_argument("--root", default="results_synthesis_ablation")
+    parser.add_argument(
+        "--root",
+        default=None,
+        help=(
+            "Architecture-specific synthesis-results root. By default, this "
+            "is derived from --model_name."
+        ),
+    )
     parser.add_argument(
         "--method",
         default=None,
@@ -562,6 +569,11 @@ def write_csv(path, means, stds, strategies, metrics, classes, precision, frame_
 
 def main():
     args = parse_args()
+    if args.root is None:
+        args.root = str(
+            Path("results_synthesis_ablation")
+            / f"results_synthesis_ablation_{args.model_name}"
+        )
     # This table reports only RS; class IDs are the column names.
     args.metrics = ["RS"]
     if args.methods is not None:

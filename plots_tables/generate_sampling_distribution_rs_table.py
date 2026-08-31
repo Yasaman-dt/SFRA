@@ -2,8 +2,8 @@
 
 This table combines:
   * Gaussian source-free relearning results from results_single_class;
-  * Uniform and Laplace synthesis-ablation results from
-    results_synthesis_ablation.
+  * Uniform and Laplace synthesis-ablation results from the corresponding
+    architecture-specific directory under results_synthesis_ablation.
 
 The intended use is the appendix ablation where the only displayed strategy
 factor is the embedding sampling distribution.
@@ -102,13 +102,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--ablation_root",
         type=Path,
-        default=REPO_ROOT / "results_synthesis_ablation",
-        help="Root containing synthesis-ablation results.",
+        default=None,
+        help=(
+            "Root containing synthesis-ablation results. By default, this is "
+            "derived from --model_name."
+        ),
     )
     parser.add_argument(
         "--out_dir",
         type=Path,
-        default=REPO_ROOT / "results_synthesis_ablation",
+        default=None,
+        help=(
+            "Output directory. Defaults to the architecture-specific "
+            "synthesis-results directory."
+        ),
     )
     parser.add_argument(
         "--ablation_forget_selection",
@@ -471,6 +478,15 @@ def make_latex_table(
 
 def main() -> None:
     args = parse_args()
+    default_ablation_root = (
+        REPO_ROOT
+        / "results_synthesis_ablation"
+        / f"results_synthesis_ablation_{args.model_name}"
+    )
+    if args.ablation_root is None:
+        args.ablation_root = default_ablation_root
+    if args.out_dir is None:
+        args.out_dir = default_ablation_root
     classes = list(args.classes)
     requested_methods = args.methods if args.methods is not None else METHOD_ORDER
     methods = [m for m in METHOD_ORDER if m in requested_methods]
