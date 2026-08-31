@@ -1,7 +1,8 @@
 # Source-Free Class Relearning: Diagnosing Forgetting in Class Unlearning
 
+This repository implements Source-Free Relearning Analysis (SFRA), an audit for measuring how readily an unlearned class can be recovered by updating only the released classifier head with synthetic feature-space probes. SFRA does not require access to the original training data or real samples from the forget class. The repository contains the training, unlearning, relearning, analysis, and visualization code used to reproduce the paper's experiments.
 
-It supports:
+The repository supports:
 
 - **Datasets:** `cifar10`, `cifar100`, `tiny_imagenet`
 - **Backbones:** `resnet18`, `vit-b-16`, `swin-t`
@@ -191,7 +192,7 @@ CUDA_VISIBLE_DEVICES=0 python test_unlearned_model.py \
   --method bad_teacher \
   --forget_id 0 \
   --unlearn_rate 1e-03 \
-  --exps_dir ~/classification/exps \
+  --exps_dir "$SFRA_EXPS_DIR" \
   --batch_size 256 \
   --num_workers 8
 ```
@@ -205,7 +206,7 @@ CUDA_VISIBLE_DEVICES=0 python test_unlearned_model.py \
   --method bad_teacher \
   --forget_set 25 58 \
   --unlearn_rate 1e-03 \
-  --exps_dir ~/classification/exps \
+  --exps_dir "$SFRA_EXPS_DIR" \
   --batch_size 128 \
   --num_workers 8
 ```
@@ -595,7 +596,10 @@ bash ablation/run_uncertainty_all_methods_one_arch.sh \
   0 resnet18 custom_uncertainty_results
 ```
 
-After the runs finish, generate one per-class RS table for each architecture:
+After all methods finish successfully for an architecture, the launcher
+automatically generates its per-class RS table and corresponding CSV. The
+following commands are only needed to regenerate the tables from existing
+results without rerunning the experiments:
 
 ```bash
 python plots_tables/uncertainty_per_class_rs_table.py --model resnet18
