@@ -8,7 +8,7 @@ selection procedure, and creates a two-panel appendix figure:
   (b) joint t-SNE of the corresponding classifier-head outputs (logits).
 
 Example:
-    python plots_tables/plot_real_vs_gaussian_probe_tsne.py \
+    python plots_tables/tsne_plots/plot_real_vs_gaussian_probe_tsne.py \
         --method bad_teacher --dataset cifar10 --model_name resnet18 \
         --lr 1e-3 --forget_class 7
 """
@@ -31,7 +31,7 @@ from sklearn.manifold import TSNE
 from torch.utils.data import DataLoader
 
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 

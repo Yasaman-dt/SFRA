@@ -26,7 +26,9 @@ from sklearn.manifold import TSNE
 import matplotlib.pyplot as plt
 
 import sys
-sys.path.append(str(Path(__file__).resolve().parent.parent))
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 from utils import get_transforms, get_dataset
 from project_paths import EXPS_DIR
 from trainer import *  # must provide load_model(ckpt, model_name, dataset, num_classes)

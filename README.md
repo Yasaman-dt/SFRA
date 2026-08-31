@@ -274,7 +274,7 @@ CUDA_VISIBLE_DEVICES=0 python -m ablation.run_single_class_relearning_ablation \
 
 tsne of the unlearned model:
 ```bash
-CUDA_VISIBLE_DEVICES=0 python plots_tables/plot_unlearned_feature_tsne.py \
+CUDA_VISIBLE_DEVICES=0 python plots_tables/tsne_plots/plot_unlearned_feature_tsne.py \
   --dataset cifar10 \
   --model_name resnet18 \
   --method bad_teacher \
@@ -283,7 +283,7 @@ CUDA_VISIBLE_DEVICES=0 python plots_tables/plot_unlearned_feature_tsne.py \
   --split test \
   --autoname
 
-CUDA_VISIBLE_DEVICES=0 python plots_tables/plot_unlearned_logit_tsne.py \
+CUDA_VISIBLE_DEVICES=0 python plots_tables/tsne_plots/plot_unlearned_logit_tsne.py \
   --dataset cifar10 \
   --model_name resnet18 \
   --method bad_teacher \
@@ -320,7 +320,7 @@ CUDA_VISIBLE_DEVICES=0 python -m ablation.run_single_class_relearning_ablation \
   --save_real_dir results/scrub/real_pt \
   --save_ckpt_dir results/scrub/
 
-CUDA_VISIBLE_DEVICES=0 python plots_tables/plot_unlearned_vs_relearned_tsne.py \
+CUDA_VISIBLE_DEVICES=0 python plots_tables/tsne_plots/plot_unlearned_vs_relearned_tsne.py \
   --dataset cifar10 \
   --model_name resnet18 \
   --method scrub \
@@ -413,7 +413,7 @@ This script validates the approximation used in the one-step margin analysis. It
 ### Real and synthetic probe t-SNE visualization
 
 ```bash
-CUDA_VISIBLE_DEVICES=0 python plots_tables/plot_real_vs_gaussian_probe_tsne.py \
+CUDA_VISIBLE_DEVICES=0 python plots_tables/tsne_plots/plot_real_vs_gaussian_probe_tsne.py \
   --method bad_teacher \
   --dataset cifar10 \
   --model_name resnet18 \

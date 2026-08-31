@@ -1,4 +1,5 @@
 import os, re, glob
+from pathlib import Path
 import numpy as np
 import pandas as pd
 import seaborn as sns
@@ -109,7 +110,8 @@ plt.rc('axes', edgecolor='black')
 plt.rc('legend', labelcolor='black')
 
 # ===================== CONFIG =====================
-BASE_DIR = r"C:\Users\AT56170\Desktop\Codes\Machine Unlearning - Classification\Source_Free_Class_Revival"
+REPO_ROOT = Path(__file__).resolve().parents[1]
+BASE_DIR = REPO_ROOT
 
 method_dirs_m = [
     r"diff_M/delete",
