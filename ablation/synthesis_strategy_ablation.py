@@ -34,6 +34,7 @@ import math
 import os
 import random
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -61,7 +62,13 @@ from plots_tables.tsne_real_gaussian_probes import (  # noqa: E402
 from utils import get_dataset, get_transforms  # noqa: E402
 
 
-DISTRIBUTIONS = ("gaussian", "uniform", "laplace")
+DISTRIBUTIONS = (
+    "gaussian",
+    "relu_gaussian",
+    "abs_gaussian",
+    "uniform",
+    "laplace",
+)
 UNCERTAINTY_SCORES = ("msp", "softmax", "entropy", "energy")
 FORGET_SELECTIONS = ("low_confidence", "high_confidence", "random")
 RETAIN_SELECTIONS = ("high_confidence", "random")
@@ -121,6 +128,24 @@ def parse_args():
     parser.add_argument("--retain_per_class", type=int, default=500)
     parser.add_argument("--forget_per_class", type=int, default=500)
     parser.add_argument("--sample_batch_size", type=int, default=4096)
+    parser.add_argument(
+        "--diagnostic_sample_size",
+        type=int,
+        default=4096,
+        help=(
+            "Maximum raw and accepted candidates per retain class used for "
+            "sign/norm diagnostics. Selected-probe statistics use all probes."
+        ),
+    )
+    parser.add_argument(
+        "--paired_distribution_streams",
+        action="store_true",
+        help=(
+            "Seed proposal sampling independently for each retain class. This "
+            "makes Gaussian and ReLU-Gaussian runs use the same underlying "
+            "standard-normal stream for every class, before ReLU is applied."
+        ),
+    )
     parser.add_argument("--train_batch_size", type=int, default=256)
     parser.add_argument("--eval_batch_size", type=int, default=4096)
     parser.add_argument("--num_workers", type=int, default=4)
@@ -153,7 +178,7 @@ def parse_args():
         "--distributions",
         nargs="+",
         choices=DISTRIBUTIONS,
-        default=list(DISTRIBUTIONS),
+        default=["gaussian", "uniform", "laplace"],
     )
     parser.add_argument(
         "--uncertainty_scores", "--uncertainty_metric",
@@ -256,6 +281,16 @@ def make_strategies(args):
 def sample_distribution(shape, distribution, generator, device):
     if distribution == "gaussian":
         return torch.randn(*shape, generator=generator, device=device)
+    if distribution == "relu_gaussian":
+        return torch.randn(
+            *shape, generator=generator, device=device
+        ).clamp_min_(0.0)
+    if distribution == "abs_gaussian":
+        # Half-normal coordinates. Unlike ReLU-Gaussian, this introduces no
+        # point mass at zero and preserves every sampled vector's L2 norm.
+        return torch.randn(
+            *shape, generator=generator, device=device
+        ).abs_()
     if distribution == "uniform":
         samples = torch.rand(*shape, generator=generator, device=device)
         return samples.mul_(2 * math.sqrt(3)).sub_(math.sqrt(3))
@@ -282,6 +317,7 @@ def sample_accepted_pool(
     distribution,
     batch_size,
     generator,
+    diagnostic_sample_size=4096,
 ):
     """Return accepted features, logits, and full probabilities for one predicted class."""
     device = weight.device
@@ -289,6 +325,7 @@ def sample_accepted_pool(
     feature_chunks, logit_chunks, probability_chunks = [], [], []
     accepted = 0
     draws = 0
+    raw_diagnostic_chunks = []
     max_draws = max(10_000_000, wanted * weight.shape[0] * 400)
 
     while accepted < wanted:
@@ -301,6 +338,11 @@ def sample_accepted_pool(
         samples = sample_distribution(
             (current_batch, embedding_dim), distribution, generator, device
         )
+        if sum(len(chunk) for chunk in raw_diagnostic_chunks) < diagnostic_sample_size:
+            remaining = diagnostic_sample_size - sum(
+                len(chunk) for chunk in raw_diagnostic_chunks
+            )
+            raw_diagnostic_chunks.append(samples[:remaining].detach().cpu())
         logits = samples @ weight.T + bias
         probabilities = F.softmax(logits, dim=1)
         mask = probabilities.argmax(dim=1).eq(target_class)
@@ -311,11 +353,15 @@ def sample_accepted_pool(
             accepted += int(mask.sum())
         draws += current_batch
 
+    accepted_features = torch.cat(feature_chunks)[:wanted]
+    raw_diagnostic = torch.cat(raw_diagnostic_chunks)[:diagnostic_sample_size]
     return (
-        torch.cat(feature_chunks)[:wanted],
+        accepted_features,
         torch.cat(logit_chunks)[:wanted],
         torch.cat(probability_chunks)[:wanted],
         draws,
+        raw_diagnostic,
+        accepted_features[:diagnostic_sample_size],
     )
 
 
@@ -368,6 +414,7 @@ def select_indices(
             "forget_per_class for disjoint selections."
         )
 
+    forget_start = time.perf_counter()
     if forget_rule == "random":
         forget_indices = torch.randperm(count, generator=generator)[:forget_k]
     else:
@@ -379,11 +426,13 @@ def select_indices(
             uncertainty_score,
         )
         forget_indices = scores.argsort(descending=True)[:forget_k]
+    forget_selection_seconds = time.perf_counter() - forget_start
 
     available_mask = torch.ones(count, dtype=torch.bool)
     available_mask[forget_indices] = False
     available = torch.where(available_mask)[0]
 
+    retain_start = time.perf_counter()
     if retain_rule == "random":
         retain_indices = available[
             torch.randperm(len(available), generator=generator)[:retain_k]
@@ -393,7 +442,38 @@ def select_indices(
             probabilities[available], logits[available], target_class, uncertainty_score
         )
         retain_indices = available[uncertainty.argsort(descending=False)[:retain_k]]
-    return retain_indices, forget_indices
+    retain_selection_seconds = time.perf_counter() - retain_start
+    return (
+        retain_indices,
+        forget_indices,
+        retain_selection_seconds,
+        forget_selection_seconds,
+    )
+
+
+def probe_statistics(features):
+    """Return coordinate-sign and norm diagnostics for a feature tensor."""
+    features = features.float()
+    if features.numel() == 0:
+        return {
+            "negative_fraction": float("nan"),
+            "zero_fraction": float("nan"),
+            "fully_nonnegative_fraction": float("nan"),
+            "norm_mean": float("nan"),
+            "norm_std": float("nan"),
+            "diagnostic_vectors": 0,
+        }
+    norms = features.norm(dim=1)
+    return {
+        "negative_fraction": float(features.lt(0).float().mean()),
+        "zero_fraction": float(features.eq(0).float().mean()),
+        "fully_nonnegative_fraction": float(
+            features.ge(0).all(dim=1).float().mean()
+        ),
+        "norm_mean": float(norms.mean()),
+        "norm_std": float(norms.std(unbiased=False)),
+        "diagnostic_vectors": int(len(features)),
+    }
 
 
 def build_synthetic_sets_for_strategies(
@@ -407,6 +487,8 @@ def build_synthetic_sets_for_strategies(
     sample_batch_size,
     device,
     seed,
+    diagnostic_sample_size=4096,
+    paired_distribution_streams=False,
 ):
     """Generate each class pool once and select all strategies from that pool."""
     distributions = {strategy.distribution for strategy in strategies}
@@ -426,27 +508,62 @@ def build_synthetic_sets_for_strategies(
             "retain_features": [],
             "retain_labels": [],
             "forget_features": [],
+            "retain_selection_seconds": 0.0,
+            "forget_selection_seconds": 0.0,
         }
         for strategy in strategies
     }
     total_draws = 0
     agreement_rows = []
+    pool_generation_seconds = 0.0
+    raw_diagnostic_parts = []
+    accepted_diagnostic_parts = []
+
+    # Exclude one-time CUDA/BLAS initialization from the proposal comparison.
+    warmup_count = min(sample_batch_size, 64)
+    warmup_features = torch.zeros(
+        warmup_count, weight.shape[1], device=device, dtype=weight.dtype
+    )
+    _ = F.softmax(warmup_features @ weight.T + bias, dim=1)
+    if device.type == "cuda":
+        torch.cuda.synchronize(device)
 
     for retain_class in range(num_classes):
         if retain_class == forget_class:
             continue
-        features, logits, probabilities, draws = sample_accepted_pool(
+        class_sample_generator = sample_generator
+        if paired_distribution_streams:
+            class_seed = seed * 1_000_003 + retain_class
+            class_sample_generator = torch.Generator(device=device).manual_seed(
+                class_seed
+            )
+        if device.type == "cuda":
+            torch.cuda.synchronize(device)
+        pool_start = time.perf_counter()
+        (
+            features, logits, probabilities, draws,
+            raw_diagnostic, accepted_diagnostic,
+        ) = sample_accepted_pool(
             weight=weight,
             bias=bias,
             target_class=retain_class,
             wanted=generated_per_class,
             distribution=distribution,
             batch_size=sample_batch_size,
-            generator=sample_generator,
+            generator=class_sample_generator,
+            diagnostic_sample_size=diagnostic_sample_size,
         )
+        if device.type == "cuda":
+            torch.cuda.synchronize(device)
+        pool_generation_seconds += time.perf_counter() - pool_start
+        raw_diagnostic_parts.append(raw_diagnostic)
+        accepted_diagnostic_parts.append(accepted_diagnostic)
         forget_indices_by_score = {}
         for strategy in strategies:
-            retain_indices, forget_indices = select_indices(
+            (
+                retain_indices, forget_indices,
+                retain_selection_seconds, forget_selection_seconds,
+            ) = select_indices(
                 probabilities=probabilities,
                 logits=logits,
                 target_class=retain_class,
@@ -462,6 +579,8 @@ def build_synthetic_sets_for_strategies(
                 torch.full((retain_per_class,), retain_class, dtype=torch.long)
             )
             selected[strategy]["forget_features"].append(features[forget_indices])
+            selected[strategy]["retain_selection_seconds"] += retain_selection_seconds
+            selected[strategy]["forget_selection_seconds"] += forget_selection_seconds
             if (
                 strategy.distribution == "gaussian"
                 and strategy.forget_selection == "low_confidence"
@@ -483,6 +602,9 @@ def build_synthetic_sets_for_strategies(
         total_draws += draws
 
     outputs = {}
+    diagnostics = {}
+    raw_stats = probe_statistics(torch.cat(raw_diagnostic_parts))
+    accepted_stats = probe_statistics(torch.cat(accepted_diagnostic_parts))
     for strategy, parts in selected.items():
         retain_features = torch.cat(parts["retain_features"]).float()
         retain_labels = torch.cat(parts["retain_labels"])
@@ -497,7 +619,21 @@ def build_synthetic_sets_for_strategies(
             forget_labels,
             total_draws,
         )
-    return outputs, agreement_rows
+        diagnostics[strategy] = {
+            "pool_generation_seconds": pool_generation_seconds,
+            "retain_selection_seconds": parts["retain_selection_seconds"],
+            "forget_selection_seconds": parts["forget_selection_seconds"],
+        }
+        for prefix, stats in (
+            ("proposal", raw_stats),
+            ("accepted", accepted_stats),
+            ("retain_selected", probe_statistics(retain_features)),
+            ("forget_selected", probe_statistics(forget_features)),
+        ):
+            diagnostics[strategy].update(
+                {f"{prefix}_{name}": value for name, value in stats.items()}
+            )
+    return outputs, agreement_rows, diagnostics
 
 
 @torch.inference_mode()
@@ -682,12 +818,185 @@ def aggregate_results(run_csv):
         "forget_gain",
         "RS",
         "best_epoch",
+        "total_draws",
+        "pool_generation_seconds",
+        "retain_selection_seconds",
+        "forget_selection_seconds",
+        "proposal_negative_fraction",
+        "proposal_zero_fraction",
+        "proposal_fully_nonnegative_fraction",
+        "proposal_norm_mean",
+        "accepted_negative_fraction",
+        "accepted_zero_fraction",
+        "accepted_fully_nonnegative_fraction",
+        "accepted_norm_mean",
+        "retain_selected_negative_fraction",
+        "retain_selected_zero_fraction",
+        "retain_selected_fully_nonnegative_fraction",
+        "retain_selected_norm_mean",
+        "forget_selected_negative_fraction",
+        "forget_selected_zero_fraction",
+        "forget_selected_fully_nonnegative_fraction",
+        "forget_selected_norm_mean",
     ]
+    metrics = [metric for metric in metrics if metric in frame.columns]
     grouped = frame.groupby(group_columns, sort=False)[metrics].agg(["mean", "std"])
     grouped.columns = [f"{metric}_{stat}" for metric, stat in grouped.columns]
     summary = grouped.reset_index()
 
     return summary
+
+
+def write_signed_relu_comparison(run_csv, output_dir):
+    """Write paired signed-vs-ReLU Gaussian diagnostics when both are present."""
+    frame = pd.read_csv(run_csv)
+    if not {"gaussian", "relu_gaussian"}.issubset(set(frame["distribution"])):
+        return
+
+    comparison = frame[
+        frame["distribution"].isin(["gaussian", "relu_gaussian"])
+        & frame["forget_selection"].eq("low_confidence")
+        & frame["retain_selection"].eq("high_confidence")
+    ].copy()
+    if "uncertainty_score" in comparison.columns:
+        comparison = comparison[
+            comparison["uncertainty_score"].isin(["msp", "softmax"])
+        ]
+
+    metrics = [
+        "relearned_retain_acc",
+        "relearned_forget_acc",
+        "RS",
+        "best_epoch",
+        "total_draws",
+        "pool_generation_seconds",
+        "retain_selection_seconds",
+        "forget_selection_seconds",
+        "proposal_negative_fraction",
+        "proposal_zero_fraction",
+        "proposal_fully_nonnegative_fraction",
+        "proposal_norm_mean",
+        "accepted_negative_fraction",
+        "accepted_zero_fraction",
+        "accepted_fully_nonnegative_fraction",
+        "accepted_norm_mean",
+        "retain_selected_negative_fraction",
+        "retain_selected_zero_fraction",
+        "retain_selected_fully_nonnegative_fraction",
+        "retain_selected_norm_mean",
+        "forget_selected_negative_fraction",
+        "forget_selected_zero_fraction",
+        "forget_selected_fully_nonnegative_fraction",
+        "forget_selected_norm_mean",
+    ]
+    metrics = [metric for metric in metrics if metric in comparison.columns]
+    paired_rows = []
+    for seed, seed_frame in comparison.groupby("seed", sort=True):
+        by_distribution = seed_frame.drop_duplicates("distribution").set_index(
+            "distribution"
+        )
+        if not {"gaussian", "relu_gaussian"}.issubset(by_distribution.index):
+            print(f"[warning] seed={seed} lacks a complete Gaussian/ReLU pair")
+            continue
+        row = {"seed": seed}
+        for metric in metrics:
+            signed = float(by_distribution.at["gaussian", metric])
+            relu = float(by_distribution.at["relu_gaussian", metric])
+            row[f"signed_{metric}"] = signed
+            row[f"relu_{metric}"] = relu
+            row[f"relu_minus_signed_{metric}"] = relu - signed
+        paired_rows.append(row)
+
+    if not paired_rows:
+        return
+    paired = pd.DataFrame(paired_rows)
+    paired.to_csv(output_dir / "signed_vs_relu_gaussian_per_seed.csv", index=False)
+
+    summary_rows = []
+    for metric in metrics:
+        delta = f"relu_minus_signed_{metric}"
+        summary_rows.append({
+            "metric": metric,
+            "signed_mean": paired[f"signed_{metric}"].mean(),
+            "signed_std": paired[f"signed_{metric}"].std(ddof=1),
+            "relu_gaussian_mean": paired[f"relu_{metric}"].mean(),
+            "relu_gaussian_std": paired[f"relu_{metric}"].std(ddof=1),
+            "relu_minus_signed_mean": paired[delta].mean(),
+            "relu_minus_signed_std": paired[delta].std(ddof=1),
+            "paired_seeds": len(paired),
+        })
+    pd.DataFrame(summary_rows).to_csv(
+        output_dir / "signed_vs_relu_gaussian_summary.csv", index=False
+    )
+
+
+def write_three_way_gaussian_support_comparison(run_csv, output_dir):
+    """Compare signed, ReLU, and absolute Gaussian runs using matched seeds."""
+    frame = pd.read_csv(run_csv)
+    distributions = ["gaussian", "relu_gaussian", "abs_gaussian"]
+    if not set(distributions).issubset(set(frame["distribution"])):
+        return
+    frame = frame[
+        frame["distribution"].isin(distributions)
+        & frame["forget_selection"].eq("low_confidence")
+        & frame["retain_selection"].eq("high_confidence")
+    ].copy()
+    if "uncertainty_score" in frame.columns:
+        frame = frame[frame["uncertainty_score"].isin(["msp", "softmax"])]
+
+    excluded = {
+        "method", "dataset", "model", "unlearn_lr", "forget_class", "seed",
+        "strategy", "distribution", "forget_selection", "retain_selection",
+        "uncertainty_score", "generated_per_class", "retain_per_class",
+        "forget_per_class",
+    }
+    metrics = [
+        column for column in frame.columns
+        if column not in excluded and pd.api.types.is_numeric_dtype(frame[column])
+    ]
+    prefixes = {
+        "gaussian": "signed",
+        "relu_gaussian": "relu_gaussian",
+        "abs_gaussian": "absolute_gaussian",
+    }
+    rows = []
+    for seed, seed_frame in frame.groupby("seed", sort=True):
+        by_distribution = seed_frame.drop_duplicates("distribution").set_index(
+            "distribution"
+        )
+        if not set(distributions).issubset(by_distribution.index):
+            print(f"[warning] seed={seed} lacks a complete three-way Gaussian comparison")
+            continue
+        row = {"seed": seed}
+        for metric in metrics:
+            signed = float(by_distribution.at["gaussian", metric])
+            for distribution in distributions:
+                prefix = prefixes[distribution]
+                value = float(by_distribution.at[distribution, metric])
+                row[f"{prefix}_{metric}"] = value
+                if distribution != "gaussian":
+                    row[f"{prefix}_minus_signed_{metric}"] = value - signed
+        rows.append(row)
+    if not rows:
+        return
+
+    paired = pd.DataFrame(rows)
+    paired.to_csv(output_dir / "gaussian_support_three_way_per_seed.csv", index=False)
+    summary_rows = []
+    for metric in metrics:
+        row = {"metric": metric, "paired_seeds": len(paired)}
+        for prefix in prefixes.values():
+            column = f"{prefix}_{metric}"
+            row[f"{prefix}_mean"] = paired[column].mean()
+            row[f"{prefix}_std"] = paired[column].std(ddof=1)
+            if prefix != "signed":
+                delta = f"{prefix}_minus_signed_{metric}"
+                row[f"{prefix}_minus_signed_mean"] = paired[delta].mean()
+                row[f"{prefix}_minus_signed_std"] = paired[delta].std(ddof=1)
+        summary_rows.append(row)
+    pd.DataFrame(summary_rows).to_csv(
+        output_dir / "gaussian_support_three_way_summary.csv", index=False
+    )
 
 
 def write_latex_table(summary, path):
@@ -838,7 +1147,11 @@ def run_for_forget_class(args, forget_class, test_dataset, strategies, device):
                 f"\n[pool] distribution={distribution} seed={seed}; "
                 f"strategies={len(distribution_strategies)}"
             )
-            synthetic_by_strategy, agreement_rows = build_synthetic_sets_for_strategies(
+            (
+                synthetic_by_strategy,
+                agreement_rows,
+                diagnostics_by_strategy,
+            ) = build_synthetic_sets_for_strategies(
                 classifier=classifier,
                 num_classes=num_classes,
                 forget_class=forget_class,
@@ -849,6 +1162,8 @@ def run_for_forget_class(args, forget_class, test_dataset, strategies, device):
                 sample_batch_size=args.sample_batch_size,
                 device=device,
                 seed=seed,
+                diagnostic_sample_size=args.diagnostic_sample_size,
+                paired_distribution_streams=args.paired_distribution_streams,
             )
             agreement_path = run_root / "ranking_agreement.csv"
             for agreement in agreement_rows:
@@ -891,17 +1206,25 @@ def run_for_forget_class(args, forget_class, test_dataset, strategies, device):
                     "retain_per_class": args.retain_per_class,
                     "forget_per_class": args.forget_per_class,
                     "total_draws": synthetic[-1],
+                    **diagnostics_by_strategy[strategy],
                     **result,
                 }
                 append_csv(run_csv, row)
                 print(
                     f"[result] Af={result['relearned_forget_acc']:.2f} "
                     f"Ar={result['relearned_retain_acc']:.2f} "
-                    f"RS={result['RS']:.4f} epoch={result['best_epoch']}"
+                    f"RS={result['RS']:.4f} epoch={result['best_epoch']} "
+                    f"pool={diagnostics_by_strategy[strategy]['pool_generation_seconds']:.2f}s "
+                    f"select_forget={diagnostics_by_strategy[strategy]['forget_selection_seconds']:.3f}s "
+                    f"select_retain={diagnostics_by_strategy[strategy]['retain_selection_seconds']:.3f}s "
+                    f"neg_forget={diagnostics_by_strategy[strategy]['forget_selected_negative_fraction']:.3f} "
+                    f"neg_retain={diagnostics_by_strategy[strategy]['retain_selected_negative_fraction']:.3f}"
                 )
 
     summary = aggregate_results(run_csv)
     summary.to_csv(run_root / "summary.csv", index=False)
+    write_signed_relu_comparison(run_csv, run_root)
+    write_three_way_gaussian_support_comparison(run_csv, run_root)
     write_latex_table(summary, run_root / "summary_table.tex")
     plot_summary(summary, run_root / "summary_plot.png")
     print(f"\n[saved] {run_root.resolve()}")
