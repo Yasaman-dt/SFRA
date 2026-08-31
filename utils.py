@@ -14,6 +14,7 @@ from omegaconf import OmegaConf
 import csv, json
 import torchvision.transforms as transforms
 from torchvision.transforms import InterpolationMode
+from project_paths import DATA_DIR
 
 
 
@@ -505,7 +506,7 @@ def get_transforms(dataset_name, model_name, wo_dataaug):
     return transform_train, transform_test
 
 
-def get_dataset(dataset_name, transform_train, transform_test, path=Path("~/data").expanduser()):
+def get_dataset(dataset_name, transform_train, transform_test, path=DATA_DIR):
     if dataset_name == 'cifar10':
         train_dataset = datasets.CIFAR10(root=path, train=True, download=True, transform=transform_train)
         test_dataset = datasets.CIFAR10(root=path, train=False, download=True, transform=transform_test)
