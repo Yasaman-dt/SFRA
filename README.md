@@ -559,7 +559,7 @@ Omitting `--skip_retain_pass` preserves the original generator's RNG-consuming
 retain-pool pass before constructing the actual low-confidence forget probes.
 
 
-### Gaussian vs. Uniform embedding-distribution table (Appendix O)
+### Sampling-distribution RS table (Appendix O)
 
 ```bash
 python plots_tables/generate_sampling_distribution_rs_table.py \
@@ -569,7 +569,11 @@ python plots_tables/generate_sampling_distribution_rs_table.py \
   --bold_best
 ```
 
-This script compares Gaussian and Uniform embedding distributions. It combines Gaussian results from `results_single_class` with Uniform results from `results_synthesis_ablation`.
+This script compares Gaussian, Uniform, and Laplace embedding distributions.
+It combines the Gaussian results from `results_single_class` with the Uniform
+and Laplace results from `results_synthesis_ablation`. By default, it writes
+`cifar10_resnet18_sampling_distribution_rs_table.tex` and the corresponding
+CSV file under `results_synthesis_ablation/`.
 
 ### Confidence of forget-class assignments (Appendix F)
 

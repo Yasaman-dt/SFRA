@@ -1,4 +1,4 @@
-"""Make a compact Gaussian-vs-Uniform-vs-Laplace RS table across forget classes.
+"""Make a compact sampling-distribution RS table across forget classes.
 
 This table combines:
   * Gaussian source-free relearning results from results_single_class;
@@ -514,9 +514,7 @@ def main() -> None:
     )
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
-    stem = (
-        f"{args.dataset}_{args.model_name}_gaussian_vs_uniform_rs_table"
-    )
+    stem = f"{args.dataset}_{args.model_name}_sampling_distribution_rs_table"
 
     csv_out = args.out_dir / f"{stem}.csv"
     tex_out = args.out_dir / f"{stem}.tex"

@@ -660,56 +660,8 @@ def main():
         label="tab:synthesis_ablation_all_methods",
         compact=True,
     )
-    # Split the rows by unlearning method, while keeping every forget-class
-    # column in both tables. The first table contains the first five methods
-    # after sorting by METHOD_ORDER; the second contains all remaining methods.
-    method_groups = [methods[:5], methods[5:]]
-
-    latex_paths = []
-    for table_index, method_group in enumerate(method_groups, start=1):
-        if not method_group:
-            continue
-
-        group_strategies = [
-            strategy_key
-            for strategy_key in strategies
-            if strategy_key[0] in method_group
-        ]
-        if not group_strategies:
-            continue
-
-        if table_index == 1:
-            method_tag = "methods_1_5"
-            method_description = "first five unlearning methods"
-        else:
-            method_tag = "methods_6_rest"
-            method_description = "remaining unlearning methods"
-
-        latex_path = prefix.parent / f"{prefix.name}_{method_tag}.tex"
-        write_latex(
-            latex_path,
-            means,
-            stds,
-            group_strategies,
-            args.metrics,
-            classes,
-            args.precision,
-            args.bold_best,
-            args.bold_scope,
-            frame_lookup,
-            caption=(
-                f"Synthesis-strategy ablation on CIFAR-10 using a ResNet-18 "
-                f"backbone for the {method_description}. "
-                r"Each entry reports $\mathrm{RS}$."
-            ),
-            label=f"tab:synthesis_ablation_{method_tag}",
-        )
-        latex_paths.append(latex_path)
-
     print(f"[saved] {prefix.with_suffix('.csv').resolve()}")
     print(f"[saved] {combined_latex_path.resolve()}")
-    for latex_path in latex_paths:
-        print(f"[saved] {latex_path.resolve()}")
 
 
 if __name__ == "__main__":
