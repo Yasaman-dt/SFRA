@@ -270,7 +270,7 @@ CUDA_VISIBLE_DEVICES=0 python source_free_relearning_multi_class.py \
   --forget_per_class 500
 ```
 
-### Generate the summary tables
+### Generate the summary tables (Main paper and Appendix J)
 
 Generate the single-class summary tables:
 
@@ -298,7 +298,7 @@ python plots_tables/summary_tables/generate_multi_class_summary_tables.py \
 
 ---
 
-## 7. Ablation on Different M and N
+## 7. Ablation on Different M and N (Main paper and Appendix H)
 ```bash
 CUDA_VISIBLE_DEVICES=0 python -m ablation.build_synthetic_probe_pool \
   --dataset cifar10 \
@@ -322,7 +322,7 @@ CUDA_VISIBLE_DEVICES=0 python -m ablation.run_single_class_relearning_ablation \
 
 ---
 
-## 8. t-SNE Plots
+## 8. t-SNE Plots (Main paper and Appendix K)
 
 tsne of the unlearned model:
 ```bash
@@ -382,7 +382,7 @@ CUDA_VISIBLE_DEVICES=0 python plots_tables/tsne_plots/plot_unlearned_vs_relearne
   --autoname
 ```
 
-## 9. Source-Dependent Baselines
+## 9. Source-Dependent Baselines (Main paper and Appendices J and R)
 We evaluate two source-dependent baselines: PRA and linear probing. Unlike our source-free relearning audit, these baselines use real data from the original task.
 
 ### PRA baseline
@@ -446,7 +446,30 @@ CUDA_VISIBLE_DEVICES=2 python -m relearning_baselines.run_linear_probe_multi_che
 
 These scripts are post-processing utilities used to reproduce appendix figures and tables from saved checkpoints and result CSV files. Most scripts assume that the corresponding unlearned checkpoints and result folders have already been generated.
 
-### Coefficient approximation validation
+### Appendix-to-code map
+
+| Appendix | Draft section | Primary code |
+| --- | --- | --- |
+| A | Proof of Proposition 1 | Analytical proof; no experiment script required |
+| B | Hyperparameter Settings | `plots_tables/generate_training_hyperparameter_tables.py` |
+| C | Computational Cost and Efficiency | `analysis/benchmark_probe_generation.py`; `plots_tables/generate_probe_timing_architecture_table.py` |
+| D | Post-hoc Synthetic--Real Alignment | `analysis/synthetic_real_alignment.py`; `plots_tables/aggregate_alignment_results.py`; `plots_tables/generate_alignment_per_class_table.py` |
+| E | Empirical Assessment of the Margin Approximation | `analysis/probe_coefficient_validation.py` |
+| F | Confidence of Forget Class Assignments | `analysis/retain_forget_assigned_confidence.py`; `plots_tables/generate_forget_class_confidence_table.py` |
+| G | SFRA Without the Released Forget Class Output Row | `ablation/run_forget_row_ablation_fg7_all_methods.sh`; `plots_tables/generate_forget_row_ablation_table.py` |
+| H | Main paper (Fig. 5) and Sensitivity to the Number of Synthetic Probes | `ablation/build_synthetic_probe_pool.py`; `ablation/run_single_class_relearning_ablation.py`; `plots_tables/plot_probe_count_ablation.py` |
+| I | Retain--Forget Accuracy Trade-off | `ablation/retain_forget_tradeoff.py`; `plots_tables/plot_rs_vs_accuracy_change.py`; `plots_tables/plot_retain_forget_tradeoff.py` |
+| J | Main paper (Tables 1--2) and Additional Single- and Multi-Class SFRA Results | `plots_tables/summary_tables/generate_single_class_summary_table.py`; `plots_tables/summary_tables/generate_multi_class_summary_tables.py` |
+| K | Main paper (Fig. 4) and Geometric Interpretation of Synthetic Boundary Probes | `plots_tables/tsne_plots/plot_real_vs_gaussian_probe_tsne.py` |
+| L | Main paper (Fig. 2) and RS Distribution Across Forget Classes | `plots_tables/plot_rs_violin_distributions.py` |
+| M | Main paper (Fig. 3) and Per-Class RS Heatmaps | `plots_tables/plot_per_class_rs_heatmaps.py` |
+| N | Absolute and Excess Recoverability | `plots_tables/plot_rs_recoverability_map.py` |
+| O | Sampling Distribution Ablation | `ablation/synthesis_strategy_ablation.py`; `plots_tables/generate_sampling_distribution_rs_table.py` |
+| P | Uncertainty-Score Ablation | `ablation/run_uncertainty_all_methods_one_arch.sh`; `plots_tables/generate_uncertainty_per_class_rs_table.py` |
+| Q | Effect of Gaussian Support on SFRA | `ablation/synthesis_strategy_ablation.py` |
+| R | Detailed Per-Class Results and Linear Separability | `relearning_baselines/run_linear_probe_single_checkpoint.py`; `plots_tables/generate_single_class_variant_table.py` |
+
+### Coefficient approximation validation (Appendix E)
 
 ```bash
 python analysis/probe_coefficient_validation.py \
@@ -462,7 +485,7 @@ python analysis/probe_coefficient_validation.py \
 
 This script validates the approximation used in the one-step margin analysis. It compares the exact weighted update term with the unweighted synthetic mean approximation and generates appendix figures/tables for the coefficient validation experiment.
 
-### Real and synthetic probe t-SNE visualization
+### Real and synthetic probe t-SNE visualization (Main paper and Appendix K)
 
 ```bash
 CUDA_VISIBLE_DEVICES=0 python plots_tables/tsne_plots/plot_real_vs_gaussian_probe_tsne.py \
@@ -479,7 +502,7 @@ CUDA_VISIBLE_DEVICES=0 python plots_tables/tsne_plots/plot_real_vs_gaussian_prob
 
 This script loads an unlearned checkpoint and visualizes real test samples together with selected synthetic probes. It saves separate t-SNE figures for the pre-classifier feature space and the classifier-head logit space.
 
-### Synthesis-ablation RS table
+### Synthesis-ablation RS table (Appendix O)
 
 ```bash
 python plots_tables/generate_synthesis_ablation_rs_table.py \
@@ -494,7 +517,7 @@ python plots_tables/generate_synthesis_ablation_rs_table.py \
 
 This script reads the results produced by the synthesis-strategy ablation and creates a LaTeX table with forget classes as columns. It reports the relearning score (RS) for different synthesis strategies.
 
-### Synthetic--real alignment analysis
+### Synthetic--real alignment analysis (Appendix D)
 
 This post-hoc analysis uses only the low-confidence synthetic forget probes from
 the existing source-free relearning procedure. It does not train or modify a
@@ -530,7 +553,7 @@ Omitting `--skip_retain_pass` preserves the original generator's RNG-consuming
 retain-pool pass before constructing the actual low-confidence forget probes.
 
 
-### Gaussian vs. Uniform embedding-distribution table
+### Gaussian vs. Uniform embedding-distribution table (Appendix O)
 
 ```bash
 python plots_tables/generate_sampling_distribution_rs_table.py \
@@ -542,7 +565,7 @@ python plots_tables/generate_sampling_distribution_rs_table.py \
 
 This script compares Gaussian and Uniform embedding distributions. It combines Gaussian results from `results_single_class` with Uniform results from `results_synthesis_ablation`.
 
-### Confidence of forget-class assignments
+### Confidence of forget-class assignments (Appendix F)
 
 First generate per-forget-class confidence statistics:
 
@@ -557,7 +580,7 @@ CUDA_VISIBLE_DEVICES=0 python analysis/retain_forget_assigned_confidence.py \
 
 This script evaluates the unlearned model on real test samples and measures how confidently retain classes are assigned to correctly classified retain samples and to forget-class samples that are predicted as retain classes.
 
-### Aggregated confidence table across forget classes
+### Aggregated confidence table across forget classes (Appendix F)
 
 ```bash
 python plots_tables/generate_forget_class_confidence_table.py \
@@ -576,7 +599,7 @@ By default, the aggregated CSV and LaTeX table are written to
 `results/bad_teacher/bad_teacher_cifar10_resnet18_weighted_confidence.tex`.
 
 
-### Synthesis-strategy ablation runner
+### Synthesis-strategy ablation runner (Appendices O and Q)
 
 The following command runs the Laplace-only synthesis ablation for SCRUB on
 CIFAR-10 with ResNet-18. It uses the same candidate pool for selecting the
@@ -608,7 +631,7 @@ CUDA_VISIBLE_DEVICES=2 python -m ablation.synthesis_strategy_ablation \
   --forget_classes 0 1 2 3 4 5 6 7 8 9
 ```
 
-### Uncertainty-score ablation
+### Uncertainty-score ablation (Appendix P)
 
 This experiment compares Softmax confidence, predictive entropy, and energy
 for selecting probes from the same accepted Gaussian candidate pool. It runs
@@ -667,7 +690,7 @@ seeds, and the final `Avg.` column reports the mean RS across forget classes
 and seeds. The generated `.tex` and `.csv` tables are saved in the same
 uncertainty-ablation results directory.
 
-### Retain--forget trajectory analysis
+### Retain--forget trajectory analysis (Appendix I)
 
 This analysis trains the released classifier head on one fixed Gaussian
 synthetic dataset and evaluates real retain and forget accuracy at every
@@ -712,7 +735,7 @@ python plots_tables/plot_rs_vs_accuracy_change.py \
   --output results_single_class/plots/rs_vs_retain_accuracy_change.png
 ```
 
-### RS recoverability maps
+### RS recoverability maps (Appendix N)
 
 The recoverability-map script compares SFRA RS with matched-control
 $\Delta$RS across datasets, architectures, unlearning methods, and forgotten
