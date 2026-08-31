@@ -26,24 +26,47 @@ The repository supports:
 - $M$ is the number of synthetic probes selected per retained class. When the
   retain and forget counts differ, we use $M_r$ and $M_f$; these correspond to
   `--retain_per_class` and `--forget_per_class`, respectively.
-- RS is the relearning score. Let $\mathcal{A}_r^{t\text{-}un}$ and
-  $\mathcal{A}_f^{t\text{-}un}$ denote the retain and forget test accuracies
-  after unlearning, and let $\mathcal{A}_r^{t\text{-}re}$ and
-  $\mathcal{A}_f^{t\text{-}re}$ denote the corresponding test accuracies after
-  relearning. With all accuracies normalized to $[0,1]$, retain preservation
-  and forget recovery are
+- RS is the relearning score. Let $\mathcal{A}^{t\text{-}un}_r$ and
+  $\mathcal{A}^{t\text{-}un}_f$ denote the retain and forget test accuracies
+  after unlearning, and let $\mathcal{A}^{t\text{-}re}_r$ and
+  $\mathcal{A}^{t\text{-}re}_f$ denote the corresponding test accuracies after
+  relearning. With all accuracies normalized to $[0,1]$, the retain-preservation
+  and forget-recovery terms are
 
-  $$R_r = 1-\max\!\left(0,
-  \mathcal{A}_r^{t\text{-}un}-\mathcal{A}_r^{t\text{-}re}\right), \qquad
-  R_f = \max\!\left(0,
-  \mathcal{A}_f^{t\text{-}re}-\mathcal{A}_f^{t\text{-}un}\right).$$
+  $$
+  \begin{aligned}
+  R_r &= 1-\max\!\left(
+  0,\mathcal{A}^{t\text{-}un}_r-\mathcal{A}^{t\text{-}re}_r
+  \right), \\
+  R_f &= \max\!\left(
+  0,\mathcal{A}^{t\text{-}re}_f-\mathcal{A}^{t\text{-}un}_f
+  \right).
+  \end{aligned}
+  $$
 
   Their harmonic mean defines
 
-  $$\mathrm{RS}=\frac{2R_rR_f}{R_r+R_f},$$
+  $$
+  \mathrm{RS}=
+  \begin{cases}
+  \displaystyle\frac{2R_rR_f}{R_r+R_f}, & R_r+R_f>0, \\
+  0, & \text{otherwise}.
+  \end{cases}
+  $$
 
-  with $\mathrm{RS}=0$ when the denominator is zero. Higher RS indicates
-  stronger forgotten-class recovery while preserving retain accuracy.
+  Thus, $\mathrm{RS}\in[0,1]$; a high value indicates strong forget-class
+  recovery with limited retain-accuracy degradation. For method $m$, audit
+  variant $v$, and forget class $c$, the matched-control score is
+
+  $$
+  \Delta\mathrm{RS}^{(v)}_{m,c}
+  =\mathrm{RS}^{(v)}_{m,c}
+  -\mathrm{RS}^{(v)}_{\mathrm{retrained},c}.
+  $$
+
+  RS measures absolute source-free recoverability, whereas
+  $\Delta\mathrm{RS}$ measures recoverability relative to the retrained model
+  matched to the same forget class.
 
 ---
 
