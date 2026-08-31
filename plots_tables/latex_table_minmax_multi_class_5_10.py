@@ -8,7 +8,8 @@ from itertools import product
 # ===================== CONFIG =====================
 
 # Root directory that contains the two settings (5-class / 10-class) OR everything mixed.
-ROOT_DIR = Path(r"/projets/Zdehghani/Source_Free_Class_Revival/results_multi_class_5_10/")
+REPO_ROOT = Path(__file__).resolve().parents[1]
+ROOT_DIR = REPO_ROOT / "results_multi_class_5_10"
 
 # --- IMPORTANT: Set these to YOUR actual folders (best & safest) ---
 # Each should contain method subfolders (finetune/, scrub/, ...) and optionally original/

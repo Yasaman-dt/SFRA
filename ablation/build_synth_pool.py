@@ -3,6 +3,7 @@ import torch.nn.functional as F
 import torch.nn as nn
 from pathlib import Path
 from trainer import *  # load_model
+from project_paths import EXPS_DIR
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 NUM_CLASSES = {'cifar10': 10, 'cifar100': 100, 'tiny_imagenet': 200, 'imagenet': 1000}
@@ -48,7 +49,7 @@ def main():
     p.add_argument('--method', default='original')
     p.add_argument('--forget_class', type=int, default=0)   # only for ckpt path
     p.add_argument('--lr', type=float, default=5e-5)        # only for ckpt path
-    p.add_argument('--ckpt_dir', default='/export/livia/home/vision/Zdehghani/classification/exps')
+    p.add_argument('--ckpt_dir', default=str(EXPS_DIR))
     p.add_argument('--per_class', type=int, required=True,
                    help='Generate exactly this many samples per class')
     p.add_argument('--seed', type=int, default=0)

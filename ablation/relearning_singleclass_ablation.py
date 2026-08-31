@@ -10,6 +10,7 @@ from torch.utils.data import TensorDataset, DataLoader
 from method.utils import *
 from utils import get_transforms, get_dataset, get_dataloader, get_unlearn_loader
 from trainer import *  # assumes load_model is here
+from project_paths import EXPS_DIR
 
 def _to01(xs):
     # your hist uses % (0..100). Convert to 0..1 for the plotter.
@@ -58,7 +59,7 @@ p.add_argument('--retain_floor_frac', type=float, default=0.90,
 
 # infra
 p.add_argument('--seed', type=int, default=0)
-p.add_argument('--ckpt_dir', default='/export/livia/home/vision/Zdehghani/classification/exps')
+p.add_argument('--ckpt_dir', default=str(EXPS_DIR))
 
 p.add_argument('--save_synth_dir', type=str, default=None,
                help='If set, save selected synthetic (retain/forget) tensors to this directory.')

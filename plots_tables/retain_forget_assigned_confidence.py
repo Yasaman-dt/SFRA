@@ -55,6 +55,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from trainer import load_model  # noqa: E402
 from utils import get_dataset, get_transforms  # noqa: E402
+from project_paths import DATA_DIR, EXPS_DIR  # noqa: E402
 
 
 NUM_CLASSES = {
@@ -99,7 +100,7 @@ def parse_args() -> argparse.Namespace:
         "--base_dir",
         "--ckpt_dir",
         dest="base_dir",
-        default="/export/livia/home/vision/Zdehghani/classification/exps",
+        default=str(EXPS_DIR),
     )
     parser.add_argument(
         "--checkpoint",
@@ -108,7 +109,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--data_dir",
-        default=str(Path("~/data").expanduser()),
+        default=str(DATA_DIR),
     )
     parser.add_argument("--batch_size", type=int, default=256)
     parser.add_argument("--num_workers", type=int, default=4)

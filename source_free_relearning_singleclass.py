@@ -21,6 +21,7 @@ import math
 from copy import deepcopy
 from method.utils import *
 from pathlib import Path
+from project_paths import EXPS_DIR
 
 # ------------------ Argparse ------------------
 import argparse
@@ -35,7 +36,7 @@ parser.add_argument('--model', '--model_name', dest='model_name', type=str, defa
 parser.add_argument('--dataset', type=str, required=True)
 parser.add_argument('--lr', type=float, default=5e-5)
 parser.add_argument('--epochs', type=int, default=500)
-parser.add_argument('--base-dir', type=str, default='/export/livia/home/vision/Zdehghani/classification/exps',
+parser.add_argument('--base-dir', type=str, default=str(EXPS_DIR),
                     help='Base directory where checkpoints and experiment folders are stored')
 parser.add_argument(
     '--output-dir',

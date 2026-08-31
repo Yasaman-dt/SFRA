@@ -36,6 +36,7 @@ import matplotlib as mpl
 import sys
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 from utils import get_transforms, get_dataset
+from project_paths import EXPS_DIR
 from trainer import *  # must provide load_model(ckpt, model_name, dataset, num_classes)
 
 # ------------------- constants -------------------
@@ -275,7 +276,7 @@ def main():
     ap.add_argument("--ckpt", help="Direct path to checkpoint .pth/.pt for load_model")
 
     # Way B: build like revival_single_class
-    ap.add_argument("--base_dir", default="/export/livia/home/vision/Zdehghani/classification/exps",
+    ap.add_argument("--base_dir", default=str(EXPS_DIR),
                     help="Base DIR used by revival_single_class to store checkpoints")
     ap.add_argument("--method", default="original",
                     choices=['original','retrained','random_label','finetune','gradient_ascent','neggrad_plus',

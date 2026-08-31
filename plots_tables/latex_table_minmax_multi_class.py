@@ -7,15 +7,9 @@ from pathlib import Path
 # 1. PATHS
 # ============================================================
 
-ROOT_2 = Path(
-    r"/projets/Zdehghani/"
-    r"Source_Free_Class_Revival/results_multi_class_2/"
-)
-
-ROOT_510 = Path(
-    r"/projets/Zdehghani/"
-    r"Source_Free_Class_Revival/results_multi_class_5_10/"
-)
+REPO_ROOT = Path(__file__).resolve().parents[1]
+ROOT_2 = REPO_ROOT / "results_multi_class_2"
+ROOT_510 = REPO_ROOT / "results_multi_class_5_10"
 
 CSV_2 = ROOT_2 / "z_standardized_selected_all_methods.csv"
 CSV_510 = ROOT_510 / "z_merged_with_setting_all.csv"

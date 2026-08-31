@@ -4,10 +4,10 @@
 It supports:
 
 - **Datasets:** `cifar10`, `cifar100`, `tiny_imagenet`
-- **Backbones:** `resnet18`, `vit-s-16`, `vit-b-16`, `swin-t`, `vgg16`
+- **Backbones:** `resnet18`, `vit-b-16`, `swin-t`
 - **Unlearning methods:**  
   `retrained`, `random_label`, `finetune`, `gradient_ascent`,  
-  `boundary_shrink`, `boundary_expand`, `delete`, 
+  `boundary_shrink`, `delete`,
   `l2ul_adv`, `salun`, `scrub`, `bad_teacher`, `neggrad_plus`
 
 - Training original models
@@ -15,6 +15,30 @@ It supports:
 - Single-class and multi-class unlearning
 - Our source-free class relearning method
 - Ablations and t-SNE visualizations
+
+## Notation
+
+- $N$ is the number of accepted synthetic candidate embeddings collected per
+  retained class before confidence-based selection. In the commands below,
+  this is controlled by `--tpr`, `--per_class`, or `--generated_per_class`,
+  depending on the script.
+- $M$ is the number of synthetic probes selected per retained class. When the
+  retain and forget counts differ, we use $M_r$ and $M_f$; these correspond to
+  `--retain_per_class` and `--forget_per_class`, respectively.
+- RS is the relearning score. Let $A_r^u$ and $A_f^u$ be the retain and forget
+  accuracies of the unlearned checkpoint, and let $A_r^t$ and $A_f^t$ be the
+  corresponding accuracies after relearning. With accuracies normalized to
+  $[0,1]$, retain preservation and forget recovery are
+
+  $$R_r = 1-\max(0,A_r^u-A_r^t), \qquad
+  R_f = \max(0,A_f^t-A_f^u).$$
+
+  Their harmonic mean defines
+
+  $$\mathrm{RS}=\frac{2R_rR_f}{R_r+R_f},$$
+
+  with $\mathrm{RS}=0$ when the denominator is zero. Higher RS indicates
+  stronger forgotten-class recovery while preserving retain accuracy.
 
 ---
 
@@ -34,55 +58,120 @@ Install dependencies:
 python -m pip install -r requirements.txt
 ```
 
+### Data and checkpoint paths
+
+All core scripts use the same portable path policy: an explicit command-line
+argument takes priority, followed by an environment variable, followed by a
+default location under the current user's home directory.
+
+```bash
+export SFRA_DATA_DIR="$HOME/data"
+export SFRA_EXPS_DIR="$HOME/classification/exps"
+```
+
+On the system used for the paper, these expand to
+`/export/livia/home/vision/Zdehghani/data` and
+`/export/livia/home/vision/Zdehghani/classification/exps`. Other users can set
+the variables to their own locations without modifying the source code.
+CIFAR-10 and CIFAR-100 are downloaded automatically under `SFRA_DATA_DIR`.
+TinyImageNet should have the following layout:
+
+```text
+$SFRA_DATA_DIR/TinyImageNet/
+  train/
+  val/
+  test/
+```
+
+Individual commands can still override these defaults using their applicable
+`--data_dir`, `--base-dir`, `--base_dir`, `--ckpt_dir`, or `--exps_dir`
+argument. Generated result directories are resolved relative to the repository
+unless an explicit output directory is provided.
+
 ---
 
 ## 2. Train the original model from scratch
 
 ```bash
-CUDA_VISIBLE_DEVICES=0 python main.py  --method pass  --dataset_name tiny_imagenet  --model_name resnet18   --train_from_scratch   --use_pretrained
+CUDA_VISIBLE_DEVICES=0 python main.py \
+  --method pass \
+  --dataset_name tiny_imagenet \
+  --model_name resnet18 \
+  --train_from_scratch \
+  --use_pretrained
 ```
 
 ---
 
-## 3. Apply Retrain-from-scratch baseline without the forget class:
+## 3. Apply the Retrain-from-Scratch Baseline Without the Forget Class
 
 **single-class setting:**
 ```bash
-CUDA_VISIBLE_DEVICES=0 python main.py  --classes "0,1,2,3,4,5,6,7,8,9" --method pass  --dataset_name cifar10 --model_name resnet18 --retrain_from_scratch
+CUDA_VISIBLE_DEVICES=0 python main.py \
+  --classes "0,1,2,3,4,5,6,7,8,9" \
+  --method pass \
+  --dataset_name cifar10 \
+  --model_name resnet18 \
+  --retrain_from_scratch
 ```
 
 **multi-class setting:**
 ```bash
-CUDA_VISIBLE_DEVICES=0 python main.py  --forget_class 2   --method pass  --dataset_name cifar10  	--model_name resnet18 --retrain_from_scratch
+CUDA_VISIBLE_DEVICES=0 python main.py \
+  --forget_class 2 \
+  --method pass \
+  --dataset_name cifar10 \
+  --model_name resnet18 \
+  --retrain_from_scratch
 ```
 
 ---
 
-## Test original model for different settings:
+## 4. Test the Original Model for Different Settings
 
 **single-class setting:**
 ```bash
-CUDA_VISIBLE_DEVICES=0 python test_original_model.py --datasets cifar10 	--model-name resnet18	--forget-classes 0 1 2 3 4 5 6 7 8 9
+CUDA_VISIBLE_DEVICES=0 python test_original_model.py \
+  --datasets cifar10 \
+  --model-name resnet18 \
+  --forget-classes 0 1 2 3 4 5 6 7 8 9
 ```
 
 **multi-class setting:**
 ```bash
-CUDA_VISIBLE_DEVICES=0 python test_original_model.py --datasets cifar10 	--model-name resnet18	--forget-set 1 6
+CUDA_VISIBLE_DEVICES=0 python test_original_model.py \
+  --datasets cifar10 \
+  --model-name resnet18 \
+  --forget-set 1 6
 ```
 
 ---
 
-## 4. Apply unlearning methods:
+## 5. Apply Unlearning Methods
 
 **single-class setting:**
 
 ```bash
-CUDA_VISIBLE_DEVICES=0 python main.py  --dataset_name cifar10  	--classes "0,1,2,3,4,5,6,7,8,9" 	--model_name resnet18  --retain_data True --method bad_teacher  	--unlearn_rate 1e-3  	--description lr_1e-3
+CUDA_VISIBLE_DEVICES=0 python main.py \
+  --dataset_name cifar10 \
+  --classes "0,1,2,3,4,5,6,7,8,9" \
+  --model_name resnet18 \
+  --retain_data True \
+  --method bad_teacher \
+  --unlearn_rate 1e-3 \
+  --description lr_1e-3
 ```
 
 **multi-class setting:**
 ```bash
-CUDA_VISIBLE_DEVICES=1 python main.py  --dataset_name cifar10 		--forget_class 2 	--model_name resnet18   --method gradient_ascent  --retain_data True  --unlearn_rate 1e-5  --description lr_1e-5
+CUDA_VISIBLE_DEVICES=1 python main.py \
+  --dataset_name cifar10 \
+  --forget_class 2 \
+  --model_name resnet18 \
+  --method gradient_ascent \
+  --retain_data True \
+  --unlearn_rate 1e-5 \
+  --description lr_1e-5
 ```
 
 ---
@@ -92,57 +181,151 @@ Evaluate the unlearned model:
 
 **single-class setting:**
 ```bash
-CUDA_VISIBLE_DEVICES=0 python eval_unlearned_model.py   --dataset_name cifar10  	--model_name resnet18  	--method bad_teacher   		--forget_id 0 		--unlearn_rate 1e-03  --exps_dir ~/classification/exps   --batch_size 256   --num_workers 8
+CUDA_VISIBLE_DEVICES=0 python test_unlearned_model.py \
+  --dataset_name cifar10 \
+  --model_name resnet18 \
+  --method bad_teacher \
+  --forget_id 0 \
+  --unlearn_rate 1e-03 \
+  --exps_dir ~/classification/exps \
+  --batch_size 256 \
+  --num_workers 8
 ```
 
 
 **multi-class setting:**
 ```bash
-CUDA_VISIBLE_DEVICES=0 python eval_unlearned_model.py   --dataset_name cifar100  	--model_name resnet18   --method bad_teacher  		--forget_set 25 58    	--unlearn_rate 1e-03  --exps_dir ~/classification/exps   --batch_size 128   --num_workers 8
+CUDA_VISIBLE_DEVICES=0 python test_unlearned_model.py \
+  --dataset_name cifar100 \
+  --model_name resnet18 \
+  --method bad_teacher \
+  --forget_set 25 58 \
+  --unlearn_rate 1e-03 \
+  --exps_dir ~/classification/exps \
+  --batch_size 128 \
+  --num_workers 8
 ```
 
 ---
 
-## 5. Run our class relearning method:
+## 6. Run Our Class Relearning Method
 
 **single-class setting:**
 ```bash
-CUDA_VISIBLE_DEVICES=0 python source_free_relearning_singleclass.py 	--method bad_teacher  --model_name resnet18 	--dataset cifar10	    	--lr 1e-3 	--epochs 500  --forget 0,1,2,3,4,5,6,7,8,9    	--retain_per_class 500   	--forget_per_class 500   --tpr 500000
+CUDA_VISIBLE_DEVICES=0 python source_free_relearning_singleclass.py \
+  --method bad_teacher \
+  --model_name resnet18 \
+  --dataset cifar10 \
+  --lr 1e-3 \
+  --epochs 500 \
+  --forget 0,1,2,3,4,5,6,7,8,9 \
+  --retain_per_class 500 \
+  --forget_per_class 500 \
+  --tpr 500000
 ```
 
 
 **multi-class setting:**
 ```bash
-CUDA_VISIBLE_DEVICES=0 python source_free_relearning_multiclass.py  --dataset cifar10   	--model resnet18   --method bad_teacher  --lr 2e-2   --epochs 200   --forget 1,6   	--tpr 500000   	--retain_per_class 500   --forget_per_class 500
+CUDA_VISIBLE_DEVICES=0 python source_free_relearning_multiclass.py \
+  --dataset cifar10 \
+  --model resnet18 \
+  --method bad_teacher \
+  --lr 2e-2 \
+  --epochs 200 \
+  --forget 1,6 \
+  --tpr 500000 \
+  --retain_per_class 500 \
+  --forget_per_class 500
 ```
 
 ---
 
-## 6. ablation on different M and N:
+## 7. Ablation on Different M and N
 ```bash
-CUDA_VISIBLE_DEVICES=0 python -m ablation.build_synth_pool  			--dataset cifar10 	--model_name resnet18 	--method bad_teacher  --per_class 500000   --forget_class 9   --lr 1e-3
-CUDA_VISIBLE_DEVICES=0 python -m ablation.relearning_singleclass_ablation    	--pool_path synth_pools/cifar10_resnet18_bad_teacher_fg9_lr0.001_pool_500000perclass_10cls_emb512_seed0.pt  --pool_take_per_class 500000  --dataset cifar10   --model_name resnet18   --method bad_teacher   --retain_per_class 500   --forget_per_class 500  --lr 0.001  --forget 9
+CUDA_VISIBLE_DEVICES=0 python -m ablation.build_synth_pool \
+  --dataset cifar10 \
+  --model_name resnet18 \
+  --method bad_teacher \
+  --per_class 500000 \
+  --forget_class 9 \
+  --lr 1e-3
+
+CUDA_VISIBLE_DEVICES=0 python -m ablation.relearning_singleclass_ablation \
+  --pool_path synth_pools/cifar10_resnet18_bad_teacher_fg9_lr0.001_pool_500000perclass_10cls_emb512_seed0.pt \
+  --pool_take_per_class 500000 \
+  --dataset cifar10 \
+  --model_name resnet18 \
+  --method bad_teacher \
+  --retain_per_class 500 \
+  --forget_per_class 500 \
+  --lr 0.001 \
+  --forget 9
 ```
 
 ---
 
-## 7. tsne plots:
+## 8. t-SNE Plots
 
 tsne of the unlearned model:
 ```bash
-cd plots_tables
-CUDA_VISIBLE_DEVICES=0 python tsne_plot1.py 		--dataset cifar10 --model_name resnet18  	--method bad_teacher 	--forget_class 7 	--lr 0.001 	--split test 	--autoname
-CUDA_VISIBLE_DEVICES=0 python tsne_plot2.py   		--dataset cifar10 --model_name resnet18   	--method bad_teacher 	--forget_class 7 	--lr 0.001  	--forget "7"   	--split test --max_per_class 500 --perplexity 30   --autoname
+CUDA_VISIBLE_DEVICES=0 python plots_tables/tsne_plot1.py \
+  --dataset cifar10 \
+  --model_name resnet18 \
+  --method bad_teacher \
+  --forget_class 7 \
+  --lr 0.001 \
+  --split test \
+  --autoname
+
+CUDA_VISIBLE_DEVICES=0 python plots_tables/tsne_plot2.py \
+  --dataset cifar10 \
+  --model_name resnet18 \
+  --method bad_teacher \
+  --forget_class 7 \
+  --lr 0.001 \
+  --forget "7" \
+  --split test \
+  --max_per_class 500 \
+  --perplexity 30 \
+  --autoname
 ```
 
 tsne of the unlearned model and relearned model:
 ```bash
-CUDA_VISIBLE_DEVICES=0 python -m ablation.build_synth_pool  --dataset cifar10 --model_name resnet18 --method scrub  --per_class 500000   --forget_class 7   --lr 1e-3
-CUDA_VISIBLE_DEVICES=0 python -m ablation.relearning_singleclass_ablation    --pool_path synth_pools/cifar10_resnet18_bad_teacher_fg7_lr0.001_pool_500000perclass_10cls_emb512_seed0.pt  --pool_take_per_class 500000  --dataset cifar10   --model_name resnet18   --method delete   --retain_per_class 500   --forget_per_class 500  --lr 0.001  --forget 7   --save_synth_dir results/bad_teacher/synth_pt  --save_real_dir  results/bad_teacher/real_pt  --save_ckpt_dir results/bad_teacher/
-CUDA_VISIBLE_DEVICES=0 python tsne_framework.py 	--dataset cifar10 --model_name resnet18  	--method bad_teacher 	--forget_class 7 --lr 0.001  --split test --autoname
+CUDA_VISIBLE_DEVICES=0 python -m ablation.build_synth_pool \
+  --dataset cifar10 \
+  --model_name resnet18 \
+  --method scrub \
+  --per_class 500000 \
+  --forget_class 7 \
+  --lr 1e-3
+
+CUDA_VISIBLE_DEVICES=0 python -m ablation.relearning_singleclass_ablation \
+  --pool_path synth_pools/cifar10_resnet18_scrub_fg7_lr0.001_pool_500000perclass_10cls_emb512_seed0.pt \
+  --pool_take_per_class 500000 \
+  --dataset cifar10 \
+  --model_name resnet18 \
+  --method scrub \
+  --retain_per_class 500 \
+  --forget_per_class 500 \
+  --lr 0.001 \
+  --forget 7 \
+  --save_synth_dir results/scrub/synth_pt \
+  --save_real_dir results/scrub/real_pt \
+  --save_ckpt_dir results/scrub/
+
+CUDA_VISIBLE_DEVICES=0 python plots_tables/tsne_framework.py \
+  --dataset cifar10 \
+  --model_name resnet18 \
+  --method scrub \
+  --forget_class 7 \
+  --lr 0.001 \
+  --split test \
+  --autoname
 ```
 
-## Source-Dependent Baselines
+## 9. Source-Dependent Baselines
 We evaluate two source-dependent baselines: PRA and linear probing. Unlike our source-free relearning audit, these baselines use real data from the original task.
 
 ### PRA baseline
@@ -202,7 +385,7 @@ CUDA_VISIBLE_DEVICES=2 python -m relearning_baselines.run_linear_probe_multi_che
 
 ---
 
-## 8. Appendix / Plot and Table Generation Scripts
+## 10. Appendix / Plot and Table Generation Scripts
 
 These scripts are post-processing utilities used to reproduce appendix figures and tables from saved checkpoints and result CSV files. Most scripts assume that the corresponding unlearned checkpoints and result folders have already been generated.
 
@@ -232,9 +415,9 @@ CUDA_VISIBLE_DEVICES=0 python plots_tables/tsne_real_gaussian_probes.py \
   --lr 0.001 \
   --forget_class 7 \
   --generated_per_class 500000 \
-  --retain_per_class 500 \
-  --forget_per_class 500 \
-  --real_per_class 500
+  --retain_per_class 25 \
+  --forget_per_class 25 \
+  --real_per_class 225
 ```
 
 This script loads an unlearned checkpoint and visualizes real test samples together with selected synthetic probes. It saves separate t-SNE figures for the pre-classifier feature space and the classifier-head logit space.
@@ -420,3 +603,74 @@ The table cells report RS mean $\pm$ standard deviation across the three audit
 seeds, and the final `Avg.` column reports the mean RS across forget classes
 and seeds. The generated `.tex` and `.csv` tables are saved in the same
 uncertainty-ablation results directory.
+
+### Retain--forget trajectory analysis
+
+This analysis trains the released classifier head on one fixed Gaussian
+synthetic dataset and evaluates real retain and forget accuracy at every
+epoch. It saves one trajectory CSV per method and seed, together with the
+retain--forget trade-off summaries.
+
+For CIFAR-10/ResNet-18 with forget class~7, run:
+
+```bash
+CUDA_VISIBLE_DEVICES=0 python -m ablation.retain_forget_tradeoff \
+  --dataset cifar10 \
+  --model_name resnet18 \
+  --forget_class 7 \
+  --methods bad_teacher delete gradient_ascent random_label salun \
+            retrained finetune neggrad_plus l2ul_adv \
+  --generated_per_class 500000 \
+  --retain_per_class 500 \
+  --forget_per_class 500 \
+  --epochs 500 \
+  --seeds 0 1 2 \
+  --output_dir results_retain_forget_tradeoff/cifar10_resnet18_fg7
+```
+
+The per-seed trajectories are written as:
+
+```text
+results_retain_forget_tradeoff/cifar10_resnet18_fg7/
+  METHOD/trajectory_seed0.csv
+  METHOD/trajectory_seed1.csv
+  METHOD/trajectory_seed2.csv
+```
+
+After generating matching CIFAR-10 and CIFAR-100 trajectories, create the
+combined RS-versus-retain-change plot with:
+
+```bash
+python plots_tables/retain_delta_rs_combined.py \
+  --cifar10-dir results_retain_forget_tradeoff/cifar10_resnet18_fg7 \
+  --cifar100-dir results_retain_forget_tradeoff/cifar100_resnet18_fg0 \
+  --x-metric retain \
+  --legend first-upper-left \
+  --output results_single_class/plots/retain_delta_rs_combined.png
+```
+
+### RS recoverability maps
+
+The recoverability-map script compares SFRA RS with matched-control
+$\Delta$RS across datasets, architectures, unlearning methods, and forgotten
+classes. It reads the generated single-class appendix tables and creates one
+map for each architecture.
+
+```bash
+python plots_tables/plot_rs_recoverability_map.py
+```
+
+By default, the figures and supporting CSV files are saved under:
+
+```text
+results_single_class/plots/rs_recoverability_outputs/
+```
+
+Use `--architectures` to select particular backbones or `--output-dir` to
+override the destination, for example:
+
+```bash
+python plots_tables/plot_rs_recoverability_map.py \
+  --architectures resnet18 vit-b-16 swin-t \
+  --output-dir results_single_class/plots/rs_recoverability_outputs
+```

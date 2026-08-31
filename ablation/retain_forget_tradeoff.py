@@ -45,6 +45,7 @@ from plots_tables.tsne_real_gaussian_probes import (  # noqa: E402
 )
 from utils import get_dataset, get_transforms  # noqa: E402
 from plots_tables.method_colors import get_method_color  # noqa: E402
+from project_paths import DATA_DIR, EXPS_DIR  # noqa: E402
 
 
 METHOD_ORDER = [
@@ -222,9 +223,9 @@ def parse_args():
     parser.add_argument("--seeds", type=int, nargs="+", default=[0, 1, 2])
     parser.add_argument(
         "--ckpt_dir",
-        default="/export/livia/home/vision/Zdehghani/classification/exps",
+        default=str(EXPS_DIR),
     )
-    parser.add_argument("--data_dir", default=str(Path("~/data").expanduser()))
+    parser.add_argument("--data_dir", default=str(DATA_DIR))
     parser.add_argument(
         "--output_dir", default="results_retain_forget_tradeoff/cifar10_resnet18_fg9"
     )

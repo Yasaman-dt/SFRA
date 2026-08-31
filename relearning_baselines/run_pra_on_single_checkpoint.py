@@ -10,6 +10,7 @@ from torch.utils.data import Subset
 
 from models import load_model
 from utils import get_transforms, get_dataset
+from project_paths import EXPS_DIR
 
 
 def _last_linear(module):
@@ -753,7 +754,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--checkpoint', default=None,
                         help='Optional explicit checkpoint path (.pth). If omitted, it is derived from the other arguments.')
-    parser.add_argument('--base-dir', default='/export/livia/home/vision/Zdehghani/classification/exps',
+    parser.add_argument('--base-dir', default=str(EXPS_DIR),
                         help='Base directory that contains the experiment folders')
     parser.add_argument('--method', default='original',
                         choices=['original', 'retrained', 'random_label', 'finetune', 'gradient_ascent', 'neggrad_plus',

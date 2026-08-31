@@ -10,6 +10,7 @@ from utils import (
     get_transforms, get_dataset, get_dataloader, get_unlearn_loader, _top1_and_per_class
 )
 from trainer import *  # assumes load_model is here
+from project_paths import EXPS_DIR, REPO_ROOT
 
 
 def accuracy(model: nn.Module, loader, device: str):
@@ -243,9 +244,9 @@ def main():
 
     # ---- Paths ----
     parser.add_argument("--checkpoint-folder", type=Path,
-                        default=Path("/export/livia/home/vision/Zdehghani/classification/exps/test_pretrained_model"))
+                        default=EXPS_DIR / "test_pretrained_model")
     parser.add_argument("--fallback-dir", type=Path,
-                        default=Path("/projets/Zdehghani/Machine_Unlearning_Classification"))
+                        default=REPO_ROOT)
     parser.add_argument("--out-csv-dir", type=Path, default=Path("./results"))
 
     # ---- Dataloader / runtime ----

@@ -1,4 +1,5 @@
 import argparse
+from project_paths import EXPS_DIR
 
 from relearning_baselines.run_linear_probe_on_checkpoint import (
     NUM_CLASSES,
@@ -50,7 +51,7 @@ def main():
     parser.add_argument('--lr', type=float, default=5e-5)
     parser.add_argument(
         '--base-dir',
-        default='/export/livia/home/vision/Zdehghani/classification/exps',
+        default=str(EXPS_DIR),
     )
     parser.add_argument('--probe-batch-size', type=int, default=128)
     parser.add_argument('--feature-batch-size', type=int, default=256)

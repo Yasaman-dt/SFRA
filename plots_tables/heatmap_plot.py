@@ -24,7 +24,8 @@ plt.rcParams.update({
     "font.serif": ["Times New Roman", "Times", "DejaVu Serif"],
     "mathtext.fontset": "stix",
 })
-base_dir = Path(r"/projets/Zdehghani/Source_Free_Class_Revival/results_single_class/")
+REPO_ROOT = Path(__file__).resolve().parents[1]
+base_dir = REPO_ROOT / "results_single_class"
 merged_path = base_dir / "csvs" / "z_standardized_selected_all_methods.csv"
 OUT_DIR = base_dir / "plots" / "plots_per_class_grid"
 OUT_DIR.mkdir(parents=True, exist_ok=True)

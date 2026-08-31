@@ -38,6 +38,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from project_paths import EXPS_DIR  # noqa: E402
+
 
 NUM_CLASSES = {
     "cifar10": 10,
@@ -306,7 +308,7 @@ def parse_args() -> argparse.Namespace:
         "--base_dir",
         "--ckpt_dir",
         dest="base_dir",
-        default="/export/livia/home/vision/Zdehghani/classification/exps",
+        default=str(EXPS_DIR),
     )
     parser.add_argument(
         "--method_lr",

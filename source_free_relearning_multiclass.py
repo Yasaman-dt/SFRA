@@ -22,6 +22,7 @@ from copy import deepcopy
 from method.utils import *
 from pathlib import Path
 from typing import List
+from project_paths import EXPS_DIR
 # ------------------ Argparse ------------------
 import argparse
 from test_unlearned_model import _build_tags, checkpoint_for
@@ -37,6 +38,10 @@ parser.add_argument('--model', '--model_name', dest='model_name', type=str, defa
 parser.add_argument('--dataset', type=str, required=True)
 parser.add_argument('--lr', type=float, default=5e-5)
 parser.add_argument('--epochs', type=int, default=50)
+parser.add_argument(
+    '--base-dir', type=str, default=str(EXPS_DIR),
+    help='Base directory containing unlearned checkpoints.',
+)
 parser.add_argument(
     '--forget',
     type=str,
@@ -104,7 +109,7 @@ except KeyError:
 
 
 # ------------------ Load Pre-Trained ResNet-18 and Run the Function ------------------
-DIR = "/export/livia/home/vision/Zdehghani/classification/exps"
+DIR = args.base_dir
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 seed=42

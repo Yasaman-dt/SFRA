@@ -30,7 +30,8 @@ plt.rcParams.update({
 })
 
 # ----------------- USER CONFIG -----------------
-base_dir   = Path(r"/projets/Zdehghani/Source_Free_Class_Revival/results_single_class/")
+REPO_ROOT = Path(__file__).resolve().parents[1]
+base_dir = REPO_ROOT / "results_single_class"
 DATASET    = "tiny_imagenet"
 MODEL      = "vit-b-16"
 FORGET_C   = "160"          # accept "9" or 9
@@ -294,7 +295,7 @@ if __name__ == "__main__":
     title = f"{DATASET.upper()} / {MODEL} — forget class {FORGET_C}"
     
     # build a FILE path, not a directory
-    save_dir  = Path(r"/projets/Zdehghani/Source_Free_Class_Revival/Radar_Plots")
+    save_dir = REPO_ROOT / "Radar_Plots"
     save_dir.mkdir(parents=True, exist_ok=True)
     save_path = save_dir / OUT_NAME   # e.g., .../Radar_Plots/radar_cifar10_resnet18_forget8.png
     

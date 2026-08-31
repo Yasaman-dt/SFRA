@@ -28,6 +28,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from project_paths import EXPS_DIR  # noqa: E402
+
 NUM_CLASSES = {"cifar10": 10, "cifar100": 100, "tiny_imagenet": 200}
 DEFAULT_LRS = {
     "bad_teacher": 1e-3,
@@ -76,7 +78,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--num_workers", type=int, default=8)
     parser.add_argument(
         "--base_dir",
-        default="/export/livia/home/vision/Zdehghani/classification/exps",
+        default=str(EXPS_DIR),
     )
     parser.add_argument("--results_root", default="results_single_class")
     parser.add_argument(

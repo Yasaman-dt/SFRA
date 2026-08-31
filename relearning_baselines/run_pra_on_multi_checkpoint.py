@@ -9,6 +9,7 @@ from torch.utils.data import DataLoader, Subset
 
 from models import load_model
 from utils import get_dataset, get_transforms
+from project_paths import EXPS_DIR
 from relearning_baselines.run_pra_on_single_checkpoint import (
     apply_prototypes_to_classifier,
     collect_prototypes,
@@ -546,7 +547,7 @@ def main():
     )
     parser.add_argument(
         '--base-dir',
-        default='/export/livia/home/vision/Zdehghani/classification/exps',
+        default=str(EXPS_DIR),
         help='Base directory containing the experiment folders.',
     )
     parser.add_argument(

@@ -10,6 +10,7 @@ from torch.utils.data import DataLoader, TensorDataset, random_split
 
 from models import ViT_16_mod, get_model
 from utils import get_dataset, get_transforms
+from project_paths import EXPS_DIR
 
 
 NUM_CLASSES = {
@@ -484,7 +485,7 @@ def main(argv=None):
     parser.add_argument('--checkpoint', default=None)
     parser.add_argument(
         '--base-dir',
-        default='/export/livia/home/vision/Zdehghani/classification/exps',
+        default=str(EXPS_DIR),
     )
     parser.add_argument(
         '--method',

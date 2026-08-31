@@ -60,6 +60,7 @@ from plots_tables.tsne_real_gaussian_probes import (  # noqa: E402
     make_feature_extractor,
 )
 from utils import get_dataset, get_transforms  # noqa: E402
+from project_paths import DATA_DIR, EXPS_DIR  # noqa: E402
 
 
 DISTRIBUTIONS = (
@@ -120,10 +121,10 @@ def parse_args():
     )
     parser.add_argument(
         "--ckpt_dir",
-        default="/export/livia/home/vision/Zdehghani/classification/exps",
+        default=str(EXPS_DIR),
     )
     parser.add_argument("--checkpoint", default=None)
-    parser.add_argument("--data_dir", default=str(Path("~/data").expanduser()))
+    parser.add_argument("--data_dir", default=str(DATA_DIR))
     parser.add_argument("--generated_per_class", type=int, default=500000)
     parser.add_argument("--retain_per_class", type=int, default=500)
     parser.add_argument("--forget_per_class", type=int, default=500)

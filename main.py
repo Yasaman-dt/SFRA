@@ -8,6 +8,7 @@ from trainer import *
 import method
 import log_utils
 import sys, re, shlex, subprocess
+from project_paths import EXPS_DIR
 
 def str2bool(v):
     if isinstance(v, bool):
@@ -35,7 +36,7 @@ if __name__ == '__main__':
                                  ], help='unlearning method')
     parser.add_argument('--dataset_name', type=str, default='cifar10', choices=['cifar10', "cifar100", "tiny_imagenet", "vggface"], help='dataset name')
     parser.add_argument('--model_name', type=str, default='resnet18',  choices=['resnet18', "vgg16", "vit-s-16", "swin-t", "vit-b-16"], help='model name')
-    parser.add_argument('--exps_dir', type=str, default="~/classification/exps", help='experiments directory')
+    parser.add_argument('--exps_dir', type=str, default=str(EXPS_DIR), help='experiments directory')
     parser.add_argument('--patience', type=int, default=10, help='Early stopping patience (in epochs)')
     
     ##########################################################################################################
