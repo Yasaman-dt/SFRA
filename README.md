@@ -782,3 +782,21 @@ python plots_tables/plot_rs_recoverability_map.py \
   --architectures resnet18 vit-b-16 swin-t \
   --output-dir results_single_class/plots/rs_recoverability_outputs
 ```
+
+---
+
+## Citation
+
+If you find this repository useful in your research, please cite our paper:
+
+```bibtex
+@misc{dehghani2026sourcefreeclassrelearningdiagnosing,
+  title         = {Source-Free Class Relearning: Diagnosing Forgetting in Class Unlearning},
+  author        = {Zahra Dehghani and Pablo Piantanida and Mohammadhadi Shateri},
+  year          = {2026},
+  eprint        = {2609.02018},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.LG},
+  url           = {https://arxiv.org/abs/2609.02018}
+}
+```
