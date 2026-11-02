@@ -1,6 +1,6 @@
 # Source-Free Class Relearning: Diagnosing Forgetting in Class Unlearning
 
-This repository implements Source-Free Relearning Analysis (SFRA), an audit for measuring how readily an unlearned class can be recovered by updating only the released classifier head with synthetic feature-space probes.The repository contains the training, unlearning, relearning, analysis, and visualization code used to reproduce the paper's experiments.
+This repository implements Source-Free Relearning Analysis (SFRA), an audit for measuring how readily an unlearned class can be recovered by updating only the released classifier head with synthetic feature-space probes. The repository contains the training, unlearning, relearning, analysis, and visualization code used to reproduce the paper's experiments.
 
 The repository supports:
 
