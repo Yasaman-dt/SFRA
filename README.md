@@ -1,6 +1,6 @@
 # Source-Free Class Relearning: Diagnosing Forgetting in Class Unlearning
 
-This repository implements Source-Free Relearning Analysis (SFRA), an audit for measuring how readily an unlearned class can be recovered by updating only the released classifier head with synthetic feature-space probes. SFRA does not require access to the original training data or real samples from the forget class. The repository contains the training, unlearning, relearning, analysis, and visualization code used to reproduce the paper's experiments.
+This repository implements Source-Free Relearning Analysis (SFRA), an audit for measuring how readily an unlearned class can be recovered by updating only the released classifier head with synthetic feature-space probes.The repository contains the training, unlearning, relearning, analysis, and visualization code used to reproduce the paper's experiments.
 
 The repository supports:
 
@@ -29,12 +29,11 @@ The repository supports:
 
 ### Relearning Score
 
-RS is the relearning score. Let $\mathcal{A}^{t\text{-}un}_r$ and
-$\mathcal{A}^{t\text{-}un}_f$ denote the retain and forget test accuracies
-after unlearning, and let $\mathcal{A}^{t\text{-}re}_r$ and
-$\mathcal{A}^{t\text{-}re}_f$ denote the corresponding test accuracies after
-relearning. With all accuracies normalized to $[0,1]$, the retain-preservation
-and forget-recovery terms are
+The relearning score (RS) is computed using retain and forget accuracies before
+and after relearning. Write these as $\mathcal{A}^{u}_r$,
+$\mathcal{A}^{u}_f$ for the unlearned model, and $\mathcal{A}^{re}_r$,
+$\mathcal{A}^{re}_f$ after relearning. With all accuracies normalized to
+$[0,1]$, the retain-preservation and forget-recovery terms are
 
 ```math
 \begin{aligned}
@@ -58,8 +57,10 @@ Their harmonic mean defines
 ```
 
 Thus, $\mathrm{RS}\in[0,1]$; a high value indicates strong forget-class
-recovery with limited retain-accuracy degradation. For method $m$, audit
-variant $v$, and forget class $c$, the matched-control score is
+recovery with limited retain-accuracy degradation. SFRA computes this score
+separately on validation and test data as `RS_val` and `RS_test`. `RS_val` is
+used to select the best reported relearning epoch/result; `RS_test` is reported
+but does not select it. The additional `RS_synth_train` score measures the same change on the synthetic retain and forget probes relative to epoch 0. For method $m$, audit variant $v$, and forget class $c$, the matched-control score is
 
 ```math
 \Delta\mathrm{RS}^{(v)}_{m,c}
@@ -109,10 +110,16 @@ TinyImageNet should have the following layout:
 
 ```text
 $SFRA_DATA_DIR/TinyImageNet/
-  train/
-  val/
-  test/
+  train/  # class subfolders
+  val/    # class subfolders
+  test/   # class subfolders
 ```
+
+For machine-unlearning runs, CIFAR-10/100 use a seeded, class-stratified split
+of the original training set: 90% supplies the unlearning update loaders and
+10% is used for validation. The official CIFAR test set is used for test
+evaluation, not checkpoint selection. SFRA relearning itself trains on
+synthetic probes; it evaluates on the validation split, and the official test set. 
 
 Individual commands can still override these defaults using their applicable
 `--data_dir`, `--base-dir`, `--base_dir`, `--ckpt_dir`, or `--exps_dir`
@@ -205,6 +212,11 @@ CUDA_VISIBLE_DEVICES=1 python main.py \
   --description lr_1e-5
 ```
 
+For CIFAR-10/100 unlearning runs, each epoch reports train, validation, and
+test metrics. The 10% validation split is used to select the best unlearning
+checkpoint by validation AUS; test metrics are reported but do not select the
+checkpoint.
+
 ---
 
 
@@ -243,22 +255,23 @@ CUDA_VISIBLE_DEVICES=0 python test_unlearned_model.py \
 
 **single-class setting:**
 ```bash
-CUDA_VISIBLE_DEVICES=0 python source_free_relearning_single_class.py \
+CUDA_VISIBLE_DEVICES=0 python SFRA_single_class.py \
   --method bad_teacher \
-  --model_name resnet18 \
+  --model resnet18 \
   --dataset cifar10 \
   --lr 1e-3 \
   --epochs 500 \
-  --forget 0,1,2,3,4,5,6,7,8,9 \
+  --forget 0 \
   --retain_per_class 500 \
   --forget_per_class 500 \
   --tpr 500000
 ```
+Use `--forget all` to run all CIFAR-10 forget classes.
 
 
 **multi-class setting:**
 ```bash
-CUDA_VISIBLE_DEVICES=0 python source_free_relearning_multi_class.py \
+CUDA_VISIBLE_DEVICES=0 python SFRA_multi_class.py \
   --dataset cifar10 \
   --model resnet18 \
   --method bad_teacher \
