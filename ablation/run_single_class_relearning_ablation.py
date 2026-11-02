@@ -244,13 +244,15 @@ def append_best_for_class(
     if not header_needed:
         prior = pd.read_csv(AGG_CSV_PATH)
         # Older aggregate files called the test-set score simply "RS".
-        if "RS_test" not in prior.columns and "RS" in prior.columns:
+        renamed_legacy_rs = "RS_test" not in prior.columns and "RS" in prior.columns
+        if renamed_legacy_rs:
             prior = prior.rename(columns={"RS": "RS_test"})
         missing_columns = [column for column in COLUMNS if column not in prior]
         if missing_columns:
             for column in missing_columns:
                 prior[column] = np.nan
             prior = prior.reindex(columns=COLUMNS)
+        if missing_columns or renamed_legacy_rs:
             prior.to_csv(AGG_CSV_PATH, index=False)
     METRIC_COLS = [
         "split_seed", "epochs_total", "tpr", "forget_per_class",
@@ -785,7 +787,7 @@ for forget_class in forget_classes:
                 "pool_tag": pool_tag,
                 "take_per_class": int(take_per_class) if (take_per_class is not None) else -1,
                 "best_epoch": int(best_rs_epoch),
-                "best_RS": float(best_rs),
+                "best_RS_val": float(best_rs),
                 "best_row": best["row"],   # metrics snapshot at best
             },
             "fc_state_dict": best_fc_state,
