@@ -65,6 +65,10 @@ parser.add_argument(
 parser.add_argument('--rs_patience', type=int, default=200)
 parser.add_argument('--rs_directional', action='store_true')
 parser.add_argument(
+    '--seed', type=int, default=42,
+    help='Seed for data splitting, Gaussian sampling, data-loader shuffling, and training.',
+)
+parser.add_argument(
     '--retain_floor_frac', type=float, default=0.90,
     help='Minimum allowed fraction of baseline test_retain accuracy (epoch-0).'
 )
@@ -112,7 +116,7 @@ except KeyError:
 DIR = args.base_dir
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
-seed=42
+seed = int(args.seed)
 
 #dataset_name = "cifar10"
 #model_name = "resnet18"
@@ -544,7 +548,7 @@ def eval_accuracy_on_loader(model, fc, loader, device):
 
 
 # --- determinism ---
-seed = 0
+seed = int(args.seed)
 random.seed(seed); np.random.seed(seed); torch.manual_seed(seed)
 if torch.cuda.is_available():
     torch.cuda.manual_seed_all(seed)
@@ -735,7 +739,7 @@ all_train_loader = DataLoader(
 )
 if dataset_name.lower() in {"cifar10", "cifar100"}:
     split_labels = np.asarray(trainset.targets)
-    split_rng = np.random.default_rng(0)
+    split_rng = np.random.default_rng(args.seed)
     val_indices = []
     for class_id in np.unique(split_labels):
         class_indices = np.flatnonzero(split_labels == class_id)

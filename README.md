@@ -118,7 +118,9 @@ $SFRA_DATA_DIR/TinyImageNet/
 For machine-unlearning runs, CIFAR-10/100 use a seeded, class-stratified split
 of the original training set: 90% supplies the unlearning update loaders and
 10% is used for validation. The official CIFAR test set is used for test
-evaluation, not checkpoint selection. SFRA relearning itself trains on
+evaluation, not checkpoint selection. The split uses seed `42` by default;
+pass the same `--seed` to `main.py` and the SFRA script when overriding it.
+SFRA relearning itself trains on
 synthetic probes; it evaluates on the validation split, and the official test set. 
 
 Individual commands can still override these defaults using their applicable

@@ -80,7 +80,7 @@ parser.add_argument('--retain_per_class', type=int, default=500,
 parser.add_argument('--forget_per_class', type=int, default=10,
                     help='Bottom-K (low-conf) synthetic embeddings per non-forget class used as forget samples.')
 parser.add_argument(
-    '--seed', type=int, default=0,
+    '--seed', type=int, default=42,
     help='Seed for Gaussian sampling, data-loader shuffling, and training.',
 )
 parser.add_argument(

@@ -108,7 +108,7 @@ if __name__ == '__main__':
     parser.add_argument("--wo_dataaug", action="store_true")    
     parser.add_argument("--description", type=str, default="", help="Description for this run")
     parser.add_argument("--num_workers", type=int, default=4)
-    parser.add_argument("--seed", type=int, default=2022)
+    parser.add_argument("--seed", type=int, default=42)
     parser.add_argument('--load_original_model_path', type=str, default=None)
     parser.add_argument('--load_retrain_model_path', type=str, default=None)
     parser.add_argument('--use_pretrained', action='store_true', help='Load ImageNet-1k pretrained weights when available')
