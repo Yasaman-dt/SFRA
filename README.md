@@ -59,8 +59,12 @@ Their harmonic mean defines
 Thus, $\mathrm{RS}\in[0,1]$; a high value indicates strong forget-class
 recovery with limited retain-accuracy degradation. SFRA computes this score
 separately on validation and test data as `RS_val` and `RS_test`. `RS_val` is
-used to select the best reported relearning epoch/result; `RS_test` is reported
-but does not select it. The additional `RS_synth_train` score measures the same change on the synthetic retain and forget probes relative to epoch 0. For method $m$, audit variant $v$, and forget class $c$, the matched-control score is
+used to select the best reported relearning epoch/result, subject to validation
+retain accuracy staying above the configured floor. Set
+`--max_retain_drop_frac` to control the allowed relative drop (for example,
+`0.20` allows a 20% drop); the default is `0.10`, so validation retain
+accuracy must stay at or above 90% of its epoch-0 value.
+`RS_test` is reported but does not select it. The additional `RS_synth_train` score measures the same change on the synthetic retain and forget probes relative to epoch 0. For method $m$, audit variant $v$, and forget class $c$, the matched-control score is
 
 ```math
 \Delta\mathrm{RS}^{(v)}_{m,c}

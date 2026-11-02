@@ -72,8 +72,9 @@ parser.add_argument('--rs_patience', type=int, default=500)
 parser.add_argument('--rs_directional', action='store_true')
 
 parser.add_argument(
-    '--retain_floor_frac', type=float, default=0.90,
-    help='Minimum allowed fraction of baseline test_retain accuracy (epoch-0).'
+    '--max_retain_drop_frac', '--max-retain-drop-frac',
+    dest='max_retain_drop_frac', type=float, default=0.10,
+    help='Maximum allowed relative drop in validation retain accuracy from epoch 0 (default: 0.10, i.e. keep at least 90%).'
 )
 parser.add_argument('--retain_per_class', type=int, default=500,
                     help='Top-K retain synthetic embeddings per non-forget class (after sorting by confidence).')
@@ -99,6 +100,8 @@ parser.add_argument(
 
 
 args = parser.parse_args()
+if not 0.0 <= args.max_retain_drop_frac <= 1.0:
+    parser.error('--max_retain_drop_frac must be in [0, 1].')
 
 method       = args.method
 model_name   = args.model_name
@@ -936,9 +939,10 @@ for forget_class in forget_classes:
     best["row"] = row0.copy()
     best["key"] = _key_from_row(row0)
         
-    retain_floor = args.retain_floor_frac * A_r_tu
-    print(f"[Constraint] test_retain must be >= {retain_floor:.2f} "
-        f"({args.retain_floor_frac:.0%} of baseline {A_r_tu:.2f}).")        
+    val_retain_baseline = float(acc_val_retain)
+    retain_floor = (1.0 - args.max_retain_drop_frac) * val_retain_baseline
+    print(f"[Constraint] val_retain must be >= {retain_floor:.2f} "
+        f"(maximum drop {args.max_retain_drop_frac:.0%} from epoch-0 baseline {val_retain_baseline:.2f}).")
     
     # 3) Train only the FC for a few epochs; evaluate on real loaders each epoch
     for epoch in range(1, epochs + 1):
@@ -1065,7 +1069,8 @@ for forget_class in forget_classes:
             f"RS_val={rs_val:.4f} RS_test={rs:.4f}"
         )
 
-        if rs_val > best_rs:
+        retain_floor_passed = acc_val_retain >= retain_floor
+        if retain_floor_passed and rs_val > best_rs:
             best_rs = rs_val
             best_rs_epoch = epoch
             no_improve = 0
@@ -1086,7 +1091,7 @@ for forget_class in forget_classes:
         row["RS_synth_train"] = float(rs_synth_train)
         
         key = _key_from_row(row)
-        if key > best["key"]:
+        if retain_floor_passed and key > best["key"]:
             best["key"] = key
             best["row"] = row.copy()
 
