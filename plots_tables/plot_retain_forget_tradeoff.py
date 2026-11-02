@@ -69,9 +69,9 @@ def plot_panel(axis, trajectories, title, show_legend=False):
         style = METHOD_STYLES.get(method, {})
         method_runs = trajectories[trajectories["method"].eq(method)]
         epoch_summary = method_runs.groupby("epoch", as_index=False).agg(
-            retain_accuracy=("retain_accuracy", "mean"),
-            forget_accuracy=("forget_accuracy", "mean"),
-            forget_std=("forget_accuracy", "std"),
+            val_retain_accuracy=("val_retain_accuracy", "mean"),
+            val_forget_accuracy=("val_forget_accuracy", "mean"),
+            forget_std=("val_forget_accuracy", "std"),
         )
         epoch_zero = epoch_summary[epoch_summary["epoch"].eq(0)]
         relearning_summary = epoch_summary[epoch_summary["epoch"].gt(0)]
@@ -80,10 +80,10 @@ def plot_panel(axis, trajectories, title, show_legend=False):
         )
         # Start at the unlearned checkpoint (epoch 0), then connect it to the
         # highest-retain point on the SFRA relearning frontier.
-        frontier = frontier.sort_values("retain_accuracy", ascending=False)
+        frontier = frontier.sort_values("val_retain_accuracy", ascending=False)
         plotted = pd.concat([epoch_zero, frontier], ignore_index=True)
-        x = plotted["retain_accuracy"].to_numpy(dtype=float)
-        mean = plotted["forget_accuracy"].to_numpy(dtype=float)
+        x = plotted["val_retain_accuracy"].to_numpy(dtype=float)
+        mean = plotted["val_forget_accuracy"].to_numpy(dtype=float)
         std = plotted["forget_std"].fillna(0.0).to_numpy(dtype=float)
         axis.fill_between(
             x, mean - std, mean + std,
@@ -97,8 +97,8 @@ def plot_panel(axis, trajectories, title, show_legend=False):
 
         if not epoch_zero.empty:
             axis.scatter(
-                epoch_zero["retain_accuracy"].mean(),
-                epoch_zero["forget_accuracy"].mean(),
+                epoch_zero["val_retain_accuracy"].mean(),
+                epoch_zero["val_forget_accuracy"].mean(),
                 color=style.get("color"), marker=style.get("marker", "o"),
                 s=48, edgecolors="black", linewidths=0.65, zorder=5,
             )

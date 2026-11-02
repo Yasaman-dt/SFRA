@@ -6,9 +6,15 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
-from torch.utils.data import TensorDataset, DataLoader
+from torch.utils.data import TensorDataset, DataLoader, Subset
 from method.utils import *
-from utils import get_transforms, get_dataset, get_dataloader, get_unlearn_loader
+from utils import (
+    get_transforms,
+    get_dataset,
+    get_dataloader,
+    get_unlearn_loader,
+    stratified_train_val_split,
+)
 from trainer import *  # assumes load_model is here
 from project_paths import EXPS_DIR
 
@@ -59,6 +65,8 @@ p.add_argument('--retain_floor_frac', type=float, default=0.90,
 
 # infra
 p.add_argument('--seed', type=int, default=0)
+p.add_argument('--split_seed', type=int, default=42,
+               help='Seed for the shared stratified 90/10 real train/validation split.')
 p.add_argument('--ckpt_dir', default=str(EXPS_DIR))
 
 p.add_argument('--save_synth_dir', type=str, default=None,
@@ -95,16 +103,16 @@ epochs = args.epochs
 
 
 COLUMNS = [
-    "forget_class", "dataset", "model", "method", "lr",
+    "forget_class", "dataset", "model", "method", "lr", "split_seed",
     "epochs_total", "tpr", "forget_per_class",
     "pool_take_per_class",
     "retain_per_class", "total_retain", "total_forget",
     "chosen_total",                     
     "epoch", "syn_train_loss", "syn_train_acc",
     "syn_total", "syn_retain", "syn_forget",
-    "all_train", "all_test",
+    "all_train", "val_accuracy", "val_fgt", "val_retain", "all_test",
     "train_fgt", "train_retain", "test_fgt", "test_retain",
-    "RS",
+    "RS_val", "RS_test",
 ]
 
 # ---------------- Small helpers ----------------
@@ -220,7 +228,8 @@ def append_best_for_class(
     row = {
         "forget_class": int(forget_class),
         "dataset": dataset_name, "model": model_name,
-        "method": method, "lr": lr, "epochs_total": epochs,
+        "method": method, "lr": lr, "split_seed": int(args.split_seed),
+        "epochs_total": epochs,
         "tpr": -1,
         "forget_per_class": int(args.forget_per_class),
         "pool_take_per_class": int(pool_take_per_class),   # <-- WRITE IT
@@ -232,14 +241,27 @@ def append_best_for_class(
     }
     df = pd.DataFrame([row], columns=COLUMNS)
     header_needed = not os.path.exists(AGG_CSV_PATH)
+    if not header_needed:
+        prior = pd.read_csv(AGG_CSV_PATH)
+        # Older aggregate files called the test-set score simply "RS".
+        if "RS_test" not in prior.columns and "RS" in prior.columns:
+            prior = prior.rename(columns={"RS": "RS_test"})
+        missing_columns = [column for column in COLUMNS if column not in prior]
+        if missing_columns:
+            for column in missing_columns:
+                prior[column] = np.nan
+            prior = prior.reindex(columns=COLUMNS)
+            prior.to_csv(AGG_CSV_PATH, index=False)
     METRIC_COLS = [
-        "epochs_total", "tpr", "forget_per_class",
+        "split_seed", "epochs_total", "tpr", "forget_per_class",
         "pool_take_per_class",                 # <-- ADD HERE
         "retain_per_class",
         "total_retain", "total_forget", "chosen_total",
         "syn_train_loss", "syn_train_acc",
-        "syn_total", "syn_retain", "syn_forget", "all_train", "all_test",
-        "train_fgt", "train_retain", "test_fgt", "test_retain", "RS",
+        "syn_total", "syn_retain", "syn_forget", "all_train",
+        "val_accuracy", "val_fgt", "val_retain", "all_test",
+        "train_fgt", "train_retain", "test_fgt", "test_retain",
+        "RS_val", "RS_test",
     ]
     df[METRIC_COLS] = df[METRIC_COLS].apply(pd.to_numeric, errors="coerce").round(3)
     df.to_csv(AGG_CSV_PATH, mode="a", header=header_needed, index=False, float_format="%.3f")
@@ -349,14 +371,21 @@ for forget_class in forget_classes:
         "test_fgt":    [],
         "train_retain":[],
         "test_retain": [],
-        "RS":          [],
+        "RS_test":     [],
     }
     
     per_epoch_csv = os.path.join(run_plots_dir, "metrics_by_epoch.csv")
+    if os.path.exists(per_epoch_csv):
+        existing_columns = pd.read_csv(per_epoch_csv, nrows=0).columns
+        if "RS_val" not in existing_columns or "RS_test" not in existing_columns:
+            per_epoch_csv = os.path.join(
+                run_plots_dir, "metrics_by_epoch_validation.csv"
+            )
     if not os.path.exists(per_epoch_csv):
         pd.DataFrame(columns=[
             "epoch","syn_train_loss","syn_train_acc","syn_total","syn_retain","syn_forget",
-            "all_train","all_test","train_fgt","train_retain","test_fgt","test_retain","RS"
+            "all_train","val_accuracy","val_fgt","val_retain","all_test",
+            "train_fgt","train_retain","test_fgt","test_retain","RS_val","RS_test"
         ]).to_csv(per_epoch_csv, index=False)
 
 
@@ -364,14 +393,22 @@ for forget_class in forget_classes:
     wo_dataaug = False
     transform_train, transform_test = get_transforms(dataset_name, model_name, wo_dataaug=wo_dataaug)
     trainset, testset = get_dataset(dataset_name, transform_train, transform_test)
+    trainset, validation_set = stratified_train_val_split(
+        trainset, transform_test, seed=args.split_seed, validation_fraction=0.10
+    )
     batch_size_real = 256; num_workers = 8
     all_train_loader, all_test_loader = get_dataloader(
         trainset, testset, batch_size=batch_size_real, num_workers=num_workers
     )
     # deterministic train-eval loader (no aug, no shuffle) for measuring baseline train stats
-    trainset_eval = copy.copy(trainset); trainset_eval.transform = transform_test
+    trainset_eval_source = copy.copy(trainset.dataset)
+    trainset_eval_source.transform = transform_test
+    trainset_eval = Subset(trainset_eval_source, trainset.indices)
+    trainset_eval.targets = trainset.targets
     all_train_loader = DataLoader(trainset_eval, batch_size=batch_size_real, shuffle=False,
                                   drop_last=False, num_workers=num_workers, pin_memory=True)
+    val_loader = DataLoader(validation_set, batch_size=batch_size_real, shuffle=False,
+                            drop_last=False, num_workers=num_workers, pin_memory=True)
 
     # one-vs-all splits (real images)
     (
@@ -388,6 +425,7 @@ for forget_class in forget_classes:
     # embed once (real) to speed eval by using FC only
     feature_model = make_feature_extractor(model, num_classes).eval()
     all_train_feats, all_train_labels = embed_loader_to_tensor(feature_model, all_train_loader)
+    val_feats, val_labels = embed_loader_to_tensor(feature_model, val_loader)
     all_test_feats,  all_test_labels  = embed_loader_to_tensor(feature_model, all_test_loader)
     train_fgt_feats, train_fgt_labels = embed_loader_to_tensor(feature_model, train_fgt_loader)
     train_ret_feats, train_ret_labels = embed_loader_to_tensor(feature_model, train_retain_loader)
@@ -450,6 +488,15 @@ for forget_class in forget_classes:
 
     # wrap as embedding loaders
     all_train_emb_loader = make_emb_loader(all_train_feats, all_train_labels)
+    val_emb_loader = make_emb_loader(val_feats, val_labels)
+    val_forget_mask = val_labels.eq(forget_class)
+    val_forget_emb_loader = make_emb_loader(
+        val_feats[val_forget_mask], val_labels[val_forget_mask]
+    )
+    val_retain_mask = ~val_forget_mask
+    val_retain_emb_loader = make_emb_loader(
+        val_feats[val_retain_mask], val_labels[val_retain_mask]
+    )
     all_test_emb_loader  = make_emb_loader(all_test_feats,  all_test_labels)
     train_fgt_emb_loader = make_emb_loader(train_fgt_feats, train_fgt_labels)
     train_ret_emb_loader = make_emb_loader(train_ret_feats, train_ret_labels)
@@ -526,6 +573,9 @@ for forget_class in forget_classes:
         acc_syn_total = (acc_syn_ret * n_syn_ret + acc_syn_fgt * n_syn_fgt) / max(n_syn_ret + n_syn_fgt, 1)
         acc_all_train    = eval_accuracy_on_emb_loader(fc, all_train_emb_loader,    device)
         acc_all_test     = eval_accuracy_on_emb_loader(fc, all_test_emb_loader,     device)
+        acc_val = eval_accuracy_on_emb_loader(fc, val_emb_loader, device)
+        acc_val_fgt = eval_accuracy_on_emb_loader(fc, val_forget_emb_loader, device)
+        acc_val_retain = eval_accuracy_on_emb_loader(fc, val_retain_emb_loader, device)
         acc_train_fgt    = eval_accuracy_on_emb_loader(fc, train_fgt_emb_loader,    device)
         acc_train_retain = eval_accuracy_on_emb_loader(fc, train_ret_emb_loader,    device)
         acc_test_fgt     = eval_accuracy_on_emb_loader(fc, test_fgt_emb_loader,     device)
@@ -533,6 +583,8 @@ for forget_class in forget_classes:
         return {
             "syn_total": acc_syn_total, "syn_retain": acc_syn_ret, "syn_forget": acc_syn_fgt,
             "all_train": acc_all_train, "all_test": acc_all_test,
+            "val_accuracy": acc_val, "val_fgt": acc_val_fgt,
+            "val_retain": acc_val_retain,
             "train_fgt": acc_train_fgt, "train_retain": acc_train_retain,
             "test_fgt": acc_test_fgt,   "test_retain": acc_test_retain,
         }
@@ -550,27 +602,27 @@ for forget_class in forget_classes:
     A_r_tr = float(m0["test_retain"])
     A_f_tr = float(m0["test_fgt"])
     rs0 = revival_score(A_r_tr, A_f_tr, A_r_tu, A_f_tu, directional=args.rs_directional)
-    print(f"[Epoch 00] RS={rs0:.4f}")
+    rs_val0 = revival_score(
+        m0["val_retain"], m0["val_fgt"], m0["val_retain"], m0["val_fgt"],
+        directional=args.rs_directional,
+    )
+    print(f"[Epoch 00] RS_val={rs_val0:.4f} RS_test={rs0:.4f}")
 
-    # Early-stop on RS with retain floor
-    retain_floor = args.retain_floor_frac * A_r_tu
-    print(f"[Constraint] test_retain must be >= {retain_floor:.2f} "
-          f"({args.retain_floor_frac:.0%} of baseline {A_r_tu:.2f}).")
+    # Select and early-stop using validation only; test remains for reporting.
+    val_retain_floor = args.retain_floor_frac * float(m0["val_retain"])
+    print(f"[Constraint] val_retain must be >= {val_retain_floor:.2f} "
+          f"({args.retain_floor_frac:.0%} of epoch-0 validation baseline).")
 
-    best = {"key": (-float("inf"), -float("inf"), -float("inf"), -float("inf"), -float("inf")), "row": None}
+    best = {"key": float("-inf"), "row": None}
     def _safe_get(row, k):
         v = row.get(k, float("-inf"))
         return v if (isinstance(v, (int, float)) and v == v) else float("-inf")
     def _key_from_row(row):
-        # priority: RS, then test_fgt, test_retain, train_fgt, train_retain
-        return (float(_safe_get(row, "RS")),
-                float(_safe_get(row, "test_fgt")),
-                float(_safe_get(row, "test_retain")),
-                float(_safe_get(row, "train_fgt")),
-                float(_safe_get(row, "train_retain")))
+        # Match checkpoint saving and early stopping: maximize validation RS.
+        return float(_safe_get(row, "RS_val"))
     row0 = {
         "epoch": 0, "syn_train_loss": None, "syn_train_acc": None,
-        **m0, "RS": float(rs0)
+        **m0, "RS_test": float(rs0), "RS_val": float(rs_val0)
     }
     best["row"] = row0.copy(); best["key"] = _key_from_row(row0)
 
@@ -579,7 +631,7 @@ for forget_class in forget_classes:
     hist["test_fgt"].append(float(m0["test_fgt"]))
     hist["train_retain"].append(float(m0["train_retain"]))
     hist["test_retain"].append(float(m0["test_retain"]))
-    hist["RS"].append(float(rs0))
+    hist["RS_test"].append(float(rs0))
     accs_dict = _hist_to_accs_dict(hist)
     epoch_for_plot = len(accs_dict["train_forget"])
     plot_unlearn_remain_acc_figure(
@@ -594,9 +646,11 @@ for forget_class in forget_classes:
         "epoch": 0, "syn_train_loss": None, "syn_train_acc": None,
         "syn_total": m0["syn_total"], "syn_retain": m0["syn_retain"], "syn_forget": m0["syn_forget"],
         "all_train": m0["all_train"], "all_test": m0["all_test"],
+        "val_accuracy": m0["val_accuracy"], "val_fgt": m0["val_fgt"],
+        "val_retain": m0["val_retain"],
         "train_fgt": m0["train_fgt"], "train_retain": m0["train_retain"],
         "test_fgt": m0["test_fgt"], "test_retain": m0["test_retain"],
-        "RS": rs0
+        "RS_val": rs_val0, "RS_test": rs0
     }]).to_csv(per_epoch_csv, mode="a", header=False, index=False)
 
 
@@ -609,9 +663,9 @@ for forget_class in forget_classes:
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(fc.parameters(), lr=1e-2, weight_decay=1e-4)
 
-    best_rs = -1.0; best_rs_epoch = 0
+    best_rs = rs_val0; best_rs_epoch = 0
     no_improve = 0; patience = int(args.rs_patience)
-    saved_fc = None
+    saved_fc = copy.deepcopy(fc.state_dict())
 
     # Train epochs
     for epoch in range(1, epochs + 1):
@@ -632,18 +686,26 @@ for forget_class in forget_classes:
         m = eval_epoch(fc)
         A_r_tr, A_f_tr = float(m["test_retain"]), float(m["test_fgt"])
         rs = revival_score(A_r_tr, A_f_tr, A_r_tu, A_f_tu, directional=args.rs_directional)
+        rs_val = revival_score(
+            float(m["val_retain"]), float(m["val_fgt"]),
+            float(m0["val_retain"]), float(m0["val_fgt"]),
+            directional=args.rs_directional,
+        )
 
         print(
             f"[Epoch {epoch:02d}] syn_train_loss={train_loss:.4f} syn_train_acc={train_acc:.2f}% | "
             f"syn_total={m['syn_total']:.2f}% syn_ret={m['syn_retain']:.2f}% syn_fgt={m['syn_forget']:.2f}% | "
             f"all_train={m['all_train']:.2f}% all_test={m['all_test']:.2f}% | "
             f"train_fgt={m['train_fgt']:.2f}% train_ret={m['train_retain']:.2f}% | "
-            f"test_fgt={m['test_fgt']:.2f}% test_ret={m['test_retain']:.2f}% | RS={rs:.4f}"
+            f"test_fgt={m['test_fgt']:.2f}% test_ret={m['test_retain']:.2f}% | "
+            f"RS_val={rs_val:.4f} RS_test={rs:.4f}"
         )
 
-        row = {"epoch": epoch, "syn_train_loss": float(train_loss), "syn_train_acc": float(train_acc), **m, "RS": float(rs)}
+        row = {"epoch": epoch, "syn_train_loss": float(train_loss),
+               "syn_train_acc": float(train_acc), **m,
+               "RS_test": float(rs), "RS_val": float(rs_val)}
         key = _key_from_row(row)
-        if (m["test_retain"] >= retain_floor) and (key > best["key"]):
+        if (m["val_retain"] >= val_retain_floor) and (key > best["key"]):
             best["key"] = key; best["row"] = row.copy()
 
         # record epoch-k metrics and plot
@@ -651,7 +713,7 @@ for forget_class in forget_classes:
         hist["test_fgt"].append(float(m["test_fgt"]))
         hist["train_retain"].append(float(m["train_retain"]))
         hist["test_retain"].append(float(m["test_retain"]))
-        hist["RS"].append(float(rs))
+        hist["RS_test"].append(float(rs))
 
         accs_dict = _hist_to_accs_dict(hist)
         epoch_for_plot = len(accs_dict["train_forget"])
@@ -671,21 +733,24 @@ for forget_class in forget_classes:
             "epoch": epoch, "syn_train_loss": float(train_loss), "syn_train_acc": float(train_acc),
             "syn_total": m["syn_total"], "syn_retain": m["syn_retain"], "syn_forget": m["syn_forget"],
             "all_train": m["all_train"], "all_test": m["all_test"],
+            "val_accuracy": m["val_accuracy"], "val_fgt": m["val_fgt"],
+            "val_retain": m["val_retain"],
             "train_fgt": m["train_fgt"], "train_retain": m["train_retain"],
             "test_fgt": m["test_fgt"], "test_retain": m["test_retain"],
-            "RS": rs
+            "RS_val": rs_val, "RS_test": rs
         }]).to_csv(per_epoch_csv, mode="a", header=False, index=False)
 
 
 
         # RS early stop w/ retain floor guard
-        if (m["test_retain"] >= retain_floor) and (rs > best_rs):
-            best_rs = rs; best_rs_epoch = epoch; no_improve = 0
+        if (m["val_retain"] >= val_retain_floor) and (rs_val > best_rs):
+            best_rs = rs_val; best_rs_epoch = epoch; no_improve = 0
             saved_fc = copy.deepcopy(fc.state_dict())
         else:
             no_improve += 1
             if no_improve >= patience:
-                print(f"[EarlyStop] RS plateaued for {patience} epochs. Best RS={best_rs:.4f} @ epoch {best_rs_epoch}.")
+                print(f"[EarlyStop] Validation RS plateaued for {patience} epochs. "
+                      f"Best RS_val={best_rs:.4f} @ epoch {best_rs_epoch}.")
                 if saved_fc is not None: fc.load_state_dict(saved_fc)
                 break
 

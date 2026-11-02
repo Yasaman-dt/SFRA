@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 from collections import defaultdict
 from utils import (
     get_transforms, get_dataset, get_dataloader, get_unlearn_loader,
-    stratified_train_validation_split, _top1_and_per_class
+    stratified_train_val_split, _top1_and_per_class
 )
 from trainer import *  # assumes load_model is here
 import random
@@ -604,7 +604,7 @@ for forget_class in forget_classes:
     trainset, testset, _ = get_dataset(
         dataset_name, transform_train, transform_test, return_validation=True
     )
-    trainset, val_dataset = stratified_train_validation_split(
+    trainset, val_dataset = stratified_train_val_split(
         trainset, transform_test, seed=args.seed, validation_fraction=0.10
     )
 

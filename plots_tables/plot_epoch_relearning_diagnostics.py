@@ -17,6 +17,14 @@ def main():
     if not paths:
         raise FileNotFoundError(f"No trajectory CSVs below {args.result_dir}")
     frame = pd.concat((pd.read_csv(path) for path in paths), ignore_index=True)
+    # Read older result files while writing and plotting the shorter val_* names.
+    for old_name, new_name in (
+        ("validation_retain_accuracy", "val_retain_accuracy"),
+        ("validation_forget_accuracy", "val_forget_accuracy"),
+        ("validation_RS", "val_RS"),
+    ):
+        if new_name not in frame and old_name in frame:
+            frame[new_name] = frame[old_name]
     if args.max_epoch is not None:
         frame = frame[frame["epoch"].le(args.max_epoch)]
 
@@ -27,13 +35,16 @@ def main():
          [("synthetic_retain_accuracy", "Retain"),
           ("synthetic_forget_accuracy", "Forget")]),
         ("Real accuracy", "Accuracy (%)",
-         [("real_retain_accuracy", "Retain"),
-          ("real_forget_accuracy", "Forget")]),
+         [("val_retain_accuracy", "Val retain"),
+          ("val_forget_accuracy", "Val forget"),
+          ("test_retain_accuracy", "Test retain"),
+          ("test_forget_accuracy", "Test forget")]),
         ("Relearning score", "RS",
-         [("synthetic_RS", "Synthetic"), ("real_RS", "Real")]),
+         [("synthetic_RS", "Synthetic"),
+          ("val_RS", "Val"), ("test_RS", "Test")]),
         ("Forget-class confidence", "Mean confidence (%)",
          [("synthetic_forget_confidence", "Synthetic"),
-          ("real_forget_confidence", "Real")]),
+          ("test_forget_confidence", "Test")]),
     ]
     fig, axes = plt.subplots(2, 2, figsize=(11, 7), sharex=True)
     for axis, (title, ylabel, metrics) in zip(axes.flat, panels):

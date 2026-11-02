@@ -19,15 +19,20 @@ import numpy as np
 import pandas as pd
 
 
-DEFAULT_METRICS = ("RS",)
+DEFAULT_METRICS = ("RS_val",)
 METRIC_LABELS = {
-    "baseline_forget_acc": r"$A_f^{\mathrm{un}}$",
-    "baseline_retain_acc": r"$A_r^{\mathrm{un}}$",
-    "relearned_forget_acc": r"$A_f^{\mathrm{re}}$",
-    "relearned_retain_acc": r"$A_r^{\mathrm{re}}$",
+    "baseline_forget_acc_val": r"$A_f^{\mathrm{un,val}}$",
+    "baseline_retain_acc_val": r"$A_r^{\mathrm{un,val}}$",
+    "relearned_forget_acc_val": r"$A_f^{\mathrm{re,val}}$",
+    "relearned_retain_acc_val": r"$A_r^{\mathrm{re,val}}$",
+    "baseline_forget_acc_test": r"$A_f^{\mathrm{un,test}}$",
+    "baseline_retain_acc_test": r"$A_r^{\mathrm{un,test}}$",
+    "relearned_forget_acc_test": r"$A_f^{\mathrm{re,test}}$",
+    "relearned_retain_acc_test": r"$A_r^{\mathrm{re,test}}$",
     "forget_gain": r"$\Delta A_f$",
     "retain_drop": r"$\Delta A_r$",
-    "RS": "RS",
+    "RS_val": r"$\mathrm{RS}_{\mathrm{val}}$",
+    "RS_test": r"$\mathrm{RS}_{\mathrm{test}}$",
     "best_epoch": "Epoch",
 }
 STRATEGY_LABELS = {
@@ -127,7 +132,7 @@ def parse_args():
         "--metrics",
         nargs="+",
         default=list(DEFAULT_METRICS),
-        choices=["RS"],
+        choices=["RS_val"],
     )
     parser.add_argument(
         "--strategies",
@@ -251,7 +256,10 @@ def load_long_frame(records, method, seed=None):
             frame = frame[
                 pd.to_numeric(frame["seed"], errors="coerce").eq(seed)
             ]
-        if "RS_mean" not in frame.columns and "RS" in frame.columns:
+        source_metric = "RS_val" if "RS_val" in frame.columns else "RS"
+        source_mean = f"{source_metric}_mean"
+        source_std = f"{source_metric}_std"
+        if source_mean not in frame.columns and source_metric in frame.columns:
             dedupe_columns = [
                 column for column in ["strategy", "seed"]
                 if column in frame.columns
@@ -268,11 +276,17 @@ def load_long_frame(records, method, seed=None):
                 if column in frame.columns
             ]
             frame = (
-                frame.groupby(group_columns, as_index=False, dropna=False)["RS"]
+                frame.groupby(group_columns, as_index=False, dropna=False)[source_metric]
                 .agg(["mean", "std"])
                 .reset_index()
-                .rename(columns={"mean": "RS_mean", "std": "RS_std"})
+                .rename(columns={"mean": source_mean, "std": source_std})
             )
+        # Keep old RS-only result files readable as validation-RS results.
+        if source_metric == "RS" and "RS_val_mean" not in frame.columns:
+            for stat in ("mean", "std"):
+                old_column = f"RS_{stat}"
+                if old_column in frame.columns:
+                    frame[f"RS_val_{stat}"] = frame[old_column]
         frame["forget_class"] = record["class_id"]
         frame["unlearn_lr"] = record["unlearn_lr"]
         frame["unlearning_method"] = method
@@ -324,10 +338,10 @@ def maybe_scale(metric, value, accuracy_as_fraction):
     if not accuracy_as_fraction:
         return value
     if metric in {
-        "baseline_forget_acc",
-        "baseline_retain_acc",
-        "relearned_forget_acc",
-        "relearned_retain_acc",
+        "baseline_forget_acc_val",
+        "baseline_retain_acc_val",
+        "relearned_forget_acc_val",
+        "relearned_retain_acc_val",
         "forget_gain",
         "retain_drop",
     }:
@@ -372,7 +386,7 @@ def numeric_tables(frame, strategies, metrics, classes, accuracy_as_fraction):
 def format_value(mean, std, metric, precision):
     if pd.isna(mean):
         return "--"
-    metric_precision = 2 if metric == "RS" else 1
+    metric_precision = 2 if metric.startswith("RS_") else 1
     if pd.isna(std):
         return f"{mean:.{metric_precision}f}"
     return (
@@ -556,7 +570,7 @@ def write_csv(path, means, stds, strategies, metrics, classes, precision, frame_
             "strategy": strategy,
         }
         for class_id in classes:
-            metric = "RS"
+            metric = "RS_val"
             row[str(class_id)] = format_value(
                 means[(strategy_key, metric)][class_id],
                 stds[(strategy_key, metric)][class_id],
@@ -574,8 +588,8 @@ def main():
             Path("results_synthesis_ablation")
             / f"results_synthesis_ablation_{args.model_name}"
         )
-    # This table reports only RS; class IDs are the column names.
-    args.metrics = ["RS"]
+    # This table reports validation RS; class IDs are the column names.
+    args.metrics = ["RS_val"]
     if args.methods is not None:
         methods = list(dict.fromkeys(args.methods))
         if args.method is not None:

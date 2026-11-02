@@ -58,7 +58,11 @@ from plots_tables.tsne_plots.plot_real_vs_gaussian_probe_tsne import (  # noqa: 
     load_checkpoint_model,
     make_feature_extractor,
 )
-from utils import get_dataset, get_transforms  # noqa: E402
+from utils import (  # noqa: E402
+    get_dataset,
+    get_transforms,
+    stratified_train_val_split,
+)
 from project_paths import DATA_DIR, EXPS_DIR  # noqa: E402
 
 
@@ -153,6 +157,7 @@ def parse_args():
     parser.add_argument("--head_lr", type=float, default=1e-2)
     parser.add_argument("--weight_decay", type=float, default=1e-4)
     parser.add_argument("--eval_every", type=int, default=1)
+    parser.add_argument("--split_seed", type=int, default=42)
     parser.add_argument("--patience", type=int, default=100)
     parser.add_argument(
         "--retain_floor_frac",
@@ -676,6 +681,10 @@ def relearning_score(retain_un, forget_un, retain_re, forget_re):
 def train_one_strategy(
     initial_classifier,
     synthetic,
+    val_retain_features,
+    val_retain_labels,
+    val_forget_features,
+    val_forget_labels,
     test_retain_features,
     test_retain_labels,
     test_forget_features,
@@ -703,26 +712,37 @@ def train_one_strategy(
         weight_decay=args.weight_decay,
     )
 
-    retain_un = accuracy(
+    val_retain_un = accuracy(
         classifier,
-        test_retain_features,
-        test_retain_labels,
+        val_retain_features,
+        val_retain_labels,
         device,
         args.eval_batch_size,
     )
-    forget_un = accuracy(
+    val_forget_un = accuracy(
         classifier,
-        test_forget_features,
-        test_forget_labels,
+        val_forget_features,
+        val_forget_labels,
         device,
         args.eval_batch_size,
     )
-    retain_floor = args.retain_floor_frac * retain_un
+    test_retain_un = accuracy(
+        classifier, test_retain_features, test_retain_labels,
+        device, args.eval_batch_size,
+    )
+    test_forget_un = accuracy(
+        classifier, test_forget_features, test_forget_labels,
+        device, args.eval_batch_size,
+    )
+    retain_floor = args.retain_floor_frac * val_retain_un
     best = {
         "epoch": 0,
-        "retain_acc": retain_un,
-        "forget_acc": forget_un,
+        "retain_acc": val_retain_un,
+        "forget_acc": val_forget_un,
         "RS": 0.0,
+        "test_retain_acc": test_retain_un,
+        "test_forget_acc": test_forget_un,
+        "test_RS": 0.0,
         "state": copy.deepcopy(classifier.state_dict()),
     }
     no_improve = 0
@@ -739,28 +759,45 @@ def train_one_strategy(
 
         if epoch % args.eval_every != 0 and epoch != args.epochs:
             continue
-        retain_re = accuracy(
+        val_retain_re = accuracy(
             classifier,
-            test_retain_features,
-            test_retain_labels,
+            val_retain_features,
+            val_retain_labels,
             device,
             args.eval_batch_size,
         )
-        forget_re = accuracy(
+        val_forget_re = accuracy(
             classifier,
-            test_forget_features,
-            test_forget_labels,
+            val_forget_features,
+            val_forget_labels,
             device,
             args.eval_batch_size,
         )
-        score = relearning_score(retain_un, forget_un, retain_re, forget_re)
-        improved = retain_re >= retain_floor and score > best["RS"] + 1e-12
+        test_retain_re = accuracy(
+            classifier, test_retain_features, test_retain_labels,
+            device, args.eval_batch_size,
+        )
+        test_forget_re = accuracy(
+            classifier, test_forget_features, test_forget_labels,
+            device, args.eval_batch_size,
+        )
+        score = relearning_score(
+            val_retain_un, val_forget_un,
+            val_retain_re, val_forget_re,
+        )
+        test_score = relearning_score(
+            test_retain_un, test_forget_un, test_retain_re, test_forget_re,
+        )
+        improved = val_retain_re >= retain_floor and score > best["RS"] + 1e-12
         if improved:
             best = {
                 "epoch": epoch,
-                "retain_acc": retain_re,
-                "forget_acc": forget_re,
+                "retain_acc": val_retain_re,
+                "forget_acc": val_forget_re,
                 "RS": score,
+                "test_retain_acc": test_retain_re,
+                "test_forget_acc": test_forget_re,
+                "test_RS": test_score,
                 "state": copy.deepcopy(classifier.state_dict()),
             }
             no_improve = 0
@@ -770,14 +807,19 @@ def train_one_strategy(
                 break
 
     return {
-        "baseline_retain_acc": retain_un,
-        "baseline_forget_acc": forget_un,
-        "relearned_retain_acc": best["retain_acc"],
-        "relearned_forget_acc": best["forget_acc"],
-        "RS": best["RS"],
+        "baseline_retain_acc_val": val_retain_un,
+        "baseline_forget_acc_val": val_forget_un,
+        "relearned_retain_acc_val": best["retain_acc"],
+        "relearned_forget_acc_val": best["forget_acc"],
+        "RS_val": best["RS"],
+        "baseline_retain_acc_test": test_retain_un,
+        "baseline_forget_acc_test": test_forget_un,
+        "relearned_retain_acc_test": best["test_retain_acc"],
+        "relearned_forget_acc_test": best["test_forget_acc"],
+        "RS_test": best["test_RS"],
         "best_epoch": best["epoch"],
-        "retain_drop": retain_un - best["retain_acc"],
-        "forget_gain": best["forget_acc"] - forget_un,
+        "retain_drop": val_retain_un - best["retain_acc"],
+        "forget_gain": best["forget_acc"] - val_forget_un,
     }
 
 
@@ -814,13 +856,18 @@ def aggregate_results(run_csv):
     if "uncertainty_score" in frame.columns:
         group_columns.append("uncertainty_score")
     metrics = [
-        "baseline_retain_acc",
-        "baseline_forget_acc",
-        "relearned_retain_acc",
-        "relearned_forget_acc",
+        "baseline_retain_acc_val",
+        "baseline_forget_acc_val",
+        "relearned_retain_acc_val",
+        "relearned_forget_acc_val",
         "retain_drop",
         "forget_gain",
-        "RS",
+        "RS_val",
+        "baseline_retain_acc_test",
+        "baseline_forget_acc_test",
+        "relearned_retain_acc_test",
+        "relearned_forget_acc_test",
+        "RS_test",
         "best_epoch",
         "total_draws",
         "pool_generation_seconds",
@@ -868,9 +915,12 @@ def write_signed_relu_comparison(run_csv, output_dir):
         ]
 
     metrics = [
-        "relearned_retain_acc",
-        "relearned_forget_acc",
-        "RS",
+        "relearned_retain_acc_val",
+        "relearned_forget_acc_val",
+        "RS_val",
+        "relearned_retain_acc_test",
+        "relearned_forget_acc_test",
+        "RS_test",
         "best_epoch",
         "total_draws",
         "pool_generation_seconds",
@@ -1003,7 +1053,7 @@ def write_three_way_gaussian_support_comparison(run_csv, output_dir):
     )
 
 
-def run_for_forget_class(args, forget_class, test_dataset, strategies, device):
+def run_for_forget_class(args, forget_class, validation_dataset, test_dataset, strategies, device):
     num_classes = NUM_CLASSES[args.dataset]
     checkpoint = args.checkpoint or checkpoint_for(
         args.method,
@@ -1027,6 +1077,13 @@ def run_for_forget_class(args, forget_class, test_dataset, strategies, device):
     _, classifier = get_final_linear(model, num_classes)
     initial_classifier = copy.deepcopy(classifier).cpu()
 
+    validation_loader = DataLoader(
+        validation_dataset,
+        batch_size=args.eval_batch_size,
+        shuffle=False,
+        num_workers=args.num_workers,
+        pin_memory=device.type == "cuda",
+    )
     test_loader = DataLoader(
         test_dataset,
         batch_size=args.eval_batch_size,
@@ -1034,12 +1091,20 @@ def run_for_forget_class(args, forget_class, test_dataset, strategies, device):
         num_workers=args.num_workers,
         pin_memory=device.type == "cuda",
     )
-    real_features, real_labels = extract_features(feature_model, test_loader, device)
-    forget_mask = real_labels.eq(forget_class)
-    test_forget_features = real_features[forget_mask].float()
-    test_forget_labels = real_labels[forget_mask]
-    test_retain_features = real_features[~forget_mask].float()
-    test_retain_labels = real_labels[~forget_mask]
+    validation_features, validation_labels = extract_features(
+        feature_model, validation_loader, device
+    )
+    validation_forget_mask = validation_labels.eq(forget_class)
+    validation_forget_features = validation_features[validation_forget_mask].float()
+    validation_forget_labels = validation_labels[validation_forget_mask]
+    validation_retain_features = validation_features[~validation_forget_mask].float()
+    validation_retain_labels = validation_labels[~validation_forget_mask]
+    test_features, test_labels = extract_features(feature_model, test_loader, device)
+    test_forget_mask = test_labels.eq(forget_class)
+    test_forget_features = test_features[test_forget_mask].float()
+    test_forget_labels = test_labels[test_forget_mask]
+    test_retain_features = test_features[~test_forget_mask].float()
+    test_retain_labels = test_labels[~test_forget_mask]
 
     run_root = Path(args.output_dir) / args.method / (
         f"{args.dataset}_{args.model_name}_lr{args.lr:g}_fg{forget_class}"
@@ -1121,6 +1186,10 @@ def run_for_forget_class(args, forget_class, test_dataset, strategies, device):
                 result = train_one_strategy(
                     initial_classifier=initial_classifier,
                     synthetic=synthetic,
+                    val_retain_features=validation_retain_features,
+                    val_retain_labels=validation_retain_labels,
+                    val_forget_features=validation_forget_features,
+                    val_forget_labels=validation_forget_labels,
                     test_retain_features=test_retain_features,
                     test_retain_labels=test_retain_labels,
                     test_forget_features=test_forget_features,
@@ -1136,6 +1205,7 @@ def run_for_forget_class(args, forget_class, test_dataset, strategies, device):
                     "unlearn_lr": args.lr,
                     "forget_class": forget_class,
                     "seed": seed,
+                    "split_seed": args.split_seed,
                     "strategy": strategy.name,
                     "distribution": strategy.distribution,
                     "forget_selection": strategy.forget_selection,
@@ -1150,9 +1220,12 @@ def run_for_forget_class(args, forget_class, test_dataset, strategies, device):
                 }
                 append_csv(run_csv, row)
                 print(
-                    f"[result] Af={result['relearned_forget_acc']:.2f} "
-                    f"Ar={result['relearned_retain_acc']:.2f} "
-                    f"RS={result['RS']:.4f} epoch={result['best_epoch']} "
+                    f"[result] val_Af={result['relearned_forget_acc_val']:.2f} "
+                    f"val_Ar={result['relearned_retain_acc_val']:.2f} "
+                    f"val_RS={result['RS_val']:.4f} epoch={result['best_epoch']} | "
+                    f"test_Af={result['relearned_forget_acc_test']:.2f} "
+                    f"test_Ar={result['relearned_retain_acc_test']:.2f} "
+                    f"test_RS={result['RS_test']:.4f} "
                     f"pool={diagnostics_by_strategy[strategy]['pool_generation_seconds']:.2f}s "
                     f"select_forget={diagnostics_by_strategy[strategy]['forget_selection_seconds']:.3f}s "
                     f"select_retain={diagnostics_by_strategy[strategy]['retain_selection_seconds']:.3f}s "
@@ -1207,19 +1280,24 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     strategies = make_strategies(args)
     _, test_transform = get_transforms(
-        args.dataset, args.model_name, wo_dataaug=False
+        args.dataset, args.model_name, wo_dataaug=True
     )
-    _, test_dataset = get_dataset(
+    train_dataset, test_dataset = get_dataset(
         args.dataset,
         test_transform,
         test_transform,
         path=Path(args.data_dir).expanduser(),
+    )
+    _, validation_dataset = stratified_train_val_split(
+        train_dataset, test_transform, seed=args.split_seed,
+        validation_fraction=0.10,
     )
 
     for forget_class in forget_classes:
         run_for_forget_class(
             args=args,
             forget_class=forget_class,
+            validation_dataset=validation_dataset,
             test_dataset=test_dataset,
             strategies=strategies,
             device=device,

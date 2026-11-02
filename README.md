@@ -123,12 +123,20 @@ seeded, class-stratified split of the original training set: 90% supplies the
 real training/update loaders and 10% is used for validation and checkpoint
 selection. CIFAR's official test set is used for final test evaluation;
 TinyImageNet's labeled `val/` directory is used for final test evaluation.
-The split uses seed `42` by default; pass the same `--seed` to `main.py` and
-the SFRA or linear-probe script when overriding it. The linear-probe baseline
+The split uses seed `42` by default; pass the same seed to `main.py`, the SFRA,
+PRA, and linear-probe scripts when overriding it. The linear-probe baseline
 trains its fresh classifier on the same 90% real training subset and selects
 its best epoch using the matching 10% validation subset. SFRA relearning itself
 trains on synthetic probes and evaluates on both the training-derived
 validation split and the held-out test split.
+Relearning ablations that report epoch trajectories use that same validation
+split for epoch selection and reserve the test split for final reporting.
+
+The source-dependent PRA baseline draws real support samples only from the
+90% training subset and selects its interpolation strength using the matching
+10% validation subset. Its final results use the CIFAR test set or TinyImageNet
+`val/` directory. The PRA split seed defaults to `42` (`--seed`); the separate
+`--support-seed` controls which support samples are drawn from the 90% subset.
 
 Individual commands can still override these defaults using their applicable
 `--data_dir`, `--base-dir`, `--base_dir`, `--ckpt_dir`, or `--exps_dir`
@@ -412,7 +420,11 @@ We evaluate two source-dependent baselines: PRA and linear probing. Unlike our s
 
 ### PRA baseline
 
-PRA is evaluated using real support samples from the forgotten classes. For single-class unlearning checkpoints, we run:
+PRA is evaluated using real support samples from the forgotten classes. The
+support samples come from the 90% training subset; alpha selection uses the
+training-derived 10% validation subset, and final test results are reported on
+the official CIFAR test set or TinyImageNet `val/` directory. For single-class
+unlearning checkpoints, we run:
 
 **single-class setting:**
 ```bash
@@ -427,7 +439,8 @@ CUDA_VISIBLE_DEVICES=2 python -m relearning_baselines.run_pra_on_single_checkpoi
   --pra-metric cosine \
   --max-retain-drop 1.0 \
   --attack-split train \
-  --support-seed 0
+  --support-seed 0 \
+  --seed 42
 ```
 
 **multi-class setting:**
@@ -437,7 +450,8 @@ CUDA_VISIBLE_DEVICES=2 python -m relearning_baselines.run_pra_on_multi_checkpoin
   --model resnet18 \
   --method finetune \
   --forget 25,58 \
-  --lr 0.02
+  --lr 0.02 \
+  --seed 42
 ```
 
 
@@ -738,8 +752,10 @@ uncertainty-ablation results directory.
 
 This analysis trains the released classifier head on one fixed Gaussian
 synthetic dataset and evaluates real retain and forget accuracy at every
-epoch. It saves one trajectory CSV per method and seed, together with the
-retain--forget trade-off summaries.
+epoch. The shared training-derived validation split selects the reported
+epoch; test metrics are reported for that selected epoch. It saves one
+trajectory CSV per method and seed, together with the retain--forget
+trade-off summaries.
 
 For CIFAR-10/ResNet-18 with forget class~7, run:
 

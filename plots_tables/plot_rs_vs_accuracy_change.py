@@ -38,6 +38,15 @@ def load_complete_trajectories(root: Path, expected_seeds) -> pd.DataFrame:
     if not frames:
         raise FileNotFoundError(f"No trajectory CSVs found below {root}")
     trajectories = pd.concat(frames, ignore_index=True)
+    # Accept trajectory files produced before validation metrics were named val_*.
+    for old_name, new_name in (
+        ("retain_accuracy", "val_retain_accuracy"),
+        ("forget_accuracy", "val_forget_accuracy"),
+        ("validation_retain_accuracy", "val_retain_accuracy"),
+        ("validation_forget_accuracy", "val_forget_accuracy"),
+    ):
+        if new_name not in trajectories and old_name in trajectories:
+            trajectories[new_name] = trajectories[old_name]
     expected = set(expected_seeds)
     seed_sets = trajectories.groupby("method")["seed"].agg(
         lambda values: set(values.astype(int))
@@ -50,26 +59,26 @@ def load_complete_trajectories(root: Path, expected_seeds) -> pd.DataFrame:
 
 def accuracy_pareto_frontier(points: pd.DataFrame) -> pd.DataFrame:
     ordered = points.sort_values(
-        ["retain_accuracy", "forget_accuracy"], ascending=[False, False]
+        ["val_retain_accuracy", "val_forget_accuracy"], ascending=[False, False]
     )
     keep = []
     best_forget = float("-inf")
     for index, row in ordered.iterrows():
-        if float(row["forget_accuracy"]) > best_forget + 1e-12:
+        if float(row["val_forget_accuracy"]) > best_forget + 1e-12:
             keep.append(index)
-            best_forget = float(row["forget_accuracy"])
-    return points.loc[keep].sort_values("retain_accuracy")
+            best_forget = float(row["val_forget_accuracy"])
+    return points.loc[keep].sort_values("val_retain_accuracy")
 
 
 def trim_after_forget_saturation(frontier: pd.DataFrame, epsilon_pp: float = 1.0) -> pd.DataFrame:
     if frontier.empty:
         return frontier
-    level = float(frontier["forget_accuracy"].max()) - epsilon_pp
-    saturated = frontier.loc[frontier["forget_accuracy"] >= level]
+    level = float(frontier["val_forget_accuracy"].max()) - epsilon_pp
+    saturated = frontier.loc[frontier["val_forget_accuracy"] >= level]
     if saturated.empty:
         return frontier
-    cutoff = float(saturated["retain_accuracy"].max())
-    return frontier.loc[frontier["retain_accuracy"] >= cutoff].copy()
+    cutoff = float(saturated["val_retain_accuracy"].max())
+    return frontier.loc[frontier["val_retain_accuracy"] >= cutoff].copy()
 
 
 def parse_args() -> argparse.Namespace:
@@ -100,30 +109,30 @@ def add_scores(trajectories: pd.DataFrame) -> pd.DataFrame:
     frame = trajectories.copy()
     baseline = (
         frame.loc[frame["epoch"].eq(0),
-                  ["method", "seed", "retain_accuracy", "forget_accuracy"]]
+                  ["method", "seed", "val_retain_accuracy", "val_forget_accuracy"]]
         .rename(
             columns={
-                "retain_accuracy": "retain_accuracy_unlearned",
-                "forget_accuracy": "forget_accuracy_unlearned",
+                "val_retain_accuracy": "val_retain_accuracy_unlearned",
+                "val_forget_accuracy": "val_forget_accuracy_unlearned",
             }
         )
     )
     frame = frame.merge(baseline, on=["method", "seed"], how="left", validate="many_to_one")
-    if frame[["retain_accuracy_unlearned", "forget_accuracy_unlearned"]].isna().any(axis=None):
+    if frame[["val_retain_accuracy_unlearned", "val_forget_accuracy_unlearned"]].isna().any(axis=None):
         raise ValueError("At least one method/seed trajectory has no epoch-zero row.")
 
-    frame["delta_retain_accuracy"] = (
-        frame["retain_accuracy"] - frame["retain_accuracy_unlearned"]
+    frame["delta_val_retain_accuracy"] = (
+        frame["val_retain_accuracy"] - frame["val_retain_accuracy_unlearned"]
     )
-    frame["delta_forget_accuracy"] = (
-        frame["forget_accuracy"] - frame["forget_accuracy_unlearned"]
+    frame["delta_val_forget_accuracy"] = (
+        frame["val_forget_accuracy"] - frame["val_forget_accuracy_unlearned"]
     )
     retain_score = 1.0 - (
-        (frame["retain_accuracy_unlearned"] - frame["retain_accuracy"])
+        (frame["val_retain_accuracy_unlearned"] - frame["val_retain_accuracy"])
         .clip(lower=0.0) / 100.0
     )
     forget_score = (
-        (frame["forget_accuracy"] - frame["forget_accuracy_unlearned"])
+        (frame["val_forget_accuracy"] - frame["val_forget_accuracy_unlearned"])
         .clip(lower=0.0) / 100.0
     )
     denominator = retain_score + forget_score
@@ -138,17 +147,17 @@ def add_scores(trajectories: pd.DataFrame) -> pd.DataFrame:
 
 def summarize_method(method_runs: pd.DataFrame) -> pd.DataFrame:
     summary = method_runs.groupby("epoch", as_index=False).agg(
-        retain_accuracy=("retain_accuracy", "mean"),
-        forget_accuracy=("forget_accuracy", "mean"),
-        delta_retain_accuracy=("delta_retain_accuracy", "mean"),
-        delta_forget_accuracy=("delta_forget_accuracy", "mean"),
+        val_retain_accuracy=("val_retain_accuracy", "mean"),
+        val_forget_accuracy=("val_forget_accuracy", "mean"),
+        delta_val_retain_accuracy=("delta_val_retain_accuracy", "mean"),
+        delta_val_forget_accuracy=("delta_val_forget_accuracy", "mean"),
         RS=("RS", "mean"),
         RS_std=("RS", "std"),
     )
     epoch_zero = summary.loc[summary["epoch"].eq(0)]
     relearning = summary.loc[summary["epoch"].gt(0)]
     frontier = trim_after_forget_saturation(accuracy_pareto_frontier(relearning))
-    frontier = frontier.sort_values("retain_accuracy", ascending=False)
+    frontier = frontier.sort_values("val_retain_accuracy", ascending=False)
     return pd.concat([epoch_zero, frontier], ignore_index=True)
 
 
@@ -166,9 +175,9 @@ def plot_panel(
         plotted = summarize_method(trajectories.loc[trajectories["method"].eq(method)])
         style = METHOD_STYLES.get(method, {})
         x_column = (
-            "delta_retain_accuracy"
+            "delta_val_retain_accuracy"
             if x_metric == "retain"
-            else "delta_forget_accuracy"
+            else "delta_val_forget_accuracy"
         )
         x = plotted[x_column].to_numpy(float)
         mean = plotted["RS"].to_numpy(float)

@@ -9,7 +9,11 @@ import torch.nn as nn
 from torch.utils.data import Subset
 
 from models import load_model
-from utils import get_transforms, get_dataset
+from utils import (
+    get_transforms,
+    get_dataset,
+    stratified_train_val_split,
+)
 from project_paths import EXPS_DIR
 
 
@@ -328,6 +332,17 @@ def loader_accuracy(model, loader, device):
     return 100.0 * correct / total if total > 0 else float('nan')
 
 
+def class_subset_loader(dataset, class_ids, batch_size=256, num_workers=4):
+    targets = np.asarray(dataset.targets)
+    indices = np.flatnonzero(np.isin(targets, class_ids)).tolist()
+    return DataLoader(
+        Subset(dataset, indices),
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+    )
+
+
 def parse_alpha_grid(value):
     values = []
     for item in value.split(','):
@@ -452,6 +467,7 @@ def evaluate_one_checkpoint(
     num_classes,
     device,
     attackset,
+    val_set,
     testset,
     transform_train,
     transform_test,
@@ -491,26 +507,13 @@ def evaluate_one_checkpoint(
         num_workers=4,
     )
 
-    # Unlearned-model test accuracies before PRA.
-    baseline_test_accs = per_class_accuracy(
-        model,
-        test_loader,
-        device,
-        num_classes,
+    val_retain_loader = class_subset_loader(
+        val_set, remain_classes, batch_size=256, num_workers=4
     )
-    baseline_forget_test = float(
-        baseline_test_accs[forget_class]
-    )
-    baseline_retain_test = float(np.nanmean([
-        baseline_test_accs[c] for c in remain_classes
-    ]))
-
-    # The paper constrains the post-PRA retain accuracy relative to the
-    # retain accuracy before PRA. We evaluate this constraint on the
-    # source-dependent attack split, not on the final test split.
+    # Select alpha using the held-out validation subset, never the test set.
     baseline_retain_selection = loader_accuracy(
         model,
-        remain_attack_loader,
+        val_retain_loader,
         device,
     )
 
@@ -552,7 +555,7 @@ def evaluate_one_checkpoint(
 
         retain_after_selection = loader_accuracy(
             model,
-            remain_attack_loader,
+            val_retain_loader,
             device,
         )
         retain_drop = (
@@ -607,12 +610,20 @@ def evaluate_one_checkpoint(
         f'with retain drop={selected["retain_drop"]:.2f} pp.'
     )
 
-    # Restore the clean unlearned head, then apply the selected PRA once.
+    # Selection is complete. Measure the baseline test result, then apply the
+    # selected PRA and report final test performance.
     restore_classifier_state(
         classifier,
         original_weight,
         original_bias,
     )
+    baseline_test_accs = per_class_accuracy(
+        model, test_loader, device, num_classes
+    )
+    baseline_forget_test = float(baseline_test_accs[forget_class])
+    baseline_retain_test = float(np.nanmean([
+        baseline_test_accs[c] for c in remain_classes
+    ]))
     apply_prototypes_to_classifier(
         classifier=classifier,
         prototypes=prototypes,
@@ -630,6 +641,11 @@ def evaluate_one_checkpoint(
         device,
     )
     pra_retain_selection = loader_accuracy(
+        model,
+        val_retain_loader,
+        device,
+    )
+    pra_retain_support = loader_accuracy(
         model,
         remain_attack_loader,
         device,
@@ -655,9 +671,10 @@ def evaluate_one_checkpoint(
         f'{pra_forget_selection:.2f}%'
     )
     print(
-        f'  selection retain accuracy: '
+        f'  validation retain accuracy: '
         f'{pra_retain_selection:.2f}%'
     )
+    print(f'  training-support retain accuracy: {pra_retain_support:.2f}%')
     print(
         f'  test forget accuracy: {pra_forget_test:.2f}%'
     )
@@ -767,7 +784,7 @@ def main():
     parser.add_argument('--model', dest='model_name', default='resnet18')
     parser.add_argument('--forget', default='0')
     parser.add_argument('--n-percent', type=float, default=1.0,
-                        help='Percent of test set to sample for attack loader (e.g., 1.0)')
+                        help='Percent of the 90% training subset sampled for PRA support.')
     parser.add_argument('--num-samples-per-class', type=int, default=5,
                         help='Number of real samples per unlearn class to build prototype')
     parser.add_argument(
@@ -806,12 +823,16 @@ def main():
         default=0,
         help='Seed controlling selection of the real PRA support images.',
     )
+    parser.add_argument(
+        '--seed', type=int, default=42,
+        help='Seed for the shared stratified 90/10 train/validation split.',
+    )
     parser.add_argument('--pra-metric', choices=['cosine', 'l2'], default='cosine',
                         help='Prototype-to-classifier conversion used by PRA')
     parser.add_argument('--no-normalize-proto', action='store_true',
                         help='Do not L2-normalize the class prototype')
-    parser.add_argument('--attack-split', choices=['train', 'test'], default='train',
-                        help='Dataset split used to obtain the real PRA support samples. Train avoids test leakage.')
+    parser.add_argument('--attack-split', choices=['train'], default='train',
+                        help='PRA support samples are drawn from the 90% training subset.')
     parser.add_argument('--device', default='cuda')
     args = parser.parse_args()
 
@@ -826,8 +847,10 @@ def main():
     # dataset
     transform_train, transform_test = get_transforms(args.dataset, args.model_name, wo_dataaug=True)
     trainset, testset = get_dataset(args.dataset, transform_train, transform_test)
-    attackset = trainset if args.attack_split == 'train' else testset
-    print(f'PRA support samples are drawn from the {args.attack_split} split.')
+    attackset, val_set = stratified_train_val_split(
+        trainset, transform_test, seed=args.seed, validation_fraction=0.10
+    )
+    print('PRA support samples are drawn from the 90% training subset.')
 
     results = []
     out_path = None
@@ -838,7 +861,7 @@ def main():
             print('A single explicit checkpoint was provided, so only the first forget class will be evaluated.')
         result = evaluate_one_checkpoint(
             args.checkpoint, args, forget_classes[0], num_classes, device,
-            attackset, testset, transform_train, transform_test,
+            attackset, val_set, testset, transform_train, transform_test,
         )
         results.append(result)
         out_path = append_results_to_csv([result], args)
@@ -850,7 +873,7 @@ def main():
                 raise FileNotFoundError(f'Checkpoint not found: {checkpoint_path}')
             result = evaluate_one_checkpoint(
                 checkpoint_path, args, forget_class, num_classes, device,
-                attackset, testset, transform_train, transform_test,
+                attackset, val_set, testset, transform_train, transform_test,
             )
             results.append(result)
             out_path = append_results_to_csv([result], args)

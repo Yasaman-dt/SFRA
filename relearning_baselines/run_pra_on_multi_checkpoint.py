@@ -8,7 +8,11 @@ import torch
 from torch.utils.data import DataLoader, Subset
 
 from models import load_model
-from utils import get_dataset, get_transforms
+from utils import (
+    get_dataset,
+    get_transforms,
+    stratified_train_val_split,
+)
 from project_paths import EXPS_DIR
 from relearning_baselines.run_pra_on_single_checkpoint import (
     apply_prototypes_to_classifier,
@@ -20,6 +24,7 @@ from relearning_baselines.run_pra_on_single_checkpoint import (
     per_class_accuracy,
     restore_classifier_state,
     save_classifier_state,
+    class_subset_loader,
 )
 
 
@@ -174,6 +179,7 @@ def evaluate_multi_forget_checkpoint(
     num_classes,
     device,
     attackset,
+    val_set,
     testset,
 ):
     forget_classes = sorted({int(c) for c in forget_classes})
@@ -221,30 +227,13 @@ def evaluate_multi_forget_checkpoint(
         num_workers=args.num_workers,
     )
 
-    baseline_test_accs = per_class_accuracy(
-        model,
-        test_loader,
-        device,
-        num_classes,
+    val_retain_loader = class_subset_loader(
+        val_set, remain_classes, batch_size=args.eval_batch_size,
+        num_workers=args.num_workers,
     )
-    baseline_forget_per_class = {
-        c: float(baseline_test_accs[c])
-        for c in forget_classes
-    }
-    baseline_retain_per_class = {
-        c: float(baseline_test_accs[c])
-        for c in remain_classes
-    }
-    baseline_forget_test = float(np.nanmean(
-        list(baseline_forget_per_class.values())
-    ))
-    baseline_retain_test = float(np.nanmean(
-        list(baseline_retain_per_class.values())
-    ))
-
     baseline_retain_selection = loader_accuracy(
         model,
-        retain_attack_loader,
+        val_retain_loader,
         device,
     )
 
@@ -286,44 +275,27 @@ def evaluate_multi_forget_checkpoint(
 
         retain_after_selection = loader_accuracy(
             model,
-            retain_attack_loader,
+            val_retain_loader,
             device,
         )
-        sampled_retain_drop = (
+        validation_retain_drop = (
             baseline_retain_selection - retain_after_selection
         )
-
-        # Validate against the same full-test retain metric reported in the
-        # final result. The small sampled loader can remain at 100% even when
-        # PRA causes a substantial drop across all retained classes.
-        candidate_test_accs = per_class_accuracy(
-            model,
-            test_loader,
-            device,
-            num_classes,
-        )
-        candidate_retain_test = float(np.nanmean([
-            candidate_test_accs[c] for c in remain_classes
-        ]))
-        test_retain_drop = baseline_retain_test - candidate_retain_test
-        valid = test_retain_drop <= args.max_retain_drop + 1e-12
+        valid = validation_retain_drop <= args.max_retain_drop + 1e-12
 
         candidate_results.append({
             'alpha': float(alpha),
             'retain_selection': float(retain_after_selection),
-            'sampled_retain_drop': float(sampled_retain_drop),
-            'retain_test': float(candidate_retain_test),
-            'retain_drop': float(test_retain_drop),
+            'retain_validation': float(retain_after_selection),
+            'retain_drop': float(validation_retain_drop),
             'valid': bool(valid),
         })
 
         status = 'valid' if valid else 'invalid'
         print(
             f'alpha={alpha:.3f}: '
-            f'sampled-retain={retain_after_selection:.2f}% '
-            f'(drop={sampled_retain_drop:.2f} pp), '
-            f'test-retain={candidate_retain_test:.2f}% '
-            f'(drop={test_retain_drop:.2f} pp) -> {status}'
+            f'validation-retain={retain_after_selection:.2f}% '
+            f'(drop={validation_retain_drop:.2f} pp) -> {status}'
         )
 
     valid_results = [
@@ -344,7 +316,7 @@ def evaluate_multi_forget_checkpoint(
         if not selected['valid']:
             raise RuntimeError(
                 f'Fixed alpha={selected["alpha"]:.3f} is invalid: '
-                f'full test retain accuracy drops by '
+                f'validation retain accuracy drops by '
                 f'{selected["retain_drop"]:.2f} percentage points, '
                 f'exceeding --max-retain-drop={args.max_retain_drop:.2f}.'
             )
@@ -352,14 +324,30 @@ def evaluate_multi_forget_checkpoint(
     selected_alpha = selected['alpha']
     print(
         f'Selected alpha={selected_alpha:.3f} '
-        f'with full-test retain drop={selected["retain_drop"]:.2f} pp.'
+        f'with validation retain drop={selected["retain_drop"]:.2f} pp.'
     )
 
+    # Alpha selection is complete; now evaluate baseline and PRA on test data.
     restore_classifier_state(
         classifier,
         original_weight,
         original_bias,
     )
+    baseline_test_accs = per_class_accuracy(
+        model, test_loader, device, num_classes
+    )
+    baseline_forget_per_class = {
+        c: float(baseline_test_accs[c]) for c in forget_classes
+    }
+    baseline_retain_per_class = {
+        c: float(baseline_test_accs[c]) for c in remain_classes
+    }
+    baseline_forget_test = float(np.nanmean(
+        list(baseline_forget_per_class.values())
+    ))
+    baseline_retain_test = float(np.nanmean(
+        list(baseline_retain_per_class.values())
+    ))
     apply_prototypes_to_classifier(
         classifier=classifier,
         prototypes=prototypes,
@@ -375,6 +363,11 @@ def evaluate_multi_forget_checkpoint(
         device,
     )
     pra_retain_selection = loader_accuracy(
+        model,
+        val_retain_loader,
+        device,
+    )
+    pra_retain_support = loader_accuracy(
         model,
         retain_attack_loader,
         device,
@@ -415,7 +408,8 @@ def evaluate_multi_forget_checkpoint(
     print('\nMulti-class PRA result:')
     print(f'  selected alpha: {selected_alpha:.3f}')
     print(f'  selection forget accuracy: {pra_forget_selection:.2f}%')
-    print(f'  selection retain accuracy: {pra_retain_selection:.2f}%')
+    print(f'  validation retain accuracy: {pra_retain_selection:.2f}%')
+    print(f'  training-support retain accuracy: {pra_retain_support:.2f}%')
     print(
         f'  test forget accuracy: {baseline_forget_test:.2f}% '
         f'-> {pra_forget_test:.2f}% '
@@ -592,7 +586,7 @@ def main():
         '--n-percent',
         type=float,
         default=1.0,
-        help='Percent of attack split sampled for PRA support/selection.',
+        help='Percent of the 90% training subset sampled for PRA support.',
     )
     parser.add_argument(
         '--num-samples-per-class',
@@ -627,6 +621,10 @@ def main():
         help='Seed controlling selection of PRA support images.',
     )
     parser.add_argument(
+        '--seed', type=int, default=42,
+        help='Seed for the shared stratified 90/10 train/validation split.',
+    )
+    parser.add_argument(
         '--pra-metric',
         choices=['cosine', 'l2'],
         default='cosine',
@@ -638,9 +636,9 @@ def main():
     )
     parser.add_argument(
         '--attack-split',
-        choices=['train', 'test'],
+        choices=['train'],
         default='train',
-        help='Dataset split used to obtain real PRA support samples.',
+        help='PRA support samples are drawn from the 90% training subset.',
     )
     parser.add_argument('--attack-batch-size', type=int, default=64)
     parser.add_argument('--eval-batch-size', type=int, default=256)
@@ -694,8 +692,10 @@ def main():
         transform_train,
         transform_test,
     )
-    attackset = trainset if args.attack_split == 'train' else testset
-    print(f'PRA support samples are drawn from the {args.attack_split} split.')
+    attackset, val_set = stratified_train_val_split(
+        trainset, transform_test, seed=args.seed, validation_fraction=0.10
+    )
+    print('PRA support samples are drawn from the 90% training subset.')
 
     result = evaluate_multi_forget_checkpoint(
         checkpoint_path=checkpoint_path,
@@ -704,6 +704,7 @@ def main():
         num_classes=num_classes,
         device=device,
         attackset=attackset,
+        val_set=val_set,
         testset=testset,
     )
 

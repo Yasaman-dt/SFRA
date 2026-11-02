@@ -43,7 +43,11 @@ from plots_tables.tsne_plots.plot_real_vs_gaussian_probe_tsne import (  # noqa: 
     load_checkpoint_model,
     make_feature_extractor,
 )
-from utils import get_dataset, get_transforms  # noqa: E402
+from utils import (  # noqa: E402
+    get_dataset,
+    get_transforms,
+    stratified_train_val_split,
+)
 from plots_tables.method_colors import get_method_color  # noqa: E402
 from project_paths import DATA_DIR, EXPS_DIR  # noqa: E402
 
@@ -220,6 +224,7 @@ def parse_args():
     parser.add_argument("--epochs", type=int, default=500)
     parser.add_argument("--head_lr", type=float, default=0.01)
     parser.add_argument("--weight_decay", type=float, default=1e-4)
+    parser.add_argument("--split-seed", type=int, default=42)
     parser.add_argument("--seeds", type=int, nargs="+", default=[0, 1, 2])
     parser.add_argument(
         "--ckpt_dir",
@@ -262,7 +267,7 @@ def method_lrs(args):
     return values
 
 
-def train_trajectory(classifier, synthetic, real, args, device, seed):
+def train_trajectory(classifier, synthetic, real_validation, real_test, args, device, seed):
     retain_x, retain_y, forget_x, forget_y, _ = synthetic
     train_x = torch.cat([retain_x, forget_x])
     train_y = torch.cat([retain_y, forget_y])
@@ -277,7 +282,8 @@ def train_trajectory(classifier, synthetic, real, args, device, seed):
         head.parameters(), lr=args.head_lr, weight_decay=args.weight_decay
     )
     criterion = nn.CrossEntropyLoss()
-    test_retain_x, test_retain_y, test_forget_x, test_forget_y = real
+    val_retain_x, val_retain_y, val_forget_x, val_forget_y = real_validation
+    test_retain_x, test_retain_y, test_forget_x, test_forget_y = real_test
 
     @torch.inference_mode()
     def mean_label_confidence(features, labels):
@@ -301,10 +307,16 @@ def train_trajectory(classifier, synthetic, real, args, device, seed):
     def evaluate(epoch):
         row = {
             "epoch": epoch,
-            "real_retain_accuracy": accuracy(
+            "val_retain_accuracy": accuracy(
+                head, val_retain_x, val_retain_y, device, args.eval_batch_size
+            ),
+            "val_forget_accuracy": accuracy(
+                head, val_forget_x, val_forget_y, device, args.eval_batch_size
+            ),
+            "test_retain_accuracy": accuracy(
                 head, test_retain_x, test_retain_y, device, args.eval_batch_size
             ),
-            "real_forget_accuracy": accuracy(
+            "test_forget_accuracy": accuracy(
                 head, test_forget_x, test_forget_y, device, args.eval_batch_size
             ),
             "synthetic_retain_accuracy": accuracy(
@@ -314,13 +326,10 @@ def train_trajectory(classifier, synthetic, real, args, device, seed):
                 head, forget_x, forget_y, device, args.eval_batch_size
             ),
             "synthetic_forget_confidence": mean_label_confidence(forget_x, forget_y),
-            "real_forget_confidence": mean_label_confidence(
+            "test_forget_confidence": mean_label_confidence(
                 test_forget_x, test_forget_y
             ),
         }
-        # Preserve the old names for the trade-off analysis.
-        row["retain_accuracy"] = row["real_retain_accuracy"]
-        row["forget_accuracy"] = row["real_forget_accuracy"]
         if not baseline:
             baseline.update(row)
         row["synthetic_RS"] = relearning_score(
@@ -329,11 +338,17 @@ def train_trajectory(classifier, synthetic, real, args, device, seed):
             row["synthetic_retain_accuracy"],
             row["synthetic_forget_accuracy"],
         )
-        row["real_RS"] = relearning_score(
-            baseline["real_retain_accuracy"],
-            baseline["real_forget_accuracy"],
-            row["real_retain_accuracy"],
-            row["real_forget_accuracy"],
+        row["val_RS"] = relearning_score(
+            baseline["val_retain_accuracy"],
+            baseline["val_forget_accuracy"],
+            row["val_retain_accuracy"],
+            row["val_forget_accuracy"],
+        )
+        row["test_RS"] = relearning_score(
+            baseline["test_retain_accuracy"],
+            baseline["test_forget_accuracy"],
+            row["test_retain_accuracy"],
+            row["test_forget_accuracy"],
         )
         return row
 
@@ -350,22 +365,25 @@ def train_trajectory(classifier, synthetic, real, args, device, seed):
 
 
 def envelope(trajectory, allowed_drops):
-    baseline_retain = float(trajectory.loc[trajectory["epoch"].eq(0), "retain_accuracy"].iloc[0])
-    baseline_forget = float(trajectory.loc[trajectory["epoch"].eq(0), "forget_accuracy"].iloc[0])
+    baseline_retain = float(trajectory.loc[trajectory["epoch"].eq(0), "val_retain_accuracy"].iloc[0])
+    baseline_forget = float(trajectory.loc[trajectory["epoch"].eq(0), "val_forget_accuracy"].iloc[0])
     rows = []
     for allowed_drop in sorted(set(allowed_drops)):
         floor = baseline_retain - allowed_drop
-        eligible = trajectory[trajectory["retain_accuracy"] >= floor]
-        best = eligible.loc[eligible["forget_accuracy"].idxmax()]
+        eligible = trajectory[trajectory["val_retain_accuracy"] >= floor]
+        best = eligible.loc[eligible["val_forget_accuracy"].idxmax()]
         rows.append({
             "allowed_retain_drop_pp": allowed_drop,
-            "retain_floor": floor,
-            "max_forget_accuracy": best["forget_accuracy"],
-            "retain_accuracy_at_selected_epoch": best["retain_accuracy"],
+            "val_retain_floor": floor,
+            "max_val_forget_accuracy": best["val_forget_accuracy"],
+            "val_retain_accuracy_at_selected_epoch": best["val_retain_accuracy"],
             "selected_epoch": int(best["epoch"]),
-            "actual_retain_drop_pp": max(0.0, baseline_retain - best["retain_accuracy"]),
-            "baseline_forget_accuracy": baseline_forget,
-            "forget_accuracy_gain_pp": float(best["forget_accuracy"] - baseline_forget),
+            "actual_val_retain_drop_pp": max(0.0, baseline_retain - best["val_retain_accuracy"]),
+            "baseline_val_forget_accuracy": baseline_forget,
+            "val_forget_accuracy_gain_pp": float(best["val_forget_accuracy"] - baseline_forget),
+            "test_retain_accuracy_at_selected_epoch": float(best["test_retain_accuracy"]),
+            "test_forget_accuracy_at_selected_epoch": float(best["test_forget_accuracy"]),
+            "test_RS_at_selected_epoch": float(best["test_RS"]),
         })
     return pd.DataFrame(rows)
 
@@ -373,27 +391,27 @@ def envelope(trajectory, allowed_drops):
 def accuracy_pareto_frontier(points):
     """Return points not dominated when both retain and forget accuracy are maximized."""
     ordered = points.sort_values(
-        ["retain_accuracy", "forget_accuracy"], ascending=[False, False]
+        ["val_retain_accuracy", "val_forget_accuracy"], ascending=[False, False]
     )
     keep = []
     best_forget = float("-inf")
     for index, row in ordered.iterrows():
-        if float(row["forget_accuracy"]) > best_forget + 1e-12:
+        if float(row["val_forget_accuracy"]) > best_forget + 1e-12:
             keep.append(index)
-            best_forget = float(row["forget_accuracy"])
-    return points.loc[keep].sort_values("retain_accuracy")
+            best_forget = float(row["val_forget_accuracy"])
+    return points.loc[keep].sort_values("val_retain_accuracy")
 
 
 def trim_after_forget_saturation(frontier, epsilon_pp=SATURATION_EPSILON_PP):
     """Drop lower-retain points after forget accuracy is effectively saturated."""
     if frontier.empty:
         return frontier
-    saturation_level = float(frontier["forget_accuracy"].max()) - float(epsilon_pp)
-    saturated = frontier[frontier["forget_accuracy"] >= saturation_level]
+    saturation_level = float(frontier["val_forget_accuracy"].max()) - float(epsilon_pp)
+    saturated = frontier[frontier["val_forget_accuracy"] >= saturation_level]
     if saturated.empty:
         return frontier
-    highest_retain_at_saturation = float(saturated["retain_accuracy"].max())
-    return frontier[frontier["retain_accuracy"] >= highest_retain_at_saturation].copy()
+    highest_retain_at_saturation = float(saturated["val_retain_accuracy"].max())
+    return frontier[frontier["val_retain_accuracy"] >= highest_retain_at_saturation].copy()
 
 
 def plot_results(
@@ -447,15 +465,15 @@ def plot_results(
     summary = frame.groupby(
         ["method", "allowed_retain_drop_pp"], sort=False
     ).agg(
-        actual_retain_drop_mean=("actual_retain_drop_pp", "mean"),
-        actual_retain_drop_std=("actual_retain_drop_pp", "std"),
-        forget_gain_mean=("forget_accuracy_gain_pp", "mean"),
-        forget_gain_std=("forget_accuracy_gain_pp", "std"),
-        retain_accuracy_mean=("retain_accuracy_at_selected_epoch", "mean"),
-        retain_accuracy_std=("retain_accuracy_at_selected_epoch", "std"),
-        forget_accuracy_mean=("max_forget_accuracy", "mean"),
-        forget_accuracy_std=("max_forget_accuracy", "std"),
-        count=("forget_accuracy_gain_pp", "count"),
+        actual_val_retain_drop_mean=("actual_val_retain_drop_pp", "mean"),
+        actual_val_retain_drop_std=("actual_val_retain_drop_pp", "std"),
+        val_forget_gain_mean=("val_forget_accuracy_gain_pp", "mean"),
+        val_forget_gain_std=("val_forget_accuracy_gain_pp", "std"),
+        val_retain_accuracy_mean=("val_retain_accuracy_at_selected_epoch", "mean"),
+        val_retain_accuracy_std=("val_retain_accuracy_at_selected_epoch", "std"),
+        val_forget_accuracy_mean=("max_val_forget_accuracy", "mean"),
+        val_forget_accuracy_std=("max_val_forget_accuracy", "std"),
+        count=("val_forget_accuracy_gain_pp", "count"),
     ).reset_index()
     summary.to_csv(output_dir / "retain_forget_tradeoff_summary.csv", index=False)
 
@@ -482,14 +500,14 @@ def plot_results(
         style = METHOD_STYLES.get(method, {})
         method_runs = trajectories[trajectories["method"].eq(method)]
         epoch_summary = method_runs.groupby("epoch", as_index=False).agg(
-            retain_accuracy=("retain_accuracy", "mean"),
-            forget_accuracy=("forget_accuracy", "mean"),
-            forget_std=("forget_accuracy", "std"),
+            val_retain_accuracy=("val_retain_accuracy", "mean"),
+            val_forget_accuracy=("val_forget_accuracy", "mean"),
+            forget_std=("val_forget_accuracy", "std"),
         )
         frontier = accuracy_pareto_frontier(epoch_summary)
         frontier = trim_after_forget_saturation(frontier)
-        x = frontier["retain_accuracy"].to_numpy(dtype=float)
-        mean = frontier["forget_accuracy"].to_numpy(dtype=float)
+        x = frontier["val_retain_accuracy"].to_numpy(dtype=float)
+        mean = frontier["val_forget_accuracy"].to_numpy(dtype=float)
         std = frontier["forget_std"].fillna(0.0).to_numpy(dtype=float)
         axis.fill_between(
             x, mean - std, mean + std,
@@ -506,8 +524,8 @@ def plot_results(
         epoch_zero = method_runs[method_runs["epoch"].eq(0)]
         if not epoch_zero.empty:
             axis.scatter(
-                epoch_zero["retain_accuracy"].mean(),
-                epoch_zero["forget_accuracy"].mean(),
+                epoch_zero["val_retain_accuracy"].mean(),
+                epoch_zero["val_forget_accuracy"].mean(),
                 color=style.get("color"),
                 marker=style.get("marker", "o"),
                 s=48,
@@ -538,9 +556,10 @@ def plot_results(
 
     diagnostic_columns = {
         "synthetic_retain_accuracy", "synthetic_forget_accuracy",
-        "real_retain_accuracy", "real_forget_accuracy",
-        "synthetic_RS", "real_RS",
-        "synthetic_forget_confidence", "real_forget_confidence",
+        "val_retain_accuracy", "val_forget_accuracy",
+        "test_retain_accuracy", "test_forget_accuracy",
+        "synthetic_RS", "val_RS", "test_RS",
+        "synthetic_forget_confidence", "test_forget_confidence",
     }
     if diagnostic_columns.issubset(trajectories.columns):
         plot_epoch_diagnostics(trajectories, output_dir, plot_max_epoch)
@@ -558,17 +577,20 @@ def plot_epoch_diagnostics(trajectories, output_dir, max_epoch=None):
         ),
         (
             "Real accuracy", "Accuracy (\%)",
-            [("real_retain_accuracy", "Retain"),
-             ("real_forget_accuracy", "Forget")],
+            [("val_retain_accuracy", "Val retain"),
+             ("val_forget_accuracy", "Val forget"),
+             ("test_retain_accuracy", "Test retain"),
+             ("test_forget_accuracy", "Test forget")],
         ),
         (
             "Relearning score", "RS",
-            [("synthetic_RS", "Synthetic"), ("real_RS", "Real")],
+             [("synthetic_RS", "Synthetic"),
+             ("val_RS", "Val"), ("test_RS", "Test")],
         ),
         (
             "Forget-class confidence", "Mean confidence (\%)",
             [("synthetic_forget_confidence", "Synthetic"),
-             ("real_forget_confidence", "Real")],
+             ("test_forget_confidence", "Test")],
         ),
     ]
     fig, axes = plt.subplots(2, 2, figsize=(11, 7), sharex=True)
@@ -612,7 +634,7 @@ def plot_epoch_diagnostics(trajectories, output_dir, max_epoch=None):
 def load_tradeoff_with_gains(path):
     """Load a trade-off CSV and derive gain columns for legacy saved runs."""
     tradeoff = pd.read_csv(path)
-    if "forget_accuracy_gain_pp" in tradeoff.columns:
+    if "val_forget_accuracy_gain_pp" in tradeoff.columns:
         return tradeoff
 
     seed_text = path.stem.removeprefix("tradeoff_seed")
@@ -625,10 +647,10 @@ def load_tradeoff_with_gains(path):
     baseline_rows = trajectory[trajectory["epoch"].eq(0)]
     if baseline_rows.empty:
         raise ValueError(f"No epoch-0 baseline in {trajectory_path}")
-    baseline_forget = float(baseline_rows["forget_accuracy"].iloc[0])
-    tradeoff["baseline_forget_accuracy"] = baseline_forget
-    tradeoff["forget_accuracy_gain_pp"] = (
-        tradeoff["max_forget_accuracy"] - baseline_forget
+    baseline_forget = float(baseline_rows["val_forget_accuracy"].iloc[0])
+    tradeoff["baseline_val_forget_accuracy"] = baseline_forget
+    tradeoff["val_forget_accuracy_gain_pp"] = (
+        tradeoff["max_val_forget_accuracy"] - baseline_forget
     )
     return tradeoff
 
@@ -654,12 +676,20 @@ def main():
 
     if not args.plot_only:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        _, test_transform = get_transforms(args.dataset, args.model_name, wo_dataaug=False)
-        _, test_dataset = get_dataset(
+        _, test_transform = get_transforms(args.dataset, args.model_name, wo_dataaug=True)
+        train_dataset, test_dataset = get_dataset(
             args.dataset, test_transform, test_transform,
             path=Path(args.data_dir).expanduser(),
         )
+        _, validation_dataset = stratified_train_val_split(
+            train_dataset, test_transform, seed=args.split_seed,
+            validation_fraction=0.10,
+        )
         feature_batch_size = args.feature_batch_size or args.eval_batch_size
+        validation_loader = DataLoader(
+            validation_dataset, batch_size=feature_batch_size, shuffle=False,
+            num_workers=args.num_workers, pin_memory=device.type == "cuda",
+        )
         test_loader = DataLoader(
             test_dataset, batch_size=feature_batch_size, shuffle=False,
             num_workers=args.num_workers, pin_memory=device.type == "cuda",
@@ -678,9 +708,15 @@ def main():
             )
             feature_model = make_feature_extractor(model, num_classes, device)
             _, classifier = get_final_linear(model, num_classes)
+            val_x, val_y = extract_features(feature_model, validation_loader, device)
+            val_mask = val_y.eq(args.forget_class)
+            real_validation = (
+                val_x[~val_mask].float(), val_y[~val_mask],
+                val_x[val_mask].float(), val_y[val_mask],
+            )
             real_x, real_y = extract_features(feature_model, test_loader, device)
             mask = real_y.eq(args.forget_class)
-            real = (
+            real_test = (
                 real_x[~mask].float(), real_y[~mask],
                 real_x[mask].float(), real_y[mask],
             )
@@ -706,13 +742,16 @@ def main():
                     sample_batch_size=args.sample_batch_size, device=device, seed=seed,
                 )
                 trajectory = train_trajectory(
-                    classifier, synthetic[strategy], real, args, device, seed
+                    classifier, synthetic[strategy], real_validation, real_test,
+                    args, device, seed
                 )
                 trajectory.insert(0, "seed", seed)
+                trajectory.insert(0, "split_seed", args.split_seed)
                 trajectory.insert(0, "method", method)
                 trajectory.to_csv(trajectory_path, index=False)
                 result = envelope(trajectory, args.allowed_retain_drops)
                 result.insert(0, "seed", seed)
+                result.insert(0, "split_seed", args.split_seed)
                 result.insert(0, "method", method)
                 result.to_csv(tradeoff_path, index=False)
                 if torch.cuda.is_available():

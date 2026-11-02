@@ -12,7 +12,7 @@ from models import ViT_16_mod, get_model
 from utils import (
     get_dataset,
     get_transforms,
-    stratified_train_validation_split,
+    stratified_train_val_split,
 )
 from project_paths import EXPS_DIR
 
@@ -274,8 +274,8 @@ def evaluate_original_head(
 def train_linear_probe(
     train_features,
     train_targets,
-    validation_features,
-    validation_targets,
+    val_features,
+    val_targets,
     num_classes,
     device,
     seed,
@@ -296,7 +296,7 @@ def train_linear_probe(
 
     generator = torch.Generator().manual_seed(seed)
     training_dataset = TensorDataset(train_features, train_targets)
-    validation_dataset = TensorDataset(validation_features, validation_targets)
+    validation_dataset = TensorDataset(val_features, val_targets)
 
     training_loader = DataLoader(
         training_dataset,
@@ -325,7 +325,7 @@ def train_linear_probe(
     )
     criterion = nn.CrossEntropyLoss()
 
-    best_validation_accuracy = -1.0
+    best_val_accuracy = -1.0
     best_epoch = 0
     best_state = None
     epochs_without_improvement = 0
@@ -350,11 +350,11 @@ def train_linear_probe(
                 ).argmax(dim=1).cpu()
                 correct += int(predictions.eq(batch_targets).sum().item())
                 total += int(batch_targets.numel())
-        validation_accuracy = correct / max(1, total)
+        val_accuracy = correct / max(1, total)
 
-        improved = validation_accuracy > best_validation_accuracy
+        improved = val_accuracy > best_val_accuracy
         if improved:
-            best_validation_accuracy = validation_accuracy
+            best_val_accuracy = val_accuracy
             best_epoch = epoch
             best_state = {
                 key: value.detach().cpu().clone()
@@ -367,7 +367,7 @@ def train_linear_probe(
         if epoch == 1 or epoch % 10 == 0 or improved:
             print(
                 f'Epoch {epoch:03d}/{max_epochs}: '
-                f'validation accuracy={100.0 * validation_accuracy:.2f}%'
+                f'val accuracy={100.0 * val_accuracy:.2f}%'
             )
 
         if scheduler is not None:
@@ -382,7 +382,7 @@ def train_linear_probe(
     if best_state is None:
         raise RuntimeError('Linear probe training produced no checkpoint.')
     classifier.load_state_dict(best_state)
-    return classifier, best_epoch, 100.0 * best_validation_accuracy
+    return classifier, best_epoch, 100.0 * best_val_accuracy
 
 
 @torch.no_grad()
@@ -450,7 +450,7 @@ def save_result(result, args):
         'linear_probe_acc_f_test',
         'linear_probe_gain_r_test',
         'linear_probe_gain_f_test',
-        'best_validation_acc',
+        'best_val_acc',
         'best_epoch',
         'feature_dim',
         'train_samples',
@@ -585,7 +585,7 @@ def main(argv=None):
         transform_train,
         transform_test,
     )
-    train_dataset, validation_dataset = stratified_train_validation_split(
+    train_dataset, validation_dataset = stratified_train_val_split(
         train_dataset,
         validation_transform=transform_test,
         seed=args.seed,
@@ -644,7 +644,7 @@ def main(argv=None):
     )
     print(
         f'Feature shapes: train={tuple(train_features.shape)}, '
-        f'validation={tuple(validation_features.shape)}, '
+        f'val={tuple(validation_features.shape)}, '
         f'test={tuple(test_features.shape)}'
     )
 
@@ -652,7 +652,7 @@ def main(argv=None):
     if max_epochs is None:
         max_epochs = 20 if args.dataset == 'cifar10' else 150
 
-    probe, best_epoch, best_validation_accuracy = train_linear_probe(
+    probe, best_epoch, best_val_accuracy = train_linear_probe(
         train_features,
         train_targets,
         validation_features,
@@ -687,8 +687,8 @@ def main(argv=None):
         f'-> {probe_forget:.2f}%'
     )
     print(
-        f'  best validation accuracy: '
-        f'{best_validation_accuracy:.2f}% at epoch {best_epoch}'
+        f'  best val accuracy: '
+        f'{best_val_accuracy:.2f}% at epoch {best_epoch}'
     )
 
     result = {
@@ -701,7 +701,7 @@ def main(argv=None):
         'linear_probe_acc_f_test': probe_forget,
         'linear_probe_gain_r_test': probe_retain - output_retain,
         'linear_probe_gain_f_test': probe_forget - output_forget,
-        'best_validation_acc': best_validation_accuracy,
+        'best_val_acc': best_val_accuracy,
         'best_epoch': best_epoch,
         'feature_dim': train_features.shape[1],
         'train_samples': len(train_targets),

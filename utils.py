@@ -506,7 +506,7 @@ def get_transforms(dataset_name, model_name, wo_dataaug):
     return transform_train, transform_test
 
 
-def stratified_train_validation_split(train_dataset, validation_transform, seed=42,
+def stratified_train_val_split(train_dataset, validation_transform, seed=42,
                                      validation_fraction=0.10):
     """Return seeded class-stratified train/validation subsets of a dataset."""
     labels = np.asarray(train_dataset.targets)

@@ -237,7 +237,7 @@ if __name__ == '__main__':
         args.dataset_name, transform_train, transform_test, return_validation=True
     )
     if args.dataset_name.lower() in {"cifar10", "cifar100", "tiny_imagenet", "vggface"}:
-        unlearn_trainset, val_dataset = stratified_train_validation_split(
+        unlearn_trainset, val_dataset = stratified_train_val_split(
             trainset, transform_test, seed=args.seed, validation_fraction=0.10
         )
     else:
