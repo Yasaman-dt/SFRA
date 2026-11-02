@@ -56,7 +56,6 @@ def main():
     parser.add_argument('--probe-lr', type=float, default=0.01)
     parser.add_argument('--momentum', type=float, default=0.9)
     parser.add_argument('--weight-decay', type=float, default=0.0)
-    parser.add_argument('--val-ratio', type=float, default=0.1)
     parser.add_argument('--patience', type=int, default=40)
     parser.add_argument('--max-epochs', type=int, default=None)
     parser.add_argument('--seed', type=int, default=42)
@@ -87,7 +86,6 @@ def main():
         '--probe-lr', str(args.probe_lr),
         '--momentum', str(args.momentum),
         '--weight-decay', str(args.weight_decay),
-        '--val-ratio', str(args.val_ratio),
         '--patience', str(args.patience),
         '--seed', str(args.seed),
         '--num-workers', str(args.num_workers),

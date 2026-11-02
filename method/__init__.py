@@ -3,7 +3,6 @@ from ._adv_generator import *
 
 from .boundary_expand import *
 from .boundary_shrink import *
-from .fisher import *
 
 from .random_label import *
 from .finetune import *

@@ -35,7 +35,7 @@ p.add_argument('--pool_take_per_class', type=int, default=None,
 
 p.add_argument('--method', type=str, default='original',
               choices=['original','retrained','random_label','finetune','gradient_ascent','neggrad_plus',
-                       'boundary_shrink','boundary_expand','l2ul_adv','l2ul_imp','fisher','wood_fisher','delete',
+                       'boundary_shrink','boundary_expand','l2ul_adv','l2ul_imp','delete',
                        'bad_teacher', 'salun', 'scrub'])
 p.add_argument('--model', '--model_name', dest='model_name', type=str, default='resnet18')
 p.add_argument('--dataset', type=str, required=True)

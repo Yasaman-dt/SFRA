@@ -124,9 +124,11 @@ real training/update loaders and 10% is used for validation and checkpoint
 selection. CIFAR's official test set is used for final test evaluation;
 TinyImageNet's labeled `val/` directory is used for final test evaluation.
 The split uses seed `42` by default; pass the same `--seed` to `main.py` and
-the SFRA script when overriding it. SFRA relearning itself trains on synthetic
-probes and evaluates on both the training-derived validation split and the
-held-out test split.
+the SFRA or linear-probe script when overriding it. The linear-probe baseline
+trains its fresh classifier on the same 90% real training subset and selects
+its best epoch using the matching 10% validation subset. SFRA relearning itself
+trains on synthetic probes and evaluates on both the training-derived
+validation split and the held-out test split.
 
 Individual commands can still override these defaults using their applicable
 `--data_dir`, `--base-dir`, `--base_dir`, `--ckpt_dir`, or `--exps_dir`

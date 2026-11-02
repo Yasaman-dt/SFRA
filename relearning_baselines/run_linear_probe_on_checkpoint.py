@@ -6,10 +6,14 @@ import random
 import numpy as np
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader, TensorDataset, random_split
+from torch.utils.data import DataLoader, TensorDataset
 
 from models import ViT_16_mod, get_model
-from utils import get_dataset, get_transforms
+from utils import (
+    get_dataset,
+    get_transforms,
+    stratified_train_validation_split,
+)
 from project_paths import EXPS_DIR
 
 
@@ -270,6 +274,8 @@ def evaluate_original_head(
 def train_linear_probe(
     train_features,
     train_targets,
+    validation_features,
+    validation_targets,
     num_classes,
     device,
     seed,
@@ -279,26 +285,18 @@ def train_linear_probe(
     batch_size,
     patience,
     max_epochs,
-    val_ratio,
     use_cosine,
 ):
     """
-    Follow CMF_Unlearning/evaluation/linear_prob.py:
-    fresh linear layer, SGD, 10% validation, and validation early stopping.
+    Train on the shared 90% training split and select by its 10% validation split.
     """
     torch.manual_seed(seed)
     feature_dim = train_features.shape[1]
     classifier = nn.Linear(feature_dim, num_classes).to(device)
 
-    full_dataset = TensorDataset(train_features, train_targets)
-    validation_size = max(1, int(len(full_dataset) * val_ratio))
-    training_size = len(full_dataset) - validation_size
     generator = torch.Generator().manual_seed(seed)
-    training_dataset, validation_dataset = random_split(
-        full_dataset,
-        [training_size, validation_size],
-        generator=generator,
-    )
+    training_dataset = TensorDataset(train_features, train_targets)
+    validation_dataset = TensorDataset(validation_features, validation_targets)
 
     training_loader = DataLoader(
         training_dataset,
@@ -524,7 +522,6 @@ def main(argv=None):
     parser.add_argument('--probe-lr', type=float, default=0.01)
     parser.add_argument('--momentum', type=float, default=0.9)
     parser.add_argument('--weight-decay', type=float, default=0.0)
-    parser.add_argument('--val-ratio', type=float, default=0.1)
     parser.add_argument('--patience', type=int, default=40)
     parser.add_argument(
         '--max-epochs',
@@ -581,15 +578,28 @@ def main(argv=None):
     transform_train, transform_test = get_transforms(
         args.dataset,
         args.model_name,
-        wo_dataaug=False,
+        wo_dataaug=True,
     )
     train_dataset, test_dataset = get_dataset(
         args.dataset,
         transform_train,
         transform_test,
     )
+    train_dataset, validation_dataset = stratified_train_validation_split(
+        train_dataset,
+        validation_transform=transform_test,
+        seed=args.seed,
+        validation_fraction=0.10,
+    )
     train_loader = DataLoader(
         train_dataset,
+        batch_size=args.feature_batch_size,
+        shuffle=False,
+        num_workers=args.num_workers,
+        pin_memory=device.type == 'cuda',
+    )
+    validation_loader = DataLoader(
+        validation_dataset,
         batch_size=args.feature_batch_size,
         shuffle=False,
         num_workers=args.num_workers,
@@ -620,6 +630,12 @@ def main(argv=None):
         train_loader,
         device,
     )
+    print('Extracting frozen validation features...')
+    validation_features, validation_targets = extract_dataset_features(
+        model,
+        validation_loader,
+        device,
+    )
     print('Extracting frozen test features...')
     test_features, test_targets = extract_dataset_features(
         model,
@@ -628,6 +644,7 @@ def main(argv=None):
     )
     print(
         f'Feature shapes: train={tuple(train_features.shape)}, '
+        f'validation={tuple(validation_features.shape)}, '
         f'test={tuple(test_features.shape)}'
     )
 
@@ -638,6 +655,8 @@ def main(argv=None):
     probe, best_epoch, best_validation_accuracy = train_linear_probe(
         train_features,
         train_targets,
+        validation_features,
+        validation_targets,
         num_classes,
         device,
         args.seed,
@@ -647,7 +666,6 @@ def main(argv=None):
         args.probe_batch_size,
         args.patience,
         max_epochs,
-        args.val_ratio,
         use_cosine=args.dataset == 'tiny_imagenet',
     )
     probe_retain, probe_forget = evaluate_probe(
