@@ -564,8 +564,6 @@ def main():
             'boundary_expand',
             'l2ul_adv',
             'l2ul_imp',
-            'fisher',
-            'wood_fisher',
             'delete',
             'bad_teacher',
             'salun',

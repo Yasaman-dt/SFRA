@@ -758,7 +758,7 @@ def main():
                         help='Base directory that contains the experiment folders')
     parser.add_argument('--method', default='original',
                         choices=['original', 'retrained', 'random_label', 'finetune', 'gradient_ascent', 'neggrad_plus',
-                                 'boundary_shrink', 'boundary_expand', 'l2ul_adv', 'l2ul_imp', 'fisher', 'wood_fisher',
+                                 'boundary_shrink', 'boundary_expand', 'l2ul_adv', 'l2ul_imp',
                                  'delete', 'bad_teacher', 'salun', 'scrub'],
                         help='Unlearning method folder name used to derive the checkpoint path')
     parser.add_argument('--lr', type=float, default=5e-5,
