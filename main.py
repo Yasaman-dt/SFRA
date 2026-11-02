@@ -209,7 +209,30 @@ if __name__ == '__main__':
 
         pretrain_train_dataset = vggface_dataset(sample_config, transform_train, mode='pretrain', train=True)
         pretrain_test_dataset = vggface_dataset(sample_config, transform_test, mode='pretrain', train=False)
-        pretrain_train_loader, pretrain_test_loader = get_dataloader(pretrain_train_dataset, pretrain_test_dataset, args.batch_size, num_workers)
+        pretrain_labels = np.asarray(pretrain_train_dataset.targets)
+        pretrain_rng = np.random.default_rng(args.seed)
+        pretrain_val_indices, pretrain_fit_indices = [], []
+        for class_id in np.unique(pretrain_labels):
+            class_indices = np.flatnonzero(pretrain_labels == class_id)
+            pretrain_rng.shuffle(class_indices)
+            n_val = max(1, int(round(0.10 * len(class_indices))))
+            pretrain_val_indices.extend(class_indices[:n_val].tolist())
+            pretrain_fit_indices.extend(class_indices[n_val:].tolist())
+        pretrain_val_dataset = copy.copy(pretrain_train_dataset)
+        pretrain_val_dataset.transform = transform_test
+        pretrain_val_dataset = Subset(pretrain_val_dataset, pretrain_val_indices)
+        pretrain_val_dataset.targets = pretrain_labels[pretrain_val_indices].tolist()
+        pretrain_fit_dataset = Subset(pretrain_train_dataset, pretrain_fit_indices)
+        pretrain_fit_dataset.targets = pretrain_labels[pretrain_fit_indices].tolist()
+        pretrain_train_loader = DataLoader(
+            pretrain_fit_dataset, batch_size=args.batch_size, shuffle=True, num_workers=num_workers
+        )
+        pretrain_val_loader = DataLoader(
+            pretrain_val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=num_workers
+        )
+        pretrain_test_loader = DataLoader(
+            pretrain_test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=num_workers
+        )
 
     trainset, testset, dataset_valset = get_dataset(
         args.dataset_name, transform_train, transform_test, return_validation=True
@@ -217,7 +240,7 @@ if __name__ == '__main__':
     train_loader, test_loader = get_dataloader(trainset, testset, args.batch_size, num_workers)
     unlearn_trainset = trainset
 
-    if args.dataset_name.lower() in {"cifar10", "cifar100"}:
+    if args.dataset_name.lower() in {"cifar10", "cifar100", "vggface"}:
         split_labels = np.asarray(trainset.targets)
         split_rng = np.random.default_rng(args.seed)
         val_indices, fit_indices = [], []
@@ -238,11 +261,17 @@ if __name__ == '__main__':
             shuffle=False, num_workers=num_workers,
         )
     else:
-        val_dataset = dataset_valset if dataset_valset is not None else testset
+        if dataset_valset is None:
+            raise ValueError(f"Dataset {args.dataset_name} has no separate validation set; cannot select checkpoints without test leakage.")
+        val_dataset = dataset_valset
         val_loader = DataLoader(
             val_dataset, batch_size=args.batch_size, shuffle=False,
             num_workers=num_workers,
         )
+
+    original_train_loader = DataLoader(
+        unlearn_trainset, batch_size=args.batch_size, shuffle=True, num_workers=num_workers
+    )
 
 
     num_classes = max(train_loader.dataset.targets) + 1
@@ -301,12 +330,13 @@ if __name__ == '__main__':
                                          args.pretrain_epoch,
                                          ckpt_path,
                                          f"{args.dataset_name}_{model_name}_pretrain_model",
-                                         dataset_name=args.dataset_name)
+                                         dataset_name=args.dataset_name,
+                                         validation_loader=pretrain_val_loader)
             
             ori_model.fc = torch.nn.Linear(ori_model.fc.in_features, 10)
             ori_model = ori_model.to("cuda")
 
-            ori_model = finetune_save_model(train_loader,
+            ori_model = finetune_save_model(original_train_loader,
                                             test_loader,
                                             ori_model,
                                             args.optim_name,
@@ -315,10 +345,11 @@ if __name__ == '__main__':
                                             ckpt_path,
                                             f"{args.dataset_name}_{model_name}_original_model",
                                             model_name,
-                                            dataset_name=args.dataset_name)
+                                            dataset_name=args.dataset_name,
+                                            validation_loader=val_loader)
             
         else:
-            ori_model = train_save_model(train_loader,
+            ori_model = train_save_model(original_train_loader,
                                          test_loader,
                                          model_name,
                                          args.optim_name,
@@ -327,7 +358,8 @@ if __name__ == '__main__':
                                          ckpt_path,
                                          f"{args.dataset_name}_{model_name}_original_model",
                                          use_pretrained=args.use_pretrained,
-                                         dataset_name=args.dataset_name)
+                                         dataset_name=args.dataset_name,
+                                         validation_loader=val_loader)
         print('\noriginal model acc:\n', test_each_classes(ori_model, test_loader, num_classes))
 
         csv_forget = args.forget_id if args.forget_id is not None else forget_class
@@ -372,7 +404,8 @@ if __name__ == '__main__':
                                              args.pretrain_epoch,
                                              ckpt_path,
                                              f"{args.dataset_name}_{model_name}_pretrain_model",
-                                             dataset_name=args.dataset_name)
+                                             dataset_name=args.dataset_name,
+                                             validation_loader=pretrain_val_loader)
             retrain_model.fc = torch.nn.Linear(retrain_model.fc.in_features, 10)
             retrain_model = retrain_model.to("cuda")
 
@@ -385,7 +418,8 @@ if __name__ == '__main__':
                                                 ckpt_path,
                                                 save_desc,
                                                 model_name,
-                                                dataset_name=args.dataset_name)
+                                                dataset_name=args.dataset_name,
+                                                validation_loader=val_remain_loader)
         else:
             retrain_model = train_save_model(train_remain_loader,
                                              test_remain_loader,
@@ -396,7 +430,8 @@ if __name__ == '__main__':
                                              ckpt_path,
                                              save_desc,
                                              use_pretrained=args.use_pretrained,
-                                             dataset_name=args.dataset_name)
+                                             dataset_name=args.dataset_name,
+                                             validation_loader=val_remain_loader)
         print('\nretrain model acc:\n', test_each_classes(retrain_model, test_loader, num_classes))
         
         # --- write metrics row for RETRAIN (from-scratch) ---

@@ -118,7 +118,10 @@ def _last_linear_in_features(head: nn.Module) -> int:
     raise AttributeError("No nn.Linear layer found inside model.fc/classifier head.")
 
 @timer
-def train_save_model(train_loader, test_loader, model_name, optim_name, learning_rate, num_epochs, path, description, use_pretrained=False, dataset_name: str = None):
+def train_save_model(train_loader, test_loader, model_name, optim_name, learning_rate, num_epochs, path, description, use_pretrained=False, dataset_name: str = None, validation_loader=None):
+
+    if validation_loader is None:
+        raise ValueError("validation_loader is required for checkpoint selection; test data must not select checkpoints.")
 
     num_classes = max(train_loader.dataset.targets) + 1  # if args.num_classes is None else args.num_classes
     print(f"num_classes:{num_classes}")
@@ -157,7 +160,8 @@ def train_save_model(train_loader, test_loader, model_name, optim_name, learning
         scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=25, gamma=0.1)  # 25 to match old recipe
 
  
-    best_acc = 0
+    best_acc = float("-inf")
+    best_state = None
 
     train_losses = []
     train_accuracies = []
@@ -183,8 +187,12 @@ def train_save_model(train_loader, test_loader, model_name, optim_name, learning
         test_losses.append(test_loss)
         test_accuracies.append(test_acc)
 
-        if test_acc >= best_acc:
-            best_acc = test_acc
+        val_loss, val_acc = test(model=model, data_loader=validation_loader)
+        print(f"Validation Loss: {val_loss:.2f}, Validation Accuracy: {val_acc:.2%}")
+
+        if val_acc >= best_acc:
+            best_acc = val_acc
+            best_state = {key: value.detach().cpu().clone() for key, value in model.state_dict().items()}
             torch.save(model.state_dict(), path / f"{description}.pth") 
 
         scheduler.step()
@@ -216,17 +224,24 @@ def train_save_model(train_loader, test_loader, model_name, optim_name, learning
         total_time = (now_time-start_time)/(epoch + 1)*num_epochs
         left_time = total_time - token_time
         print(f"Time taken: {format_time(token_time)}/{format_time(total_time)}, Left time: {format_time(left_time)}")
+    if best_state is not None:
+        model.load_state_dict(best_state)
+    print(f"Best validation accuracy: {best_acc:.2%}")
     print(f"Model saved at { path/f'{description}.pth'}")
 
     return model
 
 
 @timer
-def finetune_save_model(train_loader, test_loader, model, optim_name, learning_rate, num_epochs, path, description, model_name, dataset_name):
+def finetune_save_model(train_loader, test_loader, model, optim_name, learning_rate, num_epochs, path, description, model_name, dataset_name, validation_loader=None):
+
+    if validation_loader is None:
+        raise ValueError("validation_loader is required for checkpoint selection; test data must not select checkpoints.")
 
     optimizer = optimizer_picker(optim_name, model.parameters(), lr=learning_rate, model_name=model_name, dataset_name=dataset_name)
 
-    best_acc = 0
+    best_acc = float("-inf")
+    best_state = None
 
     train_losses = []
     train_accuracies = []
@@ -250,8 +265,12 @@ def finetune_save_model(train_loader, test_loader, model, optim_name, learning_r
         test_losses.append(test_loss)
         test_accuracies.append(test_acc)
 
-        if test_acc >= best_acc:
-            best_acc = test_acc
+        val_loss, val_acc = test(model=model, data_loader=validation_loader)
+        print(f"Validation Loss: {val_loss:.2f}, Validation Accuracy: {val_acc:.2%}")
+
+        if val_acc >= best_acc:
+            best_acc = val_acc
+            best_state = {key: value.detach().cpu().clone() for key, value in model.state_dict().items()}
             torch.save(model.state_dict(), path / f"{description}.pth")
 
         plt.figure(figsize=(10, 5))
@@ -281,6 +300,9 @@ def finetune_save_model(train_loader, test_loader, model, optim_name, learning_r
         total_time = (now_time-start_time)/(epoch + 1)*num_epochs
         left_time = total_time - token_time
         print(f"Time taken: {format_time(token_time)}/{format_time(total_time)}, Left time: {format_time(left_time)}")
+    if best_state is not None:
+        model.load_state_dict(best_state)
+    print(f"Best validation accuracy: {best_acc:.2%}")
     print(f"Model saved at { path/f'{description}.pth'}")
 
     return model
