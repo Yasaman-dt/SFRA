@@ -115,17 +115,18 @@ TinyImageNet should have the following layout:
 ```text
 $SFRA_DATA_DIR/TinyImageNet/
   train/  # class subfolders
-  val/    # class subfolders
-  test/   # class subfolders
+  val/    # labeled held-out evaluation set, used as test
 ```
 
-For machine-unlearning runs, CIFAR-10/100 use a seeded, class-stratified split
-of the original training set: 90% supplies the unlearning update loaders and
-10% is used for validation. The official CIFAR test set is used for test
-evaluation, not checkpoint selection. The split uses seed `42` by default;
-pass the same `--seed` to `main.py` and the SFRA script when overriding it.
-SFRA relearning itself trains on
-synthetic probes; it evaluates on the validation split, and the official test set. 
+For machine-unlearning and SFRA runs, CIFAR-10/100 and TinyImageNet use a
+seeded, class-stratified split of the original training set: 90% supplies the
+real training/update loaders and 10% is used for validation and checkpoint
+selection. CIFAR's official test set is used for final test evaluation;
+TinyImageNet's labeled `val/` directory is used for final test evaluation.
+The split uses seed `42` by default; pass the same `--seed` to `main.py` and
+the SFRA script when overriding it. SFRA relearning itself trains on synthetic
+probes and evaluates on both the training-derived validation split and the
+held-out test split.
 
 Individual commands can still override these defaults using their applicable
 `--data_dir`, `--base-dir`, `--base_dir`, `--ckpt_dir`, or `--exps_dir`

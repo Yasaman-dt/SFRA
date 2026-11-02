@@ -233,40 +233,22 @@ if __name__ == '__main__':
             pretrain_test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=num_workers
         )
 
-    trainset, testset, dataset_valset = get_dataset(
+    trainset, testset, _ = get_dataset(
         args.dataset_name, transform_train, transform_test, return_validation=True
     )
-    train_loader, test_loader = get_dataloader(trainset, testset, args.batch_size, num_workers)
-    unlearn_trainset = trainset
-
-    if args.dataset_name.lower() in {"cifar10", "cifar100", "vggface"}:
-        split_labels = np.asarray(trainset.targets)
-        split_rng = np.random.default_rng(args.seed)
-        val_indices, fit_indices = [], []
-        for class_id in np.unique(split_labels):
-            class_indices = np.flatnonzero(split_labels == class_id)
-            split_rng.shuffle(class_indices)
-            n_val = max(1, int(round(0.10 * len(class_indices))))
-            val_indices.extend(class_indices[:n_val].tolist())
-            fit_indices.extend(class_indices[n_val:].tolist())
-        val_dataset = copy.copy(trainset)
-        val_dataset.transform = transform_test
-        val_dataset = Subset(val_dataset, val_indices)
-        val_dataset.targets = split_labels[val_indices].tolist()
-        unlearn_trainset = Subset(trainset, fit_indices)
-        unlearn_trainset.targets = split_labels[fit_indices].tolist()
-        val_loader = DataLoader(
-            val_dataset, batch_size=args.batch_size,
-            shuffle=False, num_workers=num_workers,
+    if args.dataset_name.lower() in {"cifar10", "cifar100", "tiny_imagenet", "vggface"}:
+        unlearn_trainset, val_dataset = stratified_train_validation_split(
+            trainset, transform_test, seed=args.seed, validation_fraction=0.10
         )
     else:
-        if dataset_valset is None:
-            raise ValueError(f"Dataset {args.dataset_name} has no separate validation set; cannot select checkpoints without test leakage.")
-        val_dataset = dataset_valset
-        val_loader = DataLoader(
-            val_dataset, batch_size=args.batch_size, shuffle=False,
-            num_workers=num_workers,
-        )
+        raise ValueError(f"No train/validation split is configured for {args.dataset_name}.")
+    train_loader, test_loader = get_dataloader(
+        unlearn_trainset, testset, args.batch_size, num_workers
+    )
+    val_loader = DataLoader(
+        val_dataset, batch_size=args.batch_size, shuffle=False,
+        num_workers=num_workers,
+    )
 
     original_train_loader = DataLoader(
         unlearn_trainset, batch_size=args.batch_size, shuffle=True, num_workers=num_workers

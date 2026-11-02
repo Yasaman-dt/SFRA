@@ -1,7 +1,7 @@
-import os, sys
+import os, sys, copy
 import random
 import torch
-from torch.utils.data import Dataset, DataLoader, SubsetRandomSampler
+from torch.utils.data import Dataset, DataLoader, Subset, SubsetRandomSampler
 from torchvision import  transforms, datasets
 from torch import nn
 import numpy as np
@@ -506,6 +506,28 @@ def get_transforms(dataset_name, model_name, wo_dataaug):
     return transform_train, transform_test
 
 
+def stratified_train_validation_split(train_dataset, validation_transform, seed=42,
+                                     validation_fraction=0.10):
+    """Return seeded class-stratified train/validation subsets of a dataset."""
+    labels = np.asarray(train_dataset.targets)
+    rng = np.random.default_rng(seed)
+    train_indices, validation_indices = [], []
+    for class_id in np.unique(labels):
+        class_indices = np.flatnonzero(labels == class_id)
+        rng.shuffle(class_indices)
+        n_validation = max(1, int(round(validation_fraction * len(class_indices))))
+        validation_indices.extend(class_indices[:n_validation].tolist())
+        train_indices.extend(class_indices[n_validation:].tolist())
+
+    validation_source = copy.copy(train_dataset)
+    validation_source.transform = validation_transform
+    train_subset = Subset(train_dataset, train_indices)
+    validation_subset = Subset(validation_source, validation_indices)
+    train_subset.targets = labels[train_indices].tolist()
+    validation_subset.targets = labels[validation_indices].tolist()
+    return train_subset, validation_subset
+
+
 def get_dataset(dataset_name, transform_train, transform_test, path=DATA_DIR,
                 return_validation=False):
     if dataset_name == 'cifar10':
@@ -519,17 +541,11 @@ def get_dataset(dataset_name, transform_train, transform_test, path=DATA_DIR,
     elif dataset_name == 'tiny_imagenet':
         tinyimagenet_dir = os.path.join(path, 'TinyImageNet')
         train_dataset = datasets.ImageFolder(root=os.path.join(tinyimagenet_dir, 'train'), transform=transform_train)
-        validation_dataset = datasets.ImageFolder(root=os.path.join(tinyimagenet_dir, 'val'), transform=transform_test)
-        test_dir = os.path.join(tinyimagenet_dir, 'test')
-        if os.path.isdir(test_dir):
-            test_dataset = datasets.ImageFolder(root=test_dir, transform=transform_test)
-        elif return_validation:
-            raise FileNotFoundError(
-                f"TinyImageNet test split not found at {test_dir}; "
-                "expected separate train, val, and test folders."
-            )
-        else:
-            test_dataset = validation_dataset
+        # TinyImageNet's labeled val/ split is the held-out test set. The
+        # checkpoint-selection validation set is carved from train/ by callers.
+        test_dataset = datasets.ImageFolder(
+            root=os.path.join(tinyimagenet_dir, 'val'), transform=transform_test
+        )
         
     elif dataset_name == 'vggface':
         config_path = 'config/vggface_sample.yaml'
@@ -540,9 +556,7 @@ def get_dataset(dataset_name, transform_train, transform_test, path=DATA_DIR,
     else:
         raise ValueError(f"Unknown dataset: {dataset_name}")
     if return_validation:
-        return train_dataset, test_dataset, (
-            validation_dataset if dataset_name == 'tiny_imagenet' else None
-        )
+        return train_dataset, test_dataset, None
     return train_dataset, test_dataset
 
 

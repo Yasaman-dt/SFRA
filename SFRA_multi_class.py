@@ -13,7 +13,8 @@ from sklearn.manifold import TSNE
 import matplotlib.pyplot as plt
 from collections import defaultdict
 from utils import (
-    get_transforms, get_dataset, get_dataloader, get_unlearn_loader, _top1_and_per_class
+    get_transforms, get_dataset, get_dataloader, get_unlearn_loader,
+    stratified_train_validation_split, _top1_and_per_class
 )
 from trainer import *  # assumes load_model is here
 import random
@@ -721,8 +722,11 @@ model = load_model(ckpt, model_name, dataset_name, num_classes).to(device).eval(
 # --- transforms & datasets ---
 wo_dataaug = False
 transform_train, transform_test = get_transforms(dataset_name, model_name, wo_dataaug=wo_dataaug)
-trainset, testset, dataset_valset = get_dataset(
+trainset, testset, _ = get_dataset(
     dataset_name, transform_train, transform_test, return_validation=True
+)
+trainset, val_dataset = stratified_train_validation_split(
+    trainset, transform_test, seed=args.seed, validation_fraction=0.10
 )
 
 # --- base loaders (with augmentation on train) ---
@@ -733,29 +737,17 @@ all_train_loader, all_test_loader = get_dataloader(
 )
 
 # --- deterministic train-eval loader (NO AUG, no shuffle) ---
-trainset_eval = copy.copy(trainset)
-trainset_eval.transform = transform_test
+trainset_eval_source = copy.copy(trainset.dataset)
+trainset_eval_source.transform = transform_test
+trainset_eval = Subset(trainset_eval_source, trainset.indices)
+trainset_eval.targets = trainset.targets
 all_train_loader = DataLoader(
     trainset_eval,
     batch_size=batch_size_real, shuffle=False, drop_last=False,
     num_workers=num_workers, pin_memory=True, generator=g
 )
-if dataset_name.lower() in {"cifar10", "cifar100"}:
-    split_labels = np.asarray(trainset.targets)
-    split_rng = np.random.default_rng(args.seed)
-    val_indices = []
-    for class_id in np.unique(split_labels):
-        class_indices = np.flatnonzero(split_labels == class_id)
-        split_rng.shuffle(class_indices)
-        n_val = max(1, int(round(0.10 * len(class_indices))))
-        val_indices.extend(class_indices[:n_val].tolist())
-    val_set = copy.copy(trainset)
-    val_set.transform = transform_test
-    val_loader = DataLoader(Subset(val_set, val_indices), batch_size=batch_size_real,
-                            shuffle=False, num_workers=num_workers, pin_memory=True)
-else:
-    val_loader = DataLoader(dataset_valset, batch_size=batch_size_real,
-                            shuffle=False, num_workers=num_workers, pin_memory=True)
+val_loader = DataLoader(val_dataset, batch_size=batch_size_real,
+                        shuffle=False, num_workers=num_workers, pin_memory=True)
 
 
 # --- retain/forget splits for the chosen forget_class ---
