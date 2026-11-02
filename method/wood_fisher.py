@@ -86,7 +86,7 @@ def wood_fisher(ori_model, train_forget_loader, train_remain_loader, train_remai
         pass    
     
     
-    _, Aor = test(ori_model, loader_dict["test_remain"])
+    _, Aor = test(ori_model, loader_dict["val_remain"])
     best_aus = float("-inf")
     best_path = experiment_path / f"lr{alpha}/ckpt_best_by_aus.pth"        
     best_state = None
@@ -158,16 +158,16 @@ def wood_fisher(ori_model, train_forget_loader, train_remain_loader, train_remai
 
     plot_unlearn_remain_acc_figure(1, accs_dict, out_dir, plot_type="scatter")
 
-    _, a_forget = test(unlearn_model, loader_dict["test_forget"])
-    _, a_retain = test(unlearn_model, loader_dict["test_remain"])
+    _, a_forget = test(unlearn_model, loader_dict["val_forget"])
+    _, a_retain = test(unlearn_model, loader_dict["val_remain"])
     aus = calculate_AUS(a_forget, a_retain, Aor)
     if aus > best_aus:
         best_aus = aus
         best_state = {k: v.detach().cpu().clone() for k, v in unlearn_model.state_dict().items()}
         torch.save(unlearn_model, best_path)
-        logger.info(f"★ New best AUS={aus:.4f} (forget={a_forget:.4f}, retain={a_retain:.4f}) -> {best_path}")
+        logger.info(f"★ New best val_AUS={aus:.4f} (forget={a_forget:.4f}, retain={a_retain:.4f}) -> {best_path}")
     else:
-        logger.info(f"AUS={aus:.4f} (forget={a_forget:.4f}, retain={a_retain:.4f})")
+        logger.info(f"val_AUS={aus:.4f} (forget={a_forget:.4f}, retain={a_retain:.4f})")
 
     if best_state is not None:
         unlearn_model.load_state_dict(best_state)

@@ -14,18 +14,36 @@ eval_opt = {
     "train_remain": True,
     "test_forget": True,
     "test_remain": True,
+    "val_forget": True,
+    "val_remain": True,
+    "train_full": True,
+    "val_full": True,
+    "test": True,
 }
 
 def evaluate_model_on_all_loaders(model, loader_dict, eval_option, logger, extra_class=0):
-    keys = ["train_forget", "train_remain", "test_forget", "test_remain"]
-    current_accs_dict = {key: float("nan") for key in keys}
+    eval_keys = [
+        "train_forget", "train_remain", "val_forget", "val_remain",
+        "test_forget", "test_remain", "train_full", "val_full", "test",
+    ]
+    current_accs_dict = {key: float("nan") for key in eval_keys}
     
-    for key in keys:
-        if eval_option[key]:
+    for key in eval_keys:
+        if key in loader_dict and eval_option.get(key, True):
             _, acc = test(model, loader_dict[key], extra_class)
             current_accs_dict[key] = acc
 
-    logger.info(f"train forget acc:{current_accs_dict['train_forget']:.2%}, train_remain_acc:{current_accs_dict['train_remain']:.2%}, test forget acc:{current_accs_dict['test_forget']:.2%}, test remain acc:{current_accs_dict['test_remain']:.2%}")
+    logger.info(
+        f"train forget={current_accs_dict['train_forget']:.2%}, "
+        f"train retain={current_accs_dict['train_remain']:.2%}, "
+        f"val forget={current_accs_dict['val_forget']:.2%}, "
+        f"val retain={current_accs_dict['val_remain']:.2%}, "
+        f"test forget={current_accs_dict['test_forget']:.2%}, "
+        f"test retain={current_accs_dict['test_remain']:.2%}, "
+        f"all_train={current_accs_dict['train_full']:.2%}, "
+        f"all_val={current_accs_dict['val_full']:.2%}, "
+        f"all_test={current_accs_dict['test']:.2%}"
+    )
     return current_accs_dict
 
 def plot_unlearn_remain_acc_figure(epoch, accs_dict, experiment_path, plot_type="plot"):    

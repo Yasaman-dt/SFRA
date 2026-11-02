@@ -506,7 +506,8 @@ def get_transforms(dataset_name, model_name, wo_dataaug):
     return transform_train, transform_test
 
 
-def get_dataset(dataset_name, transform_train, transform_test, path=DATA_DIR):
+def get_dataset(dataset_name, transform_train, transform_test, path=DATA_DIR,
+                return_validation=False):
     if dataset_name == 'cifar10':
         train_dataset = datasets.CIFAR10(root=path, train=True, download=True, transform=transform_train)
         test_dataset = datasets.CIFAR10(root=path, train=False, download=True, transform=transform_test)
@@ -516,10 +517,19 @@ def get_dataset(dataset_name, transform_train, transform_test, path=DATA_DIR):
         test_dataset = datasets.CIFAR100(root=path, train=False, download=True, transform=transform_test)
         
     elif dataset_name == 'tiny_imagenet':
-        # data_dir = os.path.join(path, 'tiny-imagenet-200') 
         tinyimagenet_dir = os.path.join(path, 'TinyImageNet')
         train_dataset = datasets.ImageFolder(root=os.path.join(tinyimagenet_dir, 'train'), transform=transform_train)
-        test_dataset = datasets.ImageFolder(root=os.path.join(tinyimagenet_dir, 'val'), transform=transform_test)
+        validation_dataset = datasets.ImageFolder(root=os.path.join(tinyimagenet_dir, 'val'), transform=transform_test)
+        test_dir = os.path.join(tinyimagenet_dir, 'test')
+        if os.path.isdir(test_dir):
+            test_dataset = datasets.ImageFolder(root=test_dir, transform=transform_test)
+        elif return_validation:
+            raise FileNotFoundError(
+                f"TinyImageNet test split not found at {test_dir}; "
+                "expected separate train, val, and test folders."
+            )
+        else:
+            test_dataset = validation_dataset
         
     elif dataset_name == 'vggface':
         config_path = 'config/vggface_sample.yaml'
@@ -529,6 +539,10 @@ def get_dataset(dataset_name, transform_train, transform_test, path=DATA_DIR):
         test_dataset = vggface_dataset(sample_config, transform_test, mode='finetune', train=False)
     else:
         raise ValueError(f"Unknown dataset: {dataset_name}")
+    if return_validation:
+        return train_dataset, test_dataset, (
+            validation_dataset if dataset_name == 'tiny_imagenet' else None
+        )
     return train_dataset, test_dataset
 
 

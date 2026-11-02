@@ -9,6 +9,7 @@ import method
 import log_utils
 import sys, re, shlex, subprocess
 from project_paths import EXPS_DIR
+from torch.utils.data import DataLoader, Subset
 
 def str2bool(v):
     if isinstance(v, bool):
@@ -210,8 +211,38 @@ if __name__ == '__main__':
         pretrain_test_dataset = vggface_dataset(sample_config, transform_test, mode='pretrain', train=False)
         pretrain_train_loader, pretrain_test_loader = get_dataloader(pretrain_train_dataset, pretrain_test_dataset, args.batch_size, num_workers)
 
-    trainset, testset = get_dataset(args.dataset_name, transform_train, transform_test)
+    trainset, testset, dataset_valset = get_dataset(
+        args.dataset_name, transform_train, transform_test, return_validation=True
+    )
     train_loader, test_loader = get_dataloader(trainset, testset, args.batch_size, num_workers)
+    unlearn_trainset = trainset
+
+    if args.dataset_name.lower() in {"cifar10", "cifar100"}:
+        split_labels = np.asarray(trainset.targets)
+        split_rng = np.random.default_rng(args.seed)
+        val_indices, fit_indices = [], []
+        for class_id in np.unique(split_labels):
+            class_indices = np.flatnonzero(split_labels == class_id)
+            split_rng.shuffle(class_indices)
+            n_val = max(1, int(round(0.10 * len(class_indices))))
+            val_indices.extend(class_indices[:n_val].tolist())
+            fit_indices.extend(class_indices[n_val:].tolist())
+        val_dataset = copy.copy(trainset)
+        val_dataset.transform = transform_test
+        val_dataset = Subset(val_dataset, val_indices)
+        val_dataset.targets = split_labels[val_indices].tolist()
+        unlearn_trainset = Subset(trainset, fit_indices)
+        unlearn_trainset.targets = split_labels[fit_indices].tolist()
+        val_loader = DataLoader(
+            val_dataset, batch_size=args.batch_size,
+            shuffle=False, num_workers=num_workers,
+        )
+    else:
+        val_dataset = dataset_valset if dataset_valset is not None else testset
+        val_loader = DataLoader(
+            val_dataset, batch_size=args.batch_size, shuffle=False,
+            num_workers=num_workers,
+        )
 
 
     num_classes = max(train_loader.dataset.targets) + 1
@@ -243,7 +274,11 @@ if __name__ == '__main__':
     num_forget = float("inf")      
     train_forget_loader, train_remain_loader, test_forget_loader, test_remain_loader, repair_class_loader, \
     train_forget_index, train_remain_index, test_forget_index, test_remain_index \
-        = get_unlearn_loader(trainset, testset, forget_class_index, args.batch_size, num_forget, num_workers)
+        = get_unlearn_loader(unlearn_trainset, testset, forget_class_index, args.batch_size, num_forget, num_workers)
+
+    _, _, val_forget_loader, val_remain_loader, _, _, _, _, _ = get_unlearn_loader(
+        unlearn_trainset, val_dataset, forget_class_index, args.batch_size, num_forget, num_workers
+    )
 
     if args.train_from_scratch or args.retrain_from_scratch:
         ckpt_path = path / "test_pretrained_model"   
@@ -482,7 +517,9 @@ if __name__ == '__main__':
     unlearn_model = None
     loader_dict = {"train_forget": train_forget_loader, "train_remain": train_remain_loader,
                    "test_forget": test_forget_loader, "test_remain": test_remain_loader,
-                   "test": test_loader, 
+                   "val_forget": val_forget_loader, "val_remain": val_remain_loader,
+                   "train_full": train_loader, "val_full": val_loader,
+                   "test": test_loader,
                    }
     
     print('*' * 100)
@@ -613,7 +650,7 @@ if __name__ == '__main__':
                 return x, y
 
 
-        unlearn_dataset = UnLearningData(trainset, train_forget_index, filtered_remain_index)
+        unlearn_dataset = UnLearningData(unlearn_trainset, train_forget_index, filtered_remain_index)
         unlearn_loader = torch.utils.data.DataLoader(unlearn_dataset, batch_size=args.batch_size, shuffle=True, num_workers=num_workers) 
         unlearn_model = method.bad_teacher(ori_model, bad_teacher_model, good_teacher_model, unlearn_loader,
                                             args.unlearn_epoch, args.unlearn_rate,

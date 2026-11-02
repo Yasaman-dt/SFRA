@@ -149,7 +149,7 @@ ablation_tag = (
 AGG_CSV_PATH = os.path.join(
     AGG_CSV_DIR,
     f"{dataset_name}_{model_name}_unlearned_{method}"
-    f"_revival_by_forget_class_lr{lr}{ablation_tag}.csv"
+    f"_revival_by_forget_class_lr{lr}{ablation_tag}_with_validation_rs_synth.csv"
 )
 os.makedirs(AGG_CSV_DIR, exist_ok=True)
 
@@ -161,9 +161,9 @@ COLUMNS = [
     "retain_per_class", "total_retain", "total_forget",
     "epoch", "syn_train_loss", "syn_train_acc",
     "syn_total", "syn_retain", "syn_forget",
-    "all_train", "all_test",
+    "all_train", "val_accuracy", "val_retain", "val_forget", "all_test",
     "train_fgt", "train_retain", "test_fgt", "test_retain",
-    "RS",
+    "RS_synth_train", "RS_val", "RS_test",
 ]
 
 def append_best_for_class(
@@ -200,8 +200,8 @@ def append_best_for_class(
         "retain_per_class", "total_retain", "total_forget",
         "syn_train_loss", "syn_train_acc",
         "syn_total", "syn_retain", "syn_forget",
-        "all_train", "all_test",
-        "train_fgt", "train_retain", "test_fgt", "test_retain", "RS",
+        "all_train", "val_accuracy", "val_retain", "val_forget", "all_test",
+        "train_fgt", "train_retain", "test_fgt", "test_retain", "RS_synth_train", "RS_val", "RS_test",
     ]
     df[METRIC_COLS] = df[METRIC_COLS].apply(pd.to_numeric, errors="coerce").round(3)
 
@@ -285,6 +285,22 @@ def eval_accuracy_on_emb_loader(fc, loader, device):
         correct += (logits.argmax(dim=1) == y).sum().item()
         total   += y.numel()
     return 100.0 * correct / max(total, 1)
+
+
+@torch.inference_mode()
+def eval_accuracy_on_emb_classes(fc, feats, labels, class_ids, device):
+    class_ids = torch.as_tensor(class_ids, dtype=labels.dtype)
+    mask = torch.isin(labels, class_ids)
+    selected_feats, selected_labels = feats[mask], labels[mask]
+    total = selected_labels.numel()
+    if total == 0:
+        raise ValueError(f"No validation examples found for classes {class_ids.tolist()}.")
+    correct = 0
+    for start in range(0, total, 4096):
+        x = selected_feats[start:start + 4096].to(device, non_blocking=True)
+        y = selected_labels[start:start + 4096].to(device, non_blocking=True)
+        correct += (fc(x).argmax(dim=1) == y).sum().item()
+    return 100.0 * correct / total
 
 
 # ------------------ Synthetic pre-FC embeddings + selection (retain-only forget set) ------------------
@@ -581,7 +597,9 @@ for forget_class in forget_classes:
     # --- transforms & datasets ---
     wo_dataaug = False
     transform_train, transform_test = get_transforms(dataset_name, model_name, wo_dataaug=wo_dataaug)
-    trainset, testset = get_dataset(dataset_name, transform_train, transform_test)
+    trainset, testset, dataset_valset = get_dataset(
+        dataset_name, transform_train, transform_test, return_validation=True
+    )
 
     # --- base loaders (with augmentation on train) ---
     batch_size_real = 256
@@ -590,7 +608,7 @@ for forget_class in forget_classes:
         trainset, testset, batch_size=batch_size_real, num_workers=num_workers
     )
 
-    # --- deterministic train-eval loader (NO AUG, no shuffle) ---
+    # --- deterministic train-eval loader over the complete real train set ---
     trainset_eval = copy.copy(trainset)
     trainset_eval.transform = transform_test
     all_train_loader = DataLoader(
@@ -598,6 +616,25 @@ for forget_class in forget_classes:
         batch_size=batch_size_real, shuffle=False, drop_last=False,
         num_workers=num_workers, pin_memory=True, generator=g
     )
+
+    # Fixed, class-stratified 10% validation subset for CIFAR. Keep all real
+    # training examples in all_train_loader, as in the original evaluation.
+    if dataset_name.lower() in {"cifar10", "cifar100"}:
+        split_labels = np.asarray(trainset.targets)
+        split_rng = np.random.default_rng(args.seed)
+        val_indices = []
+        for class_id in np.unique(split_labels):
+            class_indices = np.flatnonzero(split_labels == class_id)
+            split_rng.shuffle(class_indices)
+            n_val = max(1, int(round(0.10 * len(class_indices))))
+            val_indices.extend(class_indices[:n_val].tolist())
+        val_set = copy.copy(trainset)
+        val_set.transform = transform_test
+        val_loader = DataLoader(Subset(val_set, val_indices), batch_size=batch_size_real,
+                                shuffle=False, num_workers=num_workers, pin_memory=True)
+    else:
+        val_loader = DataLoader(dataset_valset, batch_size=batch_size_real,
+                                shuffle=False, num_workers=num_workers, pin_memory=True)
 
 
     # --- retain/forget splits for the chosen forget_class ---
@@ -632,6 +669,7 @@ for forget_class in forget_classes:
     # ---- embed each real loader ONCE ----
     all_train_feats, all_train_labels = embed_loader_to_tensor(all_train_loader)
     all_test_feats,  all_test_labels  = embed_loader_to_tensor(all_test_loader)
+    val_feats, val_labels = embed_loader_to_tensor(val_loader)
 
     train_fgt_feats, train_fgt_labels = embed_loader_to_tensor(train_fgt_loader)
     train_ret_feats, train_ret_labels = embed_loader_to_tensor(train_retain_loader)
@@ -645,6 +683,7 @@ for forget_class in forget_classes:
     # ---- wrap as fast embedding loaders (no backbone in the loop) ----
     all_train_emb_loader = make_emb_loader(all_train_feats, all_train_labels)
     all_test_emb_loader  = make_emb_loader(all_test_feats,  all_test_labels)
+    val_emb_loader       = make_emb_loader(val_feats, val_labels)
     train_fgt_emb_loader = make_emb_loader(train_fgt_feats, train_fgt_labels)
     train_ret_emb_loader = make_emb_loader(train_ret_feats, train_ret_labels)
     test_fgt_emb_loader  = make_emb_loader(test_fgt_feats,  test_fgt_labels)
@@ -738,7 +777,7 @@ for forget_class in forget_classes:
 
 
     # --- keep this once, above the function (replace your current `best = {...}`) ---
-    best = {"key": (float("-inf"), float("-inf"), float("-inf"), float("-inf"), float("-inf")), "row": None}
+    best = {"key": (float("-inf"), float("-inf")), "row": None}
 
 
     def _safe_get(row, k):
@@ -746,13 +785,9 @@ for forget_class in forget_classes:
         return v if (isinstance(v, (int, float)) and v == v) else float("-inf")
 
     def _key_from_row(row):
-        # Priority: RS, then test_fgt, then test_retain, then train_fgt, then train_retain
         return (
-            float(_safe_get(row, "RS")),
-            float(_safe_get(row, "test_fgt")),
-            float(_safe_get(row, "test_retain")),
-            float(_safe_get(row, "train_fgt")),
-            float(_safe_get(row, "train_retain")),
+            float(_safe_get(row, "RS_val")),
+            float(_safe_get(row, "val_accuracy")),
         )
 
 
@@ -761,12 +796,7 @@ for forget_class in forget_classes:
         Update in-memory 'best' by (test_fgt, test_retain, train_fgt, train_retain).
         We only WRITE TO DISK ONCE per forget_class, after the epoch loop.
         """
-        key = (
-            float(_safe_get(row_dict, "test_fgt")),
-            float(_safe_get(row_dict, "test_retain")),
-            float(_safe_get(row_dict, "train_fgt")),
-            float(_safe_get(row_dict, "train_retain")),
-        )
+        key = float(_safe_get(row_dict, "val_accuracy"))
         if key > best["key"]:  # lexicographic tuple comparison
             best["key"] = key
             best["row"] = row_dict.copy()
@@ -775,6 +805,8 @@ for forget_class in forget_classes:
     acc_syn_ret   = eval_accuracy_on_loader(model, fc, syn_retain_eval_loader, device)
     acc_syn_fgt   = eval_accuracy_on_loader(model, fc, syn_forget_eval_loader, device)
     acc_syn_total = (acc_syn_ret * n_syn_ret + acc_syn_fgt * n_syn_fgt) / (n_syn_ret + n_syn_fgt)
+    A_r_syn_u = float(acc_syn_ret)
+    A_f_syn_u = float(acc_syn_fgt)
 
     # real loaders eval
     with torch.no_grad():
@@ -787,6 +819,12 @@ for forget_class in forget_classes:
 
         acc_all_train    = eval_accuracy_on_emb_loader(fc, all_train_emb_loader,    device)
         acc_all_test     = eval_accuracy_on_emb_loader(fc, all_test_emb_loader,     device)
+        acc_val          = eval_accuracy_on_emb_loader(fc, val_emb_loader,          device)
+        acc_val_forget   = eval_accuracy_on_emb_classes(fc, val_feats, val_labels, [forget_class], device)
+        acc_val_retain   = eval_accuracy_on_emb_classes(
+            fc, val_feats, val_labels,
+            [c for c in range(num_classes) if c != forget_class], device
+        )
         acc_train_fgt    = eval_accuracy_on_emb_loader(fc, train_fgt_emb_loader,    device)
         acc_train_retain = eval_accuracy_on_emb_loader(fc, train_ret_emb_loader,    device)
         acc_test_fgt     = eval_accuracy_on_emb_loader(fc, test_fgt_emb_loader,     device)
@@ -798,6 +836,7 @@ for forget_class in forget_classes:
         f"syn_train_loss=NA syn_train_acc=NA | "
         f"syn_total={acc_syn_total:.2f}% syn_ret={acc_syn_ret:.2f}% syn_fgt={acc_syn_fgt:.2f}% | "
         f"all_train={acc_all_train:.2f}% all_test={acc_all_test:.2f}% | "
+        f"val_acc={acc_val:.2f}% val_ret={acc_val_retain:.2f}% val_fgt={acc_val_forget:.2f}% | "
         f"train_fgt={acc_train_fgt:.2f}% train_ret={acc_train_retain:.2f}% | "
         f"test_fgt={acc_test_fgt:.2f}% test_ret={acc_test_retain:.2f}%"
     )
@@ -815,6 +854,10 @@ for forget_class in forget_classes:
         "train_retain": float(acc_train_retain),
         "test_fgt": float(acc_test_fgt),
         "test_retain": float(acc_test_retain),
+        "val_accuracy": float(acc_val),
+        "val_retain": float(acc_val_retain),
+        "val_forget": float(acc_val_forget),
+        "RS_synth_train": 0.0,
     })
 
     row0 = {
@@ -830,6 +873,10 @@ for forget_class in forget_classes:
         "train_retain": float(acc_train_retain),
         "test_fgt": float(acc_test_fgt),
         "test_retain": float(acc_test_retain),
+        "val_accuracy": float(acc_val),
+        "val_retain": float(acc_val_retain),
+        "val_forget": float(acc_val_forget),
+        "RS_synth_train": 0.0,
     }
     
 
@@ -852,7 +899,7 @@ for forget_class in forget_classes:
     best_train_retain = acc_train_retain
     best_row = None
     
-    best_rs = -1.0
+    best_rs = float("-inf")
     best_rs_epoch = 0
     no_improve = 0
     patience = int(args.rs_patience)
@@ -866,9 +913,26 @@ for forget_class in forget_classes:
 
 
     rs0 = revival_score(A_r_tr, A_f_tr, A_r_tu, A_f_tu, directional=args.rs_directional)
-    metrics_history[-1]["RS"] = float(rs0)
-    print(f"[Epoch 00] RS={rs0:.4f}")
-    row0["RS"] = float(rs0)
+    rs_val0 = revival_score(
+        acc_val_retain, acc_val_forget, acc_val_retain, acc_val_forget,
+        directional=args.rs_directional,
+    )
+    rs_synth0 = revival_score(
+        acc_syn_ret, acc_syn_fgt, A_r_syn_u, A_f_syn_u,
+        directional=args.rs_directional,
+    )
+    metrics_history[-1]["RS_synth_train"] = float(rs_synth0)
+    metrics_history[-1]["RS_test"] = float(rs0)
+    metrics_history[-1]["RS_val"] = float(rs_val0)
+    print(
+        f"[Epoch 00] RS_synth_train={rs_synth0:.4f} "
+        f"RS_val={rs_val0:.4f} RS_test={rs0:.4f}"
+    )
+    row0["RS_test"] = float(rs0)
+    row0["RS_val"] = float(rs_val0)
+    row0["RS_synth_train"] = float(rs_synth0)
+    best_rs = float(rs_val0)
+    save_best_fc = deepcopy(fc.state_dict())
     best["row"] = row0.copy()
     best["key"] = _key_from_row(row0)
         
@@ -916,6 +980,12 @@ for forget_class in forget_classes:
 
             acc_all_train    = eval_accuracy_on_emb_loader(fc, all_train_emb_loader,    device)
             acc_all_test     = eval_accuracy_on_emb_loader(fc, all_test_emb_loader,     device)
+            acc_val          = eval_accuracy_on_emb_loader(fc, val_emb_loader,          device)
+            acc_val_forget   = eval_accuracy_on_emb_classes(fc, val_feats, val_labels, [forget_class], device)
+            acc_val_retain   = eval_accuracy_on_emb_classes(
+                fc, val_feats, val_labels,
+                [c for c in range(num_classes) if c != forget_class], device
+            )
             acc_train_fgt    = eval_accuracy_on_emb_loader(fc, train_fgt_emb_loader,    device)
             acc_train_retain = eval_accuracy_on_emb_loader(fc, train_ret_emb_loader,    device)
             acc_test_fgt     = eval_accuracy_on_emb_loader(fc, test_fgt_emb_loader,     device)
@@ -927,6 +997,7 @@ for forget_class in forget_classes:
             f"syn_train_loss={train_loss:.4f} syn_train_acc={train_acc:.2f}% | "
             f"syn_total={acc_syn_total:.2f}% syn_ret={acc_syn_ret:.2f}% syn_fgt={acc_syn_fgt:.2f}% | "
             f"all_train={acc_all_train:.2f}% all_test={acc_all_test:.2f}% | "
+            f"val_acc={acc_val:.2f}% val_ret={acc_val_retain:.2f}% val_fgt={acc_val_forget:.2f}% | "
             f"train_fgt={acc_train_fgt:.2f}% train_ret={acc_train_retain:.2f}% | "
             f"test_fgt={acc_test_fgt:.2f}% test_ret={acc_test_retain:.2f}%"
         )
@@ -945,6 +1016,10 @@ for forget_class in forget_classes:
             "train_retain": float(acc_train_retain),
             "test_fgt": float(acc_test_fgt),
             "test_retain": float(acc_test_retain),
+            "val_accuracy": float(acc_val),
+            "val_retain": float(acc_val_retain),
+            "val_forget": float(acc_val_forget),
+            "RS_synth_train": None,
         })
 
 
@@ -961,6 +1036,10 @@ for forget_class in forget_classes:
             "train_retain": float(acc_train_retain),
             "test_fgt": float(acc_test_fgt),
             "test_retain": float(acc_test_retain),
+            "val_accuracy": float(acc_val),
+            "val_retain": float(acc_val_retain),
+            "val_forget": float(acc_val_forget),
+            "RS_synth_train": None,
         }
         
         # after you computed acc_* for this epoch:
@@ -969,30 +1048,45 @@ for forget_class in forget_classes:
 
 
         rs = revival_score(A_r_tr, A_f_tr, A_r_tu, A_f_tu, directional=args.rs_directional)
-        metrics_history[-1]["RS"] = float(rs)
-        print(f"[Epoch {epoch:02d}] RS={rs:.4f}")
+        rs_val = revival_score(
+            acc_val_retain, acc_val_forget,
+            row0["val_retain"], row0["val_forget"],
+            directional=args.rs_directional,
+        )
+        rs_synth_train = revival_score(
+            acc_syn_ret, acc_syn_fgt, A_r_syn_u, A_f_syn_u,
+            directional=args.rs_directional,
+        )
+        metrics_history[-1]["RS_synth_train"] = float(rs_synth_train)
+        metrics_history[-1]["RS_test"] = float(rs)
+        metrics_history[-1]["RS_val"] = float(rs_val)
+        print(
+            f"[Epoch {epoch:02d}] RS_synth_train={rs_synth_train:.4f} "
+            f"RS_val={rs_val:.4f} RS_test={rs:.4f}"
+        )
 
-        if (acc_test_retain >= retain_floor) and (rs > best_rs):
-            best_rs = rs
+        if rs_val > best_rs:
+            best_rs = rs_val
             best_rs_epoch = epoch
             no_improve = 0
             save_best_fc = deepcopy(fc.state_dict())
         else:
             no_improve += 1
             if no_improve >= patience:
-                print(f"[EarlyStop] RS plateaued for {patience} epochs. "
-                    f"Best RS={best_rs:.4f} @ epoch {best_rs_epoch}.")
+                print(f"[EarlyStop] Validation accuracy plateaued for {patience} epochs. "
+                    f"Best RS_val={best_rs:.4f} @ epoch {best_rs_epoch}.")
                 if save_best_fc is not None:
                     fc.load_state_dict(save_best_fc)
                 break
 
         
         
-        metrics_history[-1]["RS"] = float(rs)
-        row["RS"] = float(rs)
+        row["RS_test"] = float(rs)
+        row["RS_val"] = float(rs_val)
+        row["RS_synth_train"] = float(rs_synth_train)
         
         key = _key_from_row(row)
-        if (row["test_retain"] >= retain_floor) and (key > best["key"]):
+        if key > best["key"]:
             best["key"] = key
             best["row"] = row.copy()
 

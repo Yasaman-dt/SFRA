@@ -48,7 +48,7 @@ def bad_teacher(ori_model, bad_teacher_model, good_teacher_model, unlearn_loader
         # logger.info(f"{good_teacher_model(x).max(1)[1]}")
         break
 
-    _, Aor = test(ori_model, loader_dict["test_remain"])
+    _, Aor = test(ori_model, loader_dict["val_remain"])
     best_aus = float("-inf")
     best_path = experiment_path / f"lr{unlearn_rate}/ckpt_best_by_aus.pth"    
     best_state = None
@@ -125,17 +125,17 @@ def bad_teacher(ori_model, bad_teacher_model, good_teacher_model, unlearn_loader
 
         plot_unlearn_remain_acc_figure(epoch+1, accs_dict, experiment_path/f"lr{unlearn_rate}")
 
-        _, a_forget = test(unlearn_model, loader_dict["test_forget"])
-        _, a_retain = test(unlearn_model, loader_dict["test_remain"])
+        _, a_forget = test(unlearn_model, loader_dict["val_forget"])
+        _, a_retain = test(unlearn_model, loader_dict["val_remain"])
         aus = calculate_AUS(a_forget, a_retain, Aor)
         if aus > best_aus:
              best_aus = aus
              best_state = {k: v.detach().cpu().clone() for k, v in unlearn_model.state_dict().items()}
              torch.save(unlearn_model, best_path)
-             logger.info(f"[epoch {epoch+1}] ★ New best AUS={aus:.4f} (forget={a_forget:.4f}, retain={a_retain:.4f}) -> {best_path}")
+             logger.info(f"[epoch {epoch+1}] ★ New best val_AUS={aus:.4f} (forget={a_forget:.4f}, retain={a_retain:.4f}) -> {best_path}")
              epochs_since_improve = 0
         else:
-            logger.info(f"[epoch {epoch+1}] AUS={aus:.4f} (forget={a_forget:.4f}, retain={a_retain:.4f})")
+            logger.info(f"[epoch {epoch+1}] val_AUS={aus:.4f} (forget={a_forget:.4f}, retain={a_retain:.4f})")
             epochs_since_improve += 1
             logger.info(f"[epoch {epoch+1}] early-stop patience {epochs_since_improve}/{early_stop_patience}")
             if epochs_since_improve >= early_stop_patience:

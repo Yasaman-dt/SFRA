@@ -64,7 +64,7 @@ def neggrad_plus(
     logger.info(f"eval option {eval_opt}")
 
     # For AUS baseline (A_or)
-    _, Aor = test(ori_model, loader_dict["test_remain"])
+    _, Aor = test(ori_model, loader_dict["val_remain"])
 
     best_aus = float("-inf")
     best_state = None
@@ -141,19 +141,19 @@ def neggrad_plus(
         plot_unlearn_remain_acc_figure(epoch+1, accs_history, save_dir)
 
         # track AUS
-        _, a_forget = test(model, loader_dict["test_forget"])
-        _, a_retain = test(model, loader_dict["test_remain"])
+        _, a_forget = test(model, loader_dict["val_forget"])
+        _, a_retain = test(model, loader_dict["val_remain"])
         aus = calculate_AUS(a_forget, a_retain, Aor)
 
         if aus > best_aus:
             best_aus = aus
             best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
             torch.save(model, best_path)
-            logger.info(f"[epoch {epoch+1}] ★ New best AUS={aus:.4f} "
+            logger.info(f"[epoch {epoch+1}] ★ New best val_AUS={aus:.4f} "
                         f"(forget={a_forget:.4f}, retain={a_retain:.4f}) -> {best_path}")
             epochs_since_improve = 0
         else:
-            logger.info(f"[epoch {epoch+1}] AUS={aus:.4f} "
+            logger.info(f"[epoch {epoch+1}] val_AUS={aus:.4f} "
                         f"(forget={a_forget:.4f}, retain={a_retain:.4f})")
             epochs_since_improve += 1
             logger.info(f"[epoch {epoch+1}] early-stop patience {epochs_since_improve}/{early_stop_patience}")
