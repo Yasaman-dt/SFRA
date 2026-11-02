@@ -31,7 +31,6 @@ if __name__ == '__main__':
                         choices=['random_label', "finetune", "gradient_ascent", "neggrad_plus",
                                  'boundary_shrink', 'boundary_expand', 
                                  "salun", "l2ul_adv", "l2ul_imp", "bad_teacher",
-                                 "fisher", "wood_fisher",
                                  "delete",  "scrub",
                                  "pass", "ablation"
                                  ], help='unlearning method')
@@ -716,30 +715,6 @@ if __name__ == '__main__':
                                             reg_lambda=args.reg_lambda, early_stop_patience=patience)
 
         
-    elif args.method == "fisher":
-        unlearn_model = method.fisher(ori_model, train_forget_loader, train_remain_loader,
-                                                    results_csv=results_csv, forget_class= csv_forget,
-                                                    alpha=args.alpha, num_classes=num_classes,
-                                                    logger=logger, console_handler=console_handler,
-                                                    loader_dict=loader_dict, experiment_path = experiment_path,
-                                                    freeze_linear = args.freeze_linear,
-                                                    early_stop_patience=patience)
-
-
-    elif args.method == "wood_fisher":
-        train_remain_sampler = SubsetRandomSampler(train_remain_index)  # 45000
-        train_remain_loader_sole = torch.utils.data.DataLoader(dataset=trainset, batch_size=1,    
-                                                            sampler=train_remain_sampler,
-                                                            num_workers=num_workers)
-
-        unlearn_model = method.wood_fisher(ori_model, train_forget_loader, train_remain_loader, train_remain_loader_sole, 
-                                                    results_csv=results_csv, forget_class= csv_forget,
-                                                    alpha=args.alpha,
-                                                    retain_data=args.retain_data,
-                                                    logger=logger, console_handler=console_handler,
-                                                    loader_dict=loader_dict, experiment_path= experiment_path,
-                                                    early_stop_patience=patience)
-
     elif args.method == 'delete':
         unlearn_model = method.delete(ori_model, train_forget_loader,
                                                     args.unlearn_epoch, args.unlearn_rate,

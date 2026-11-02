@@ -1,5 +1,5 @@
 model_name:  resnet18, vit-s-16, vit-b-16, swin-t, vgg16
-method: random_label, finetune, gradient_ascent, boundary_shrink, boundary_expand, l2ul_adv, l2ul_imp, delete, fisher, wood_fisher,  bad_teacher, salun, scrub, neggrad_plus
+method: random_label, finetune, gradient_ascent, boundary_shrink, boundary_expand, l2ul_adv, l2ul_imp, delete, fisher, bad_teacher, salun, scrub, neggrad_plus
 
 Python 3.10.13
 
@@ -22,7 +22,7 @@ multi_class:
 CUDA_VISIBLE_DEVICES=0 python main.py  --forget_class 2   --method pass  --dataset_name cifar10  	--model_name resnet18    --retrain_from_scratch
 
 
-Run unlearning method to forget a class: 
+Run unlearning method to forget a class:
 single_class:
 CUDA_VISIBLE_DEVICES=0 python main.py  --dataset_name cifar10  		--classes "0,1,2,3,4,5,6,7,8,9" --model_name resnet18  --retain_data True --method bad_teacher  	--unlearn_rate 1e-3 	--description lr_1e-3
 CUDA_VISIBLE_DEVICES=0 python main.py  --dataset_name cifar100  	--classes "0,20,40,60,80" 	--model_name resnet18  --retain_data True --method bad_teacher  	--unlearn_rate 1e-3  	--description lr_1e-3
@@ -32,7 +32,7 @@ multi_class:
 CUDA_VISIBLE_DEVICES=0 python main.py  --dataset_name cifar100 		--forget_class 2 	--model_name resnet18   --method bad_teacher  --retain_data True  --unlearn_rate 1e-3  --description lr_1e-3
 
 
-Run unlearning method to forget multi classes: 
+Run unlearning method to forget multi classes:
 single_class:
 CUDA_VISIBLE_DEVICES=0 python test_original_model.py --datasets cifar10 	--model-name resnet18	--forget-classes 0 1 2 3 4 5 6 7 8 9
 CUDA_VISIBLE_DEVICES=0 python test_original_model.py --datasets cifar100 	--model-name resnet18	--forget-classes 0 20 40 60 80
