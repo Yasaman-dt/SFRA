@@ -1,6 +1,6 @@
 # Source-Free Class Relearning: Diagnosing Forgetting in Class Unlearning
 
-This repository implements Source-Free Relearning Analysis (SFRA), an audit for measuring how readily an unlearned class can be recovered by updating only the released classifier head with synthetic feature-space probes. The repository contains the training, unlearning, relearning, analysis, and visualization code used to reproduce the paper's experiments.
+Source-Free Relearning Analysis (SFRA) audits class unlearning by recovering forgotten classes through classifier-head updates on synthetic feature probes. This repository reproduces the paper's training, unlearning, relearning, and analysis experiments.
 
 The repository supports:
 
@@ -11,29 +11,16 @@ The repository supports:
   `boundary_shrink`, `delete`,
   `l2ul_adv`, `salun`, `scrub`, `bad_teacher`, `neggrad_plus`
 
-- Training original models
-- Retrain-from-scratch baselines
-- Single-class and multi-class unlearning
-- Our Source-Free Relearning Audit (SFRA) method
-- Ablations and t-SNE visualizations
+Supports original training, retraining, single- and multi-class unlearning, SFRA, ablations, and visualization.
 
 ## Notation
 
-- $N$ is the number of accepted synthetic candidate embeddings collected per
-  retained class before confidence-based selection. In the commands below,
-  this is controlled by `--tpr`, `--per_class`, or `--generated_per_class`,
-  depending on the script.
-- $M$ is the number of synthetic probes selected per retained class. When the
-  retain and forget counts differ, we use $M_r$ and $M_f$; these correspond to
-  `--retain_per_class` and `--forget_per_class`, respectively.
+- $N$: accepted synthetic candidates per retained class (`--tpr`, `--per_class`, or `--generated_per_class`).
+- $M$: selected probes per retained class; $M_r$ and $M_f$ denote `--retain_per_class` and `--forget_per_class`.
 
 ### Relearning Score
 
-The relearning score (RS) is computed using retain and forget accuracies before
-and after relearning. Write these as $\mathcal{A}^{u}_r$,
-$\mathcal{A}^{u}_f$ for the unlearned model, and $\mathcal{A}^{re}_r$,
-$\mathcal{A}^{re}_f$ after relearning. With all accuracies normalized to
-$[0,1]$, the retain-preservation and forget-recovery terms are
+RS combines retain preservation and forget recovery, using accuracies before ($un$) and after ($re$) relearning, normalized to $[0,1]$:
 
 ```math
 \begin{aligned}
@@ -56,15 +43,7 @@ Their harmonic mean defines
 \end{cases}
 ```
 
-Thus, $\mathrm{RS}\in[0,1]$; a high value indicates strong forget-class
-recovery with limited retain-accuracy degradation. SFRA computes this score
-separately on validation and test data as `RS_val` and `RS_test`. `RS_val` is
-used to select the best reported relearning epoch/result, subject to validation
-retain accuracy staying above the configured floor. Set
-`--max_retain_drop_frac` to control the allowed relative drop (for example,
-`0.20` allows a 20% drop); the default is `0.10`, so validation retain
-accuracy must stay at or above 90% of its epoch-0 value.
-`RS_test` is reported but does not select it. The additional `RS_synth_train` score measures the same change on the synthetic retain and forget probes relative to epoch 0. For method $m$, audit variant $v$, and forget class $c$, the matched-control score is
+Higher RS indicates stronger recovery with less retain loss. `RS_val` selects the epoch within `--max_retain_drop_frac` (default: 10% of epoch-0 retain accuracy); `RS_test` and `RS_synth_train` are reporting metrics. The matched-control score compares method $m$ with retraining for audit variant $v$ and forget class $c$:
 
 ```math
 \Delta\mathrm{RS}^{(v)}_{m,c}
@@ -72,9 +51,7 @@ accuracy must stay at or above 90% of its epoch-0 value.
 -\mathrm{RS}^{(v)}_{\mathrm{retrained},c}.
 ```
 
-RS measures absolute source-free recoverability, whereas
-$\Delta\mathrm{RS}$ measures recoverability relative to the retrained model
-matched to the same forget class.
+RS measures absolute recoverability; $\Delta\mathrm{RS}$ measures recovery relative to matched retraining.
 
 ---
 
@@ -96,21 +73,14 @@ python -m pip install -r requirements.txt
 
 ### Data and checkpoint paths
 
-All core scripts use the same portable path policy: an explicit command-line
-argument takes priority, followed by an environment variable, followed by a
-default location under the current user's home directory.
+Path priority: command-line argument, environment variable, then home-directory default.
 
 ```bash
 export SFRA_DATA_DIR="$HOME/data"
 export SFRA_EXPS_DIR="$HOME/classification/exps"
 ```
 
-On the system used for the paper, these expand to
-`/export/livia/home/vision/Zdehghani/data` and
-`/export/livia/home/vision/Zdehghani/classification/exps`. Other users can set
-the variables to their own locations without modifying the source code.
-CIFAR-10 and CIFAR-100 are downloaded automatically under `SFRA_DATA_DIR`.
-TinyImageNet should have the following layout:
+CIFAR-10/100 download automatically. Set the variables for your system; TinyImageNet requires:
 
 ```text
 $SFRA_DATA_DIR/TinyImageNet/
@@ -118,30 +88,9 @@ $SFRA_DATA_DIR/TinyImageNet/
   val/    # labeled held-out evaluation set, used as test
 ```
 
-For machine-unlearning and SFRA runs, CIFAR-10/100 and TinyImageNet use a
-seeded, class-stratified split of the original training set: 90% supplies the
-real training/update loaders and 10% is used for validation and checkpoint
-selection. CIFAR's official test set is used for final test evaluation;
-TinyImageNet's labeled `val/` directory is used for final test evaluation.
-The split uses seed `42` by default; pass the same seed to `main.py`, the SFRA,
-PRA, and linear-probe scripts when overriding it. The linear-probe baseline
-trains its fresh classifier on the same 90% real training subset and selects
-its best epoch using the matching 10% validation subset. SFRA relearning itself
-trains on synthetic probes and evaluates on both the training-derived
-validation split and the held-out test split.
-Relearning ablations that report epoch trajectories use that same validation
-split for epoch selection and reserve the test split for final reporting.
+Unlearning and baselines use a class-stratified 90% training / 10% validation split (seed `42`). Use the same split seed across scripts. SFRA trains on synthetic probes; PRA draws real support samples from the 90% subset (`--support-seed` controls sampling), and linear probing trains a fresh head on that subset. Validation selects checkpoints, epochs, or PRA interpolation strength; final evaluation uses the official CIFAR test set or TinyImageNet `val/`.
 
-The source-dependent PRA baseline draws real support samples only from the
-90% training subset and selects its interpolation strength using the matching
-10% validation subset. Its final results use the CIFAR test set or TinyImageNet
-`val/` directory. The PRA split seed defaults to `42` (`--seed`); the separate
-`--support-seed` controls which support samples are drawn from the 90% subset.
-
-Individual commands can still override these defaults using their applicable
-`--data_dir`, `--base-dir`, `--base_dir`, `--ckpt_dir`, or `--exps_dir`
-argument. Generated result directories are resolved relative to the repository
-unless an explicit output directory is provided.
+Override paths with the script's `--data_dir`, `--base-dir`, `--base_dir`, `--ckpt_dir`, or `--exps_dir`. Relative result paths resolve from the repository.
 
 ---
 
@@ -229,10 +178,7 @@ CUDA_VISIBLE_DEVICES=1 python main.py \
   --description lr_1e-5
 ```
 
-For CIFAR-10/100 unlearning runs, each epoch reports train, validation, and
-test metrics. The 10% validation split is used to select the best unlearning
-checkpoint by validation AUS; test metrics are reported but do not select the
-checkpoint.
+CIFAR-10/100 runs report train, validation, and test metrics; validation AUS selects the checkpoint.
 
 ---
 
@@ -311,9 +257,7 @@ python plots_tables/summary_tables/generate_single_class_summary_table.py
 The generated architecture-level tables are saved under
 `results_single_class/tables/single_class_summary/`.
 
-The multi-class generator supports the 2-class and 5-vs-10-class table
-formats. Each format reads from its existing results directory and writes the
-generated table back to that directory:
+Multi-class tables are written to their input results directories:
 
 ```bash
 # Generate both multi-class summary-table formats
@@ -416,15 +360,11 @@ CUDA_VISIBLE_DEVICES=0 python plots_tables/tsne_plots/plot_unlearned_vs_relearne
 ```
 
 ## 9. Source-Dependent Baselines (Main paper and Appendices J and R)
-We evaluate two source-dependent baselines: PRA and linear probing. Unlike our source-free relearning audit, these baselines use real data from the original task.
+PRA and linear probing use real task data.
 
 ### PRA baseline
 
-PRA is evaluated using real support samples from the forgotten classes. The
-support samples come from the 90% training subset; alpha selection uses the
-training-derived 10% validation subset, and final test results are reported on
-the official CIFAR test set or TinyImageNet `val/` directory. For single-class
-unlearning checkpoints, we run:
+PRA uses forgotten-class support samples from the training subset and selects interpolation strength on validation data.
 
 **single-class setting:**
 ```bash
@@ -483,7 +423,7 @@ CUDA_VISIBLE_DEVICES=2 python -m relearning_baselines.run_linear_probe_multi_che
 
 ## 10. Appendix / Plot and Table Generation Scripts
 
-These scripts are post-processing utilities used to reproduce appendix figures and tables from saved checkpoints and result CSV files. Most scripts assume that the corresponding unlearned checkpoints and result folders have already been generated.
+Generate figures and tables from existing checkpoints and result CSVs.
 
 ### Appendix-to-code map
 
@@ -527,7 +467,7 @@ python analysis/probe_coefficient_validation.py \
   --bootstrap_repetitions 300
 ```
 
-This script validates the approximation used in the one-step margin analysis. It compares the exact weighted update term with the unweighted synthetic mean approximation and generates appendix figures/tables for the coefficient validation experiment.
+Compares the exact weighted update with the synthetic-mean approximation and generates validation figures and tables.
 
 ### Real and synthetic probe t-SNE visualization (Appendix K)
 
@@ -544,7 +484,7 @@ CUDA_VISIBLE_DEVICES=0 python plots_tables/tsne_plots/plot_real_vs_gaussian_prob
   --real_per_class 225
 ```
 
-This script loads an unlearned checkpoint and visualizes real test samples together with selected synthetic probes. It saves separate t-SNE figures for the pre-classifier feature space and the classifier-head logit space.
+Plots real test samples and selected synthetic probes in feature and logit spaces.
 
 ### Synthesis-ablation RS table (Appendix O)
 
@@ -559,13 +499,11 @@ python plots_tables/generate_synthesis_ablation_rs_table.py \
   --bold_best
 ```
 
-This script reads the results produced by the synthesis-strategy ablation and creates a LaTeX table with forget classes as columns. It reports the relearning score (RS) for different synthesis strategies.
+Creates a per-forget-class LaTeX RS table from synthesis-ablation results.
 
 ### Synthetic--real alignment analysis (Appendix D)
 
-This post-hoc analysis uses only the low-confidence synthetic forget probes from
-the existing source-free relearning procedure. It does not train or modify a
-model and does not construct random or high-confidence controls.
+Analyzes existing low-confidence synthetic forget probes without modifying the model.
 
 Run a small one-class sanity check first:
 
@@ -579,8 +517,7 @@ CUDA_VISIBLE_DEVICES=0 python analysis/synthetic_real_alignment.py \
   --output_dir results_single_class/analysis/alignment_analysis_smoke
 ```
 
-Then run the full CIFAR-10/ResNet-18 analysis with the settings used by the
-existing relearning results:
+Full CIFAR-10/ResNet-18 analysis:
 
 ```bash
 CUDA_VISIBLE_DEVICES=0 python analysis/synthetic_real_alignment.py \
@@ -607,12 +544,7 @@ python plots_tables/generate_sampling_distribution_rs_table.py \
   --bold_best
 ```
 
-This script compares Gaussian, Uniform, and Laplace embedding distributions.
-It combines the Gaussian results from `results_single_class` with the Uniform
-and Laplace results from the matching architecture-specific synthesis folder.
-By default, it writes `cifar10_resnet18_sampling_distribution_rs_table.tex`
-and the corresponding CSV file under
-`results_synthesis_ablation/results_synthesis_ablation_resnet18/`.
+Compares Gaussian results from `results_single_class` with Uniform/Laplace synthesis results. Saves `.tex` and `.csv` tables under `results_synthesis_ablation/results_synthesis_ablation_resnet18/`.
 
 ### Confidence of forget-class assignments (Appendix F)
 
@@ -627,7 +559,7 @@ CUDA_VISIBLE_DEVICES=0 python analysis/retain_forget_assigned_confidence.py \
   --forget_classes 0 1 2 3 4 5 6 7 8 9
 ```
 
-This script evaluates the unlearned model on real test samples and measures how confidently retain classes are assigned to correctly classified retain samples and to forget-class samples that are predicted as retain classes.
+Measures retain-assignment confidence for correctly classified retain samples and forget samples predicted as retain.
 
 ### Aggregated confidence table across forget classes (Appendix F)
 
@@ -642,18 +574,11 @@ python plots_tables/generate_forget_class_confidence_table.py \
   --allow_any_lr
 ```
 
-This script aggregates the per-forget-class confidence CSVs into one compact table. For each forget class, it reports the weighted average confidence of correctly classified retain samples, the weighted average confidence of forget-class samples assigned to retain classes, and their confidence gap.
-By default, the aggregated CSV and LaTeX table are written to
-`results/<method>/`; for this example, the table is saved as
-`results/bad_teacher/bad_teacher_cifar10_resnet18_weighted_confidence.tex`.
-
+Aggregates per-class confidence CSVs into weighted retain/forget confidence and gap tables under `results/<method>/`.
 
 ### Synthesis-strategy ablation runner (Appendices O and Q)
 
-The following command runs the Laplace-only synthesis ablation for SCRUB on
-CIFAR-10 with ResNet-18. It uses the same candidate pool for selecting the
-high-confidence retain probes and low-confidence forget probes. The Gaussian
-baseline is skipped because its existing results are reused.
+Runs Laplace synthesis for SCRUB on CIFAR-10/ResNet-18, sharing candidates for retain/forget selection and reusing Gaussian baseline results.
 
 ```bash
 CUDA_VISIBLE_DEVICES=2 python -m ablation.synthesis_strategy_ablation \
@@ -691,14 +616,7 @@ results_synthesis_ablation/
 
 ### Uncertainty-score ablation (Appendix P)
 
-This experiment compares Softmax confidence, predictive entropy, and energy
-for selecting probes from the same accepted Gaussian candidate pool. It runs
-all CIFAR-10 forget classes (`0`--`9`) for three independent audit seeds
-(`0`, `1`, and `2`) and trains the classifier head for up to 500 epochs. One
-launcher processes all enabled unlearning methods sequentially for a selected
-architecture.
-
-Run the three architectures on separate GPUs with:
+Compares Softmax, entropy, and energy selection on shared Gaussian candidates across all CIFAR-10 forget classes, three seeds, and up to 500 epochs. Launch each architecture on a separate GPU:
 
 ```bash
 mkdir -p logs
@@ -732,10 +650,7 @@ bash ablation/run_uncertainty_all_methods_one_arch.sh \
   0 resnet18 custom_uncertainty_results
 ```
 
-After all methods finish successfully for an architecture, the launcher
-automatically generates its per-class RS table and corresponding CSV. The
-following commands are only needed to regenerate the tables from existing
-results without rerunning the experiments:
+Launchers generate tables automatically. To regenerate from existing results:
 
 ```bash
 python plots_tables/generate_uncertainty_per_class_rs_table.py --model resnet18
@@ -743,21 +658,11 @@ python plots_tables/generate_uncertainty_per_class_rs_table.py --model vit-b-16
 python plots_tables/generate_uncertainty_per_class_rs_table.py --model swin-t
 ```
 
-The table cells report RS mean $\pm$ standard deviation across the three audit
-seeds, and the final `Avg.` column reports the mean RS across forget classes
-and seeds. The generated `.tex` and `.csv` tables are saved in the same
-uncertainty-ablation results directory.
+Tables report RS mean $\pm$ standard deviation across seeds and an overall `Avg.`, saved as `.tex` and `.csv` in the results directory.
 
 ### Retain--forget trajectory analysis (Appendix I)
 
-This analysis trains the released classifier head on one fixed Gaussian
-synthetic dataset and evaluates real retain and forget accuracy at every
-epoch. The shared training-derived validation split selects the reported
-epoch; test metrics are reported for that selected epoch. It saves one
-trajectory CSV per method and seed, together with the retain--forget
-trade-off summaries.
-
-For CIFAR-10/ResNet-18 with forget class~7, run:
+Tracks real retain/forget accuracy while training the head on fixed Gaussian probes. Validation selects the reported epoch; trajectory CSVs include final test metrics. Example for CIFAR-10/ResNet-18, forget class 7:
 
 ```bash
 CUDA_VISIBLE_DEVICES=0 python -m ablation.retain_forget_tradeoff \
@@ -797,10 +702,7 @@ python plots_tables/plot_rs_vs_accuracy_change.py \
 
 ### RS recoverability maps (Appendix N)
 
-The recoverability-map script compares SFRA RS with matched-control
-$\Delta$RS across datasets, architectures, unlearning methods, and forgotten
-classes. It reads the generated single-class appendix tables and creates one
-map for each architecture.
+Plots SFRA RS against matched-control $\Delta$RS per architecture using single-class appendix tables.
 
 ```bash
 python plots_tables/plot_rs_recoverability_map.py
